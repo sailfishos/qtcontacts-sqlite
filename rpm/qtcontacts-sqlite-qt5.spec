@@ -3,8 +3,8 @@ Version: 0.2.20
 Release: 0
 Summary: SQLite-based plugin for QtPIM Contacts
 Group: System/Plugins
-License: TBD
-URL: TBD
+License: BSD
+URL: https://git.merproject.org/mer-core/qtcontacts-sqlite
 Source0: %{name}-%{version}.tar.gz
 BuildRequires: pkgconfig(Qt5Core)
 BuildRequires: pkgconfig(Qt5Gui)
