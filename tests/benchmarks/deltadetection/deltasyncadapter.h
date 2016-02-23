@@ -30,8 +30,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef TESTSYNCADAPTER_H
-#define TESTSYNCADAPTER_H
+#ifndef DELTASYNCADAPTER_H
+#define DELTASYNCADAPTER_H
 
 #include "../../../src/extensions/twowaycontactsyncadapter.h"
 #include <QContactManager>
@@ -106,4 +106,4 @@ private:
     mutable QMap<QString, QMultiMap<QString, QString> > m_remoteServerDuplicates; // accountId to originalGuid to duplicateGuids.
 };
 
-#endif
+#endif // DELTASYNCADAPTER_H
