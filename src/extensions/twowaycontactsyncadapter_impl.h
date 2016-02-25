@@ -938,7 +938,7 @@ QList<QContactDetail> TwoWayContactSyncAdapterPrivate::improveDelta(QList<QConta
         bucketedAdditions.insertMulti(additions->at(i).type(), additions->at(i));
 
     QSet<int> seenTypes;
-    foreach (int type, bucketedRemovals.keys()) {
+    foreach (int type, bucketedRemovals.uniqueKeys()) {
         QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("dealing with detail type:" << type);
         seenTypes.insert(type);
         QList<QContactDetail> removalsOfThisType = bucketedRemovals.values(type);
@@ -952,7 +952,7 @@ QList<QContactDetail> TwoWayContactSyncAdapterPrivate::improveDelta(QList<QConta
         finalModifications.append(modificationsOfThisType);
     }
 
-    foreach (int type, bucketedAdditions.keys()) {
+    foreach (int type, bucketedAdditions.uniqueKeys()) {
         if (!seenTypes.contains(type)) {
             finalAdditions.append(bucketedAdditions.values(type));
         }
