@@ -41,6 +41,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QLocale>
 #include <QSqlError>
 #include <QSqlQuery>
 
@@ -2973,13 +2974,13 @@ bool ContactsDatabase::populateTemporaryTransientState(bool timestamps, bool glo
 QString ContactsDatabase::dateTimeString(const QDateTime &qdt)
 {
     // Input must be UTC
-    return qdt.toString(QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
+    return QLocale::c().toString(qdt, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
 }
 
 QString ContactsDatabase::dateString(const QDateTime &qdt)
 {
     // Input must be UTC
-    return qdt.toString(QStringLiteral("yyyy-MM-dd"));
+    return QLocale::c().toString(qdt, QStringLiteral("yyyy-MM-dd"));
 }
 
 QDateTime ContactsDatabase::fromDateTimeString(const QString &s)
