@@ -45,6 +45,8 @@
 #include <QContactTimestamp>
 #include <QContactUrl>
 
+#include <QLocale>
+
 #define QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG(msg)                           \
     do {                                                                 \
         if (Q_UNLIKELY(qtcontacts_sqlite_twcsa_debug_trace_enabled())) { \
@@ -182,12 +184,12 @@ void registerTypes()
 // Input must be UTC
 QString dateTimeString(const QDateTime &qdt)
 {
-    return qdt.toString(QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
+    return QLocale::c().toString(qdt, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
 }
 
 QDateTime fromDateTimeString(const QString &s)
 {
-    QDateTime rv(QDateTime::fromString(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
+    QDateTime rv(QLocale::c().toDateTime(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
     rv.setTimeSpec(Qt::UTC);
     return rv;
 }

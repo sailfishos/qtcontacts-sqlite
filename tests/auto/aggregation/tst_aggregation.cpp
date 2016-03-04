@@ -34,6 +34,8 @@
 #include "../../util.h"
 #include "testsyncadapter.h"
 
+#include <QLocale>
+
 static const QString aggregatesRelationship(relationshipString(QContactRelationship::Aggregates));
 
 namespace {
@@ -1775,7 +1777,7 @@ void tst_Aggregation::uniquenessConstraints()
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
 
     // test uniqueness constraint of birthday detail.
-    QDateTime aliceBirthday = QDateTime::fromString("25/12/1950 01:23:45", "dd/MM/yyyy hh:mm:ss");
+    QDateTime aliceBirthday = QLocale::c().toDateTime("25/12/1950 01:23:45", "dd/MM/yyyy hh:mm:ss");
     QCOMPARE(aggregateAlice.details<QContactBirthday>().size(), 0);
     QContactBirthday abd;
     abd.setDateTime(aliceBirthday);
