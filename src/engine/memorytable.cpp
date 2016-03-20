@@ -338,7 +338,7 @@ quint32 MemoryTablePrivate::allocate(quint32 size, TableMetadata *table, bool in
 
     // Align the allocation so that the header is directly accessible
     quint32 allocationSize = static_cast<quint32>(requiredSpace(size));
-    allocationSize = roundUp(allocationSize, sizeof(quint32));
+    allocationSize = roundUp(allocationSize, static_cast<quint32>(sizeof(quint32)));
 
     if (table->freeList) {
         // Try to reuse a freed block
@@ -528,7 +528,7 @@ MemoryTable::Error MemoryTable::migrateTo(MemoryTable &other) const
     return MemoryTablePrivate::migrateTo(MemoryTablePrivate::metadata(&other), MemoryTablePrivate::metadata(this));
 }
 
-MemoryTable::const_iterator::const_iterator(const MemoryTable *table, size_t position)
+MemoryTable::const_iterator::const_iterator(const MemoryTable *table, quint32 position)
     : table(table)
     , position(position)
 {
