@@ -579,7 +579,7 @@ void SharedMemoryManager::release(int index) const
     }
 }
 
-ContactsTransientStore::const_iterator::const_iterator(const MemoryTable *table, size_t position)
+ContactsTransientStore::const_iterator::const_iterator(const MemoryTable *table, quint32 position)
     : MemoryTable::const_iterator(table, position)
 {
 }

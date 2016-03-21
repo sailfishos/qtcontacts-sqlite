@@ -139,7 +139,7 @@ void tst_MemoryTable::initialization()
     MemoryTable mt(buf.data(), 128, true);
     QCOMPARE(mt.isValid(), true);
 
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
     QCOMPARE(mt.contains(0), false);
 }
 
@@ -151,7 +151,7 @@ void tst_MemoryTable::noninitialization()
         MemoryTable mt(buf.data(), 128, true);
         QCOMPARE(mt.isValid(), true);
 
-        QCOMPARE(mt.count(), 0u);
+        QCOMPARE(mt.count(), static_cast<size_t>(0u));
         QCOMPARE(mt.contains(0), false);
 
         // Add some data
@@ -159,7 +159,7 @@ void tst_MemoryTable::noninitialization()
         QCOMPARE(mt.insert(2, QByteArray("def")), MemoryTable::NoError);
         QCOMPARE(mt.insert(3, QByteArray("efg")), MemoryTable::NoError);
 
-        QCOMPARE(mt.count(), 3u);
+        QCOMPARE(mt.count(), static_cast<size_t>(3u));
         QCOMPARE(mt.contains(1), true);
         QCOMPARE(mt.contains(2), true);
         QCOMPARE(mt.contains(3), true);
@@ -172,7 +172,7 @@ void tst_MemoryTable::noninitialization()
         MemoryTable mt(buf.data(), 128, false);
         QCOMPARE(mt.isValid(), true);
 
-        QCOMPARE(mt.count(), 3u);
+        QCOMPARE(mt.count(), static_cast<size_t>(3u));
         QCOMPARE(mt.contains(1), true);
         QCOMPARE(mt.contains(2), true);
         QCOMPARE(mt.contains(3), true);
@@ -190,7 +190,7 @@ void tst_MemoryTable::addressIndependence()
         MemoryTable mt(buf.data(), 128, true);
         QCOMPARE(mt.isValid(), true);
 
-        QCOMPARE(mt.count(), 0u);
+        QCOMPARE(mt.count(), static_cast<size_t>(0u));
         QCOMPARE(mt.contains(0), false);
 
         // Add some data
@@ -198,7 +198,7 @@ void tst_MemoryTable::addressIndependence()
         QCOMPARE(mt.insert(2, QByteArray("def")), MemoryTable::NoError);
         QCOMPARE(mt.insert(3, QByteArray("efg")), MemoryTable::NoError);
 
-        QCOMPARE(mt.count(), 3u);
+        QCOMPARE(mt.count(), static_cast<size_t>(3u));
         QCOMPARE(mt.contains(1), true);
         QCOMPARE(mt.contains(2), true);
         QCOMPARE(mt.contains(3), true);
@@ -216,7 +216,7 @@ void tst_MemoryTable::addressIndependence()
         MemoryTable mt(buf2.data(), 128, false);
         QCOMPARE(mt.isValid(), true);
 
-        QCOMPARE(mt.count(), 3u);
+        QCOMPARE(mt.count(), static_cast<size_t>(3u));
         QCOMPARE(mt.contains(1), true);
         QCOMPARE(mt.contains(2), true);
         QCOMPARE(mt.contains(3), true);
@@ -226,7 +226,7 @@ void tst_MemoryTable::addressIndependence()
 
         // Modify the data
         QCOMPARE(mt.remove(1), true);
-        QCOMPARE(mt.count(), 2u);
+        QCOMPARE(mt.count(), static_cast<size_t>(2u));
         QCOMPARE(mt.contains(1), false);
         QCOMPARE(mt.contains(2), true);
         QCOMPARE(mt.contains(3), true);
@@ -235,7 +235,7 @@ void tst_MemoryTable::addressIndependence()
         QCOMPARE(mt.value(3), QByteArray("efg"));
 
         QCOMPARE(mt.remove(2), true);
-        QCOMPARE(mt.count(), 1u);
+        QCOMPARE(mt.count(), static_cast<size_t>(1u));
         QCOMPARE(mt.contains(1), false);
         QCOMPARE(mt.contains(2), false);
         QCOMPARE(mt.contains(3), true);
@@ -244,7 +244,7 @@ void tst_MemoryTable::addressIndependence()
         QCOMPARE(mt.value(3), QByteArray("efg"));
 
         QCOMPARE(mt.remove(3), true);
-        QCOMPARE(mt.count(), 0u);
+        QCOMPARE(mt.count(), static_cast<size_t>(0u));
         QCOMPARE(mt.contains(1), false);
         QCOMPARE(mt.contains(2), false);
         QCOMPARE(mt.contains(3), false);
@@ -261,12 +261,12 @@ void tst_MemoryTable::basicOperation()
     MemoryTable mt(buf.data(), 128, true);
     QCOMPARE(mt.isValid(), true);
 
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
     QCOMPARE(mt.contains(0), false);
     QCOMPARE(mt.contains(1), false);
 
     QCOMPARE(mt.insert(1, QByteArray()), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 1u);
+    QCOMPARE(mt.count(), static_cast<size_t>(1u));
     QCOMPARE(mt.contains(0), false);
     QCOMPARE(mt.contains(1), true);
     QCOMPARE(mt.contains(2), false);
@@ -275,7 +275,7 @@ void tst_MemoryTable::basicOperation()
 
     QByteArray ba("test byte array");
     QCOMPARE(mt.insert(2, ba), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 2u);
+    QCOMPARE(mt.count(), static_cast<size_t>(2u));
     QCOMPARE(mt.contains(0), false);
     QCOMPARE(mt.contains(1), true);
     QCOMPARE(mt.contains(2), true);
@@ -285,10 +285,10 @@ void tst_MemoryTable::basicOperation()
     QCOMPARE(mt.value(2), ba);
 
     QCOMPARE(mt.remove(0), false);
-    QCOMPARE(mt.count(), 2u);
+    QCOMPARE(mt.count(), static_cast<size_t>(2u));
 
     QCOMPARE(mt.remove(1), true);
-    QCOMPARE(mt.count(), 1u);
+    QCOMPARE(mt.count(), static_cast<size_t>(1u));
     QCOMPARE(mt.contains(0), false);
     QCOMPARE(mt.contains(1), false);
     QCOMPARE(mt.contains(2), true);
@@ -298,10 +298,10 @@ void tst_MemoryTable::basicOperation()
     QCOMPARE(mt.value(2), ba);
 
     QCOMPARE(mt.remove(1), false);
-    QCOMPARE(mt.count(), 1u);
+    QCOMPARE(mt.count(), static_cast<size_t>(1u));
 
     QCOMPARE(mt.remove(2), true);
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
     QCOMPARE(mt.contains(0), false);
     QCOMPARE(mt.contains(1), false);
     QCOMPARE(mt.contains(2), false);
@@ -311,13 +311,13 @@ void tst_MemoryTable::basicOperation()
     QCOMPARE(mt.value(2), QByteArray());
 
     QCOMPARE(mt.remove(2), false);
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
 
     // An impossible allocation should not disrupt the table
     QCOMPARE(mt.insert(3, QByteArray(1, 'x')), MemoryTable::NoError);
     QCOMPARE(mt.insert(2, QByteArray(128, 'y')), MemoryTable::InsufficientSpace);
     QCOMPARE(mt.insert(1, QByteArray(1, 'z')), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 2u);
+    QCOMPARE(mt.count(), static_cast<size_t>(2u));
     QCOMPARE(mt.contains(0), false);
     QCOMPARE(mt.contains(1), true);
     QCOMPARE(mt.contains(2), false);
@@ -335,24 +335,24 @@ void tst_MemoryTable::reinsertion()
     MemoryTable mt(buf.data(), 128, true);
     QCOMPARE(mt.isValid(), true);
 
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
     QCOMPARE(mt.contains(1), false);
 
     QByteArray ba(65, 'x');
 
     QCOMPARE(mt.insert(1, ba), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 1u);
+    QCOMPARE(mt.count(), static_cast<size_t>(1u));
     QCOMPARE(mt.contains(1), true);
     QCOMPARE(mt.value(1), ba);
 
     QCOMPARE(mt.remove(1), true);
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
     QCOMPARE(mt.contains(1), false);
     QCOMPARE(mt.value(1), QByteArray());
 
     // Reinsert - if we haven't reclaimed the space, this will fail
     QCOMPARE(mt.insert(1, ba), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 1u);
+    QCOMPARE(mt.count(), static_cast<size_t>(1u));
     QCOMPARE(mt.contains(1), true);
     QCOMPARE(mt.value(1), ba);
 }
@@ -364,7 +364,7 @@ void tst_MemoryTable::repeatedReinsertion()
     MemoryTable mt(buf.data(), 128, true);
     QCOMPARE(mt.isValid(), true);
 
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
     QCOMPARE(mt.contains(1), false);
 
     QByteArray ba(8, 'x');
@@ -378,7 +378,7 @@ void tst_MemoryTable::repeatedReinsertion()
         ++count[0];
     }
     QCOMPARE(e, MemoryTable::InsufficientSpace);
-    QCOMPARE(mt.count(), count[0]);
+    QCOMPARE(mt.count(), static_cast<size_t>(count[0]));
 
     // Remove all items
     key = 0u;
@@ -391,7 +391,7 @@ void tst_MemoryTable::repeatedReinsertion()
         ++count[1];
     }
     QCOMPARE(count[1], count[0]);
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
 
     // Insert the items back
     key = 0u;
@@ -401,7 +401,7 @@ void tst_MemoryTable::repeatedReinsertion()
         ++count[2];
     }
     QCOMPARE(e, MemoryTable::InsufficientSpace);
-    QCOMPARE(mt.count(), count[2]);
+    QCOMPARE(mt.count(), static_cast<size_t>(count[2]));
 
     // We should have been able to insert the same number of items
     QCOMPARE(count[2], count[0]);
@@ -414,7 +414,7 @@ void tst_MemoryTable::orderedReinsertion()
     MemoryTable mt(buf.data(), 128, true);
     QCOMPARE(mt.isValid(), true);
 
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
     QCOMPARE(mt.contains(1), false);
 
     // Insert items until no space is available
@@ -426,7 +426,7 @@ void tst_MemoryTable::orderedReinsertion()
         ++count[0];
     }
     QCOMPARE(e, MemoryTable::InsufficientSpace);
-    QCOMPARE(mt.count(), count[0]);
+    QCOMPARE(mt.count(), static_cast<size_t>(count[0]));
 
     // Remove all items, in reverse insertion order
     --key;
@@ -439,7 +439,7 @@ void tst_MemoryTable::orderedReinsertion()
         ++count[1];
     }
     QCOMPARE(count[1], count[0]);
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
 
     // Insert the items back
     key = 0u;
@@ -449,7 +449,7 @@ void tst_MemoryTable::orderedReinsertion()
         ++count[2];
     }
     QCOMPARE(e, MemoryTable::InsufficientSpace);
-    QCOMPARE(mt.count(), count[2]);
+    QCOMPARE(mt.count(), static_cast<size_t>(count[2]));
 
     // We should have been able to insert the same number of items
     QCOMPARE(count[2], count[0]);
@@ -465,7 +465,7 @@ void tst_MemoryTable::orderedReinsertion()
         ++count[3];
     }
     QCOMPARE(count[3], count[0]);
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
 
     // Insert the items back
     key = 0u;
@@ -475,7 +475,7 @@ void tst_MemoryTable::orderedReinsertion()
         ++count[4];
     }
     QCOMPARE(e, MemoryTable::InsufficientSpace);
-    QCOMPARE(mt.count(), count[4]);
+    QCOMPARE(mt.count(), static_cast<size_t>(count[4]));
 
     // We should have been able to insert the same number of items
     QCOMPARE(count[4], count[0]);
@@ -488,39 +488,39 @@ void tst_MemoryTable::replacement()
     MemoryTable mt(buf.data(), 128, true);
     QCOMPARE(mt.isValid(), true);
 
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
     QCOMPARE(mt.contains(1), false);
 
     QCOMPARE(mt.insert(1, QByteArray(1, 'x')), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 1u);
+    QCOMPARE(mt.count(), static_cast<size_t>(1u));
     QCOMPARE(mt.contains(1), true);
     QCOMPARE(mt.value(1), QByteArray(1, 'x'));
 
     QCOMPARE(mt.insert(2, QByteArray(10, 'y')), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 2u);
+    QCOMPARE(mt.count(), static_cast<size_t>(2u));
     QCOMPARE(mt.contains(2), true);
     QCOMPARE(mt.value(2), QByteArray(10, 'y'));
 
     // Replacement with a larger value requires a new allocation (68 bytes consumes all available space)
     QCOMPARE(mt.insert(2, QByteArray(68, 'y')), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 2u);
+    QCOMPARE(mt.count(), static_cast<size_t>(2u));
     QCOMPARE(mt.contains(2), true);
     QCOMPARE(mt.value(2), QByteArray(68, 'y'));
 
     // Replacement with a smaller value uses the same allocation
     QCOMPARE(mt.insert(2, QByteArray(40, 'y')), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 2u);
+    QCOMPARE(mt.count(), static_cast<size_t>(2u));
     QCOMPARE(mt.contains(2), true);
     QCOMPARE(mt.value(2), QByteArray(40, 'y'));
 
     QCOMPARE(mt.insert(2, QByteArray(60, 'y')), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 2u);
+    QCOMPARE(mt.count(), static_cast<size_t>(2u));
     QCOMPARE(mt.contains(2), true);
     QCOMPARE(mt.value(2), QByteArray(60, 'y'));
 
     // Replacement with a larger value still fits
     QCOMPARE(mt.insert(2, QByteArray(68, 'y')), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 2u);
+    QCOMPARE(mt.count(), static_cast<size_t>(2u));
     QCOMPARE(mt.contains(2), true);
     QCOMPARE(mt.value(2), QByteArray(68, 'y'));
 
@@ -530,28 +530,28 @@ void tst_MemoryTable::replacement()
     // Insertion may fail because we can't expand the index, even though we have a
     // large enough free block from the earlier replacement
     QCOMPARE(mt.insert(3, QByteArray(10, 'z')), MemoryTable::InsufficientSpace);
-    QCOMPARE(mt.count(), 2u);
+    QCOMPARE(mt.count(), static_cast<size_t>(2u));
     QCOMPARE(mt.contains(1), true);
     QCOMPARE(mt.contains(2), true);
     QCOMPARE(mt.contains(3), false);
 
     // Remove another item to free up the index space
     QCOMPARE(mt.remove(1), true);
-    QCOMPARE(mt.count(), 1u);
+    QCOMPARE(mt.count(), static_cast<size_t>(1u));
     QCOMPARE(mt.contains(1), false);
     QCOMPARE(mt.contains(2), true);
     QCOMPARE(mt.contains(3), false);
 
     // Insertion now succeeds
     QCOMPARE(mt.insert(3, QByteArray(10, 'z')), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 2u);
+    QCOMPARE(mt.count(), static_cast<size_t>(2u));
     QCOMPARE(mt.contains(3), true);
     QCOMPARE(mt.value(3), QByteArray(10, 'z'));
 
     // Free up all the space
     QCOMPARE(mt.remove(2), true);
     QCOMPARE(mt.remove(3), true);
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
     QCOMPARE(mt.contains(2), false);
     QCOMPARE(mt.contains(3), false);
 
@@ -601,7 +601,7 @@ void tst_MemoryTable::iteration()
     MemoryTable mt(buf.data(), 128, true);
     QCOMPARE(mt.isValid(), true);
 
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
 
     MemoryTable::const_iterator it, end;
 
@@ -611,7 +611,7 @@ void tst_MemoryTable::iteration()
     QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(0));
 
     QCOMPARE(mt.insert(1, QByteArray()), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 1u);
+    QCOMPARE(mt.count(), static_cast<size_t>(1u));
 
     it = mt.constBegin();
     end = mt.constEnd();
@@ -625,7 +625,7 @@ void tst_MemoryTable::iteration()
 
     QByteArray ba("test byte array");
     QCOMPARE(mt.insert(2, ba), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 2u);
+    QCOMPARE(mt.count(), static_cast<size_t>(2u));
 
     it = mt.constBegin();
     end = mt.constEnd();
@@ -643,7 +643,7 @@ void tst_MemoryTable::iteration()
     QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(0));
 
     QCOMPARE(mt.remove(1), true);
-    QCOMPARE(mt.count(), 1u);
+    QCOMPARE(mt.count(), static_cast<size_t>(1u));
 
     it = mt.constBegin();
     end = mt.constEnd();
@@ -656,7 +656,7 @@ void tst_MemoryTable::iteration()
     QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(0));
 
     QCOMPARE(mt.remove(2), true);
-    QCOMPARE(mt.count(), 0u);
+    QCOMPARE(mt.count(), static_cast<size_t>(0u));
 
     it = mt.constBegin();
     end = mt.constEnd();
@@ -667,7 +667,7 @@ void tst_MemoryTable::iteration()
     QCOMPARE(mt.insert(3, QByteArray(1, 'x')), MemoryTable::NoError);
     QCOMPARE(mt.insert(2, QByteArray(128, 'y')), MemoryTable::InsufficientSpace);
     QCOMPARE(mt.insert(1, QByteArray(1, 'z')), MemoryTable::NoError);
-    QCOMPARE(mt.count(), 2u);
+    QCOMPARE(mt.count(), static_cast<size_t>(2u));
 
     it = mt.constBegin();
     end = mt.constEnd();
