@@ -40,6 +40,7 @@
 
 #include <QDateTime>
 #include <QPair>
+#include <QSharedPointer>
 
 QTCONTACTS_USE_NAMESPACE
 

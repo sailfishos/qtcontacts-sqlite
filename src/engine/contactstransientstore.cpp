@@ -152,7 +152,7 @@ private:
 
         operator bool() const
         {
-            return m_release;
+            return m_release != nullptr;
         }
 
     private:

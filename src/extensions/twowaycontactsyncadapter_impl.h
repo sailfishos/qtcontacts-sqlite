@@ -46,6 +46,7 @@
 #include <QContactUrl>
 
 #include <QLocale>
+#include <QDataStream>
 
 #define QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG(msg)                           \
     do {                                                                 \
