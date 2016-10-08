@@ -46,6 +46,7 @@
 #include <QWaitCondition>
 #include <QElapsedTimer>
 #include <QUuid>
+#include <QDataStream>
 
 // ---- for schema modification ------
 #include <QtContacts/QContactFamily>
