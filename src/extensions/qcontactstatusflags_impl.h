@@ -55,7 +55,7 @@ void QContactStatusFlags::setFlags(Flags flags)
 
 QContactStatusFlags::Flags QContactStatusFlags::flags() const
 {
-    return Flags(static_cast<ulong>(flagsValue()));
+    return Flags(static_cast<uint>(flagsValue()));
 }
 
 void QContactStatusFlags::setFlagsValue(quint64 value)
