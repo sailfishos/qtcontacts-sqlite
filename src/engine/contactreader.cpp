@@ -43,6 +43,7 @@
 #include <QContactAnniversary>
 #include <QContactAvatar>
 #include <QContactBirthday>
+#include <QContactDisplayLabel>
 #include <QContactEmailAddress>
 #include <QContactFamily>
 #include <QContactFavorite>
@@ -70,6 +71,7 @@
 #include <QContactChangeLogFilter>
 #include <QContactUnionFilter>
 #include <QContactIntersectionFilter>
+#include <QContactRelationshipFilter>
 
 #include <QContactManagerEngine>
 

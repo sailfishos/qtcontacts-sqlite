@@ -49,6 +49,7 @@
 #include <QDataStream>
 
 // ---- for schema modification ------
+#include <QtContacts/QContactDisplayLabel>
 #include <QtContacts/QContactFamily>
 #include <QtContacts/QContactGeoLocation>
 #include <QtContacts/QContactFavorite>

@@ -45,6 +45,7 @@
 #include <QContactTimestamp>
 #include <QContactUrl>
 
+#include <QDebug>
 #include <QLocale>
 #include <QDataStream>
 
