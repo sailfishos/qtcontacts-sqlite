@@ -2,8 +2,6 @@ include(../../common.pri)
 
 TARGET = tst_qcontactmanagerfiltering
 
-QT += contacts-private
-
 INCLUDEPATH += \
     ../../../src/engine/
 

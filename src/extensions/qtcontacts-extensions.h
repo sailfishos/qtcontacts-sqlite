@@ -108,4 +108,7 @@ ContactManagerEngine *contactManagerEngine(QContactManager &manager);
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QtContactsSqliteExtensions::NormalizePhoneNumberFlags)
 
+/* We define the name of the QCoreApplication property which holds our ContactsEngine */
+#define CONTACT_MANAGER_ENGINE_PROP "qc_sqlite_extension_engine"
+
 #endif

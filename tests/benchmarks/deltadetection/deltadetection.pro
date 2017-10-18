@@ -8,7 +8,5 @@ HEADERS = deltasyncadapter.h ../../../src/extensions/contactmanagerengine.h
 
 INCLUDEPATH += ../../../src/extensions ../../../src/engine/
 
-QT += contacts-private
-
 target.path = /opt/tests/qtcontacts-sqlite-qt5
 INSTALLS += target

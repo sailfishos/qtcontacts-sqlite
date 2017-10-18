@@ -2,7 +2,7 @@ include(../../common.pri)
 
 TARGET = tst_database
 
-QT += sql contacts-private
+QT += sql
 
 # copied from src/engine/engine.pro, modified for test db
 DEFINES += 'QTCONTACTS_SQLITE_PRIVILEGED_DIR=\'\"privileged\"\''
