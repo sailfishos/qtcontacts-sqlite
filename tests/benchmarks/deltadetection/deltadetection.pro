@@ -3,6 +3,8 @@ include(../../../config.pri)
 TEMPLATE = app
 TARGET = deltadetection
 
+QT += testlib
+
 SOURCES = main.cpp deltasyncadapter.cpp
 HEADERS = deltasyncadapter.h ../../../src/extensions/contactmanagerengine.h
 
