@@ -545,23 +545,6 @@ QPair<QList<QContactDetail>, QList<QContactDetail> > fallbackDelta(const QContac
     return QPair<QList<QContactDetail>, QList<QContactDetail> >(pdets, cdets);
 }
 
-// search through the list of contacts, determine the most recent timestamp datetime.
-QDateTime maxModificationTimestamp(const QList<QContact> &contacts)
-{
-    QDateTime since;
-
-    for (int i = 0; i < contacts.size(); ++i) {
-        const QContactTimestamp &ts(contacts[i].detail<QContactTimestamp>());
-        if (ts.lastModified().isValid() && (ts.lastModified() > since || !since.isValid())) {
-            since = ts.lastModified();
-        } else if (ts.created().isValid() && (ts.created() > since || !since.isValid())) {
-            since = ts.created();
-        }
-    }
-
-    return since;
-}
-
 }
 
 TwoWayContactSyncAdapterPrivate::TwoWayContactSyncAdapterPrivate(TwoWayContactSyncAdapter *q, const QString &syncTarget, const QMap<QString, QString> &params)
