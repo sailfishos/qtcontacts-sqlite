@@ -1,8 +1,6 @@
 TARGET = tst_aggregation
 include(../../common.pri)
 
-QT += contacts-private
-
 INCLUDEPATH += \
     ../../../src/engine/
 

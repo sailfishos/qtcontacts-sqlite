@@ -49,6 +49,7 @@
 #include <QDataStream>
 
 // ---- for schema modification ------
+#include <QtContacts/QContactDisplayLabel>
 #include <QtContacts/QContactFamily>
 #include <QtContacts/QContactGeoLocation>
 #include <QtContacts/QContactFavorite>
@@ -854,10 +855,16 @@ ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString>
         autoTest.toInt() == 1) {
         setAutoTest(true);
     }
+
+    /* Store the engine into a property of QCoreApplication, so that it can be
+     * retrieved by the extension code */
+    QCoreApplication::instance()->setProperty(CONTACT_MANAGER_ENGINE_PROP,
+                                              QVariant::fromValue(this));
 }
 
 ContactsEngine::~ContactsEngine()
 {
+    QCoreApplication::instance()->setProperty(CONTACT_MANAGER_ENGINE_PROP, 0);
 }
 
 QString ContactsEngine::databaseUuid()

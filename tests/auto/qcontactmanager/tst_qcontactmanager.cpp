@@ -48,9 +48,6 @@
 #include "qversitreader.h"
 #endif
 
-// Needed for access to the QContactManager's internal engine
-#include "private/qcontactmanager_p.h"
-
 #include "../../util.h"
 #include "../../qcontactmanagerdataholder.h"
 

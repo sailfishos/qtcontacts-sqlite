@@ -35,9 +35,11 @@
 
 #include <QDateTime>
 #include <QString>
+#include <QHash>
 #include <QList>
 #include <QPair>
 #include <QMap>
+#include <QSet>
 
 #include <QContactDetail>
 #include <QContact>

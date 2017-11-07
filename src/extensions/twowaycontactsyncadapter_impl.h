@@ -37,7 +37,6 @@
 #include <contactmanagerengine.h>
 #include <twowaycontactsyncadapter.h>
 #include <qcontactoriginmetadata.h>
-#include <private/qcontactmanager_p.h>
 
 #include <QContactManager>
 #include <QContactGuid>
@@ -45,6 +44,7 @@
 #include <QContactTimestamp>
 #include <QContactUrl>
 
+#include <QDebug>
 #include <QLocale>
 #include <QDataStream>
 

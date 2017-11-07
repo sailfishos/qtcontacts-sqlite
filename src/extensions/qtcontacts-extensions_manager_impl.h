@@ -35,15 +35,18 @@
 #include <qtcontacts-extensions.h>
 #include <contactmanagerengine.h>
 
-// Needed for access to the QContactManager's internal engine
-#include <private/qcontactmanager_p.h>
+#include <QCoreApplication>
+#include <QVariant>
 
 namespace QtContactsSqliteExtensions {
 
 ContactManagerEngine *contactManagerEngine(QContactManager &manager)
 {
-    if (QContactManagerData *data = QContactManagerData::managerData(&manager)) {
-        return static_cast<QtContactsSqliteExtensions::ContactManagerEngine *>(data->m_engine);
+    QCoreApplication *app = QCoreApplication::instance();
+    QVariant v = app->property(CONTACT_MANAGER_ENGINE_PROP);
+    QContactManagerEngine *engine = static_cast<QContactManagerEngine*>(v.value<QObject*>());
+    if (engine && engine->managerName() == manager.managerName()) {
+        return static_cast<QtContactsSqliteExtensions::ContactManagerEngine *>(engine);
     }
 
     return 0;

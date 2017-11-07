@@ -39,6 +39,7 @@
 #include "../extensions/qcontactincidental.h"
 #include "../extensions/qcontactstatusflags.h"
 
+#include <QContactDisplayLabel>
 #include <QContactFavorite>
 #include <QContactGender>
 #include <QContactGlobalPresence>
