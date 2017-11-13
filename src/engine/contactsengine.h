@@ -70,22 +70,22 @@ public:
     QList<QContactId> contactIds(
                 const QContactFilter &filter,
                 const QList<QContactSortOrder> &sortOrders,
-                QContactManager::Error* error) const;
+                QContactManager::Error* error) const override;
     QList<QContact> contacts(
                 const QList<QContactId> &localIds,
                 const QContactFetchHint &fetchHint,
                 QMap<int, QContactManager::Error> *errorMap,
-                QContactManager::Error *error) const;
+                QContactManager::Error *error) const override;
     QContact contact(
             const QContactId &contactId,
             const QContactFetchHint &fetchHint,
-            QContactManager::Error* error) const;
+            QContactManager::Error* error) const override;
 
     QList<QContact> contacts(
                 const QContactFilter &filter,
                 const QList<QContactSortOrder> &sortOrders,
                 const QContactFetchHint &fetchHint,
-                QContactManager::Error* error) const;
+                QContactManager::Error* error) const override;
     QList<QContact> contacts(
                 const QContactFilter &filter,
                 const QList<QContactSortOrder> &sortOrders,
@@ -95,42 +95,42 @@ public:
     bool saveContacts(
                 QList<QContact> *contacts,
                 QMap<int, QContactManager::Error> *errorMap,
-                QContactManager::Error *error);
+                QContactManager::Error *error) override;
     bool saveContacts(
                 QList<QContact> *contacts,
                 const ContactWriter::DetailList &definitionMask,
                 QMap<int, QContactManager::Error> *errorMap,
-                QContactManager::Error *error);
+                QContactManager::Error *error) override;
     bool removeContact(const QContactId& contactId, QContactManager::Error* error);
     bool removeContacts(
                 const QList<QContactId> &contactIds,
                 QMap<int, QContactManager::Error> *errorMap,
-                QContactManager::Error* error);
+                QContactManager::Error* error) override;
 
-    QContactId selfContactId(QContactManager::Error* error) const;
-    bool setSelfContactId(const QContactId& contactId, QContactManager::Error* error);
+    QContactId selfContactId(QContactManager::Error* error) const override;
+    bool setSelfContactId(const QContactId& contactId, QContactManager::Error* error) override;
 
     QList<QContactRelationship> relationships(
             const QString &relationshipType,
             const QContact &participant,
             QContactRelationship::Role role,
-            QContactManager::Error *error) const;
+            QContactManager::Error *error) const override;
     bool saveRelationships(
             QList<QContactRelationship> *relationships,
             QMap<int, QContactManager::Error> *errorMap,
-            QContactManager::Error *error);
+            QContactManager::Error *error) override;
     bool removeRelationships(
             const QList<QContactRelationship> &relationships,
             QMap<int, QContactManager::Error> *errorMap,
-            QContactManager::Error *error);
+            QContactManager::Error *error) override;
 
-    void requestDestroyed(QContactAbstractRequest* req);
-    bool startRequest(QContactAbstractRequest* req);
-    bool cancelRequest(QContactAbstractRequest* req);
-    bool waitForRequestFinished(QContactAbstractRequest* req, int msecs);
+    void requestDestroyed(QContactAbstractRequest* req) override;
+    bool startRequest(QContactAbstractRequest* req) override;
+    bool cancelRequest(QContactAbstractRequest* req) override;
+    bool waitForRequestFinished(QContactAbstractRequest* req, int msecs) override;
 
-    bool isRelationshipTypeSupported(const QString &relationshipType, QContactType::TypeValues contactType) const;
-    QList<QContactType::TypeValues> supportedContactTypes() const;
+    bool isRelationshipTypeSupported(const QString &relationshipType, QContactType::TypeValues contactType) const override;
+    QList<QContactType::TypeValues> supportedContactTypes() const override;
 
     void regenerateDisplayLabel(QContact &contact) const;
 
