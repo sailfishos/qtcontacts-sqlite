@@ -1,6 +1,6 @@
-include(../../common.pri)
-
 TARGET = tst_memorytable
+
+include(../../common.pri)
 
 HEADERS += \
     ../../util.h

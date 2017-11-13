@@ -7,6 +7,7 @@ QT += sql dbus
 
 CONFIG += plugin hide_symbols
 PLUGIN_TYPE=contacts
+DESTDIR=$${PLUGIN_TYPE}
 
 # we hardcode this for Qt4 as there's no GenericDataLocation offered by QDesktopServices
 DEFINES += 'QTCONTACTS_SQLITE_PRIVILEGED_DIR=\'\"privileged\"\''
