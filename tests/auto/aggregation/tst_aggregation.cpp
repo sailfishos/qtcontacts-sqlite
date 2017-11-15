@@ -155,6 +155,12 @@ tst_Aggregation::~tst_Aggregation()
 void tst_Aggregation::initTestCase()
 {
     registerIdType();
+
+    /* Make sure the DB is empty */
+    QContactDetailFilter allSyncTargets;
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    m_cm->removeContacts(m_cm->contactIds(allSyncTargets));
+    waitForSignalPropagation();
 }
 
 void tst_Aggregation::init()
