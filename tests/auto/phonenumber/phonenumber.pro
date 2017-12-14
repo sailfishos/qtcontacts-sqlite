@@ -1,6 +1,6 @@
-include(../../common.pri)
-
 TARGET = tst_phonenumber
+
+include(../../common.pri)
 
 HEADERS += \
     ../../util.h

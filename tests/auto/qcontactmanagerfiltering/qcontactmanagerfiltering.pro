@@ -1,6 +1,6 @@
-include(../../common.pri)
-
 TARGET = tst_qcontactmanagerfiltering
+
+include(../../common.pri)
 
 INCLUDEPATH += \
     ../../../src/engine/

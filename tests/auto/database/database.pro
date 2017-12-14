@@ -1,6 +1,6 @@
-include(../../common.pri)
-
 TARGET = tst_database
+
+include(../../common.pri)
 
 QT += sql
 
