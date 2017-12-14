@@ -611,7 +611,7 @@ public:
     bool waitForFinished(QContactAbstractRequest *request, const int msecs)
     {
         long timeout = msecs <= 0
-                ? LONG_MAX
+                ? INT32_MAX
                 : msecs;
 
         Job *finishedJob = 0;
