@@ -36,7 +36,7 @@
 
 #include <QContactGender>
 
-#include <QDesktopServices>
+#include <QStandardPaths>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>

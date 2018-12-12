@@ -3,7 +3,7 @@ include(../../config.pri)
 TEMPLATE = lib
 TARGET = qtcontacts_sqlite
 
-QT += sql dbus
+QT = core sql dbus
 
 CONFIG += plugin hide_symbols
 PLUGIN_TYPE=contacts

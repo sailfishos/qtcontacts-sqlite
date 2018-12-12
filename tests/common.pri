@@ -1,6 +1,8 @@
 include(../config.pri)
 
-QT += testlib
+QT = \
+    core \
+    testlib
 TEMPLATE = app
 CONFIG -= app_bundle
 
