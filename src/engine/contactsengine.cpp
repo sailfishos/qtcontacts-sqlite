@@ -1176,13 +1176,16 @@ QList<QContactType::TypeValues> ContactsEngine::supportedContactTypes() const
 void ContactsEngine::regenerateDisplayLabel(QContact &contact) const
 {
     QContactManager::Error displayLabelError = QContactManager::NoError;
-    QString label = synthesizedDisplayLabel(contact, &displayLabelError);
+    const QString label = synthesizedDisplayLabel(contact, &displayLabelError);
     if (displayLabelError != QContactManager::NoError) {
         QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Unable to regenerate displayLabel for contact: %1").arg(ContactId::toString(contact)));
         return;
     }
 
-    setContactDisplayLabel(&contact, label);
+    const QString group = ContactsDatabase::determineDisplayLabelGroup(contact.detail<QContactName>().firstName(),
+                                                                       contact.detail<QContactName>().lastName(),
+                                                                       label);
+    setContactDisplayLabel(&contact, label, group);
 }
 
 bool ContactsEngine::fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
@@ -1282,11 +1285,24 @@ bool ContactsEngine::removeOOB(const QString &scope)
     return writer()->removeOOB(scope, QStringList());
 }
 
-bool ContactsEngine::setContactDisplayLabel(QContact *contact, const QString &label)
+bool ContactsEngine::setContactDisplayLabel(QContact *contact, const QString &label, const QString &group)
 {
     QContactDisplayLabel detail(contact->detail<QContactDisplayLabel>());
-    detail.setLabel(label);
-    return contact->saveDetail(&detail);
+    bool needSave = false;
+    if (!label.trimmed().isEmpty()) {
+        detail.setLabel(label);
+        needSave = true;
+    }
+    if (!group.trimmed().isEmpty()) {
+        detail.setValue(QContactDisplayLabel__FieldLabelGroup, group);
+        needSave = true;
+    }
+
+    if (needSave) {
+        return contact->saveDetail(&detail);
+    }
+
+    return true;
 }
 
 QString ContactsEngine::normalizedPhoneNumber(const QString &input)

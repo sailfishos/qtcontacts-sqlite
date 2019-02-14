@@ -5541,6 +5541,7 @@ ContactsDatabase::Query ContactWriter::bindContactDetails(const QContact &contac
     const QString insertContact(QStringLiteral(
         " INSERT INTO Contacts ("
         "  displayLabel,"
+        "  displayLabelGroup,"
         "  firstName,"
         "  lowerFirstName,"
         "  lastName,"
@@ -5562,6 +5563,7 @@ ContactsDatabase::Query ContactWriter::bindContactDetails(const QContact &contac
         "  isIncidental)"
         " VALUES ("
         "  :displayLabel,"
+        "  :displayLabelGroup,"
         "  :firstName,"
         "  :lowerFirstName,"
         "  :lastName,"
@@ -5585,6 +5587,7 @@ ContactsDatabase::Query ContactWriter::bindContactDetails(const QContact &contac
     const QString updateContact(QStringLiteral(
         " UPDATE Contacts SET"
         "  displayLabel = :displayLabel,"
+        "  displayLabelGroup = :displayLabelGroup,"
         "  firstName = :firstName,"
         "  lowerFirstName = :lowerFirstName,"
         "  lastName = :lastName,"
@@ -5610,34 +5613,36 @@ ContactsDatabase::Query ContactWriter::bindContactDetails(const QContact &contac
 
     ContactsDatabase::Query query(m_database.prepare(update ? updateContact : insertContact));
 
-    QContactDisplayLabel label = contact.detail<QContactDisplayLabel>();
-    query.bindValue(0, label.label().trimmed());
-
     const QContactName name = contact.detail<QContactName>();
     const QString firstName(name.value<QString>(QContactName::FieldFirstName).trimmed());
     const QString lastName(name.value<QString>(QContactName::FieldLastName).trimmed());
 
-    query.bindValue(1, firstName);
-    query.bindValue(2, firstName.toLower());
-    query.bindValue(3, lastName);
-    query.bindValue(4, lastName.toLower());
-    query.bindValue(5, name.value<QString>(QContactName::FieldMiddleName).trimmed());
-    query.bindValue(6, name.value<QString>(QContactName::FieldPrefix).trimmed());
-    query.bindValue(7, name.value<QString>(QContactName::FieldSuffix).trimmed());
-    query.bindValue(8, name.value<QString>(QContactName__FieldCustomLabel).trimmed());
+    QContactDisplayLabel label = contact.detail<QContactDisplayLabel>();
+    const QString displayLabel = label.label().trimmed();
+    query.bindValue(0, displayLabel);
+    query.bindValue(1, ContactsDatabase::determineDisplayLabelGroup(firstName, lastName, displayLabel));
+
+    query.bindValue(2, firstName);
+    query.bindValue(3, firstName.toLower());
+    query.bindValue(4, lastName);
+    query.bindValue(5, lastName.toLower());
+    query.bindValue(6, name.value<QString>(QContactName::FieldMiddleName).trimmed());
+    query.bindValue(7, name.value<QString>(QContactName::FieldPrefix).trimmed());
+    query.bindValue(8, name.value<QString>(QContactName::FieldSuffix).trimmed());
+    query.bindValue(9, name.value<QString>(QContactName__FieldCustomLabel).trimmed());
 
     const QString syncTarget(contact.detail<QContactSyncTarget>().syncTarget());
-    query.bindValue(9, syncTarget);
+    query.bindValue(10, syncTarget);
 
     const QContactTimestamp timestamp = contact.detail<QContactTimestamp>();
-    query.bindValue(10, ContactsDatabase::dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp).toUTC()));
-    query.bindValue(11, ContactsDatabase::dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp).toUTC()));
+    query.bindValue(11, ContactsDatabase::dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp).toUTC()));
+    query.bindValue(12, ContactsDatabase::dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp).toUTC()));
 
     const QContactGender gender = contact.detail<QContactGender>();
-    query.bindValue(12, QString::number(static_cast<int>(gender.gender())));
+    query.bindValue(13, QString::number(static_cast<int>(gender.gender())));
 
     const QContactFavorite favorite = contact.detail<QContactFavorite>();
-    query.bindValue(13, favorite.isFavorite());
+    query.bindValue(14, favorite.isFavorite());
 
     // Does this contact contain the information needed to update hasPhoneNumber?
     bool hasPhoneNumberKnown = definitionMask.isEmpty() || detailListContains<QContactPhoneNumber>(definitionMask);
@@ -5672,26 +5677,26 @@ ContactsDatabase::Query ContactWriter::bindContactDetails(const QContact &contac
     }
 
     if (update) {
-        query.bindValue(14, hasPhoneNumberKnown);
-        query.bindValue(15, hasPhoneNumber);
-        query.bindValue(16, hasEmailAddressKnown);
-        query.bindValue(17, hasEmailAddress);
-        query.bindValue(18, hasOnlineAccountKnown);
-        query.bindValue(19, hasOnlineAccount);
-        query.bindValue(20, isOnlineKnown);
-        query.bindValue(21, isOnline);
-        query.bindValue(22, isDeactivatedKnown);
-        query.bindValue(23, isDeactivated);
-        query.bindValue(24, contactId);
+        query.bindValue(15, hasPhoneNumberKnown);
+        query.bindValue(16, hasPhoneNumber);
+        query.bindValue(17, hasEmailAddressKnown);
+        query.bindValue(18, hasEmailAddress);
+        query.bindValue(19, hasOnlineAccountKnown);
+        query.bindValue(20, hasOnlineAccount);
+        query.bindValue(21, isOnlineKnown);
+        query.bindValue(22, isOnline);
+        query.bindValue(23, isDeactivatedKnown);
+        query.bindValue(24, isDeactivated);
+        query.bindValue(25, contactId);
     } else {
-        query.bindValue(14, hasPhoneNumber);
-        query.bindValue(15, hasEmailAddress);
-        query.bindValue(16, hasOnlineAccount);
-        query.bindValue(17, isOnline);
-        query.bindValue(18, isDeactivated);
+        query.bindValue(15, hasPhoneNumber);
+        query.bindValue(16, hasEmailAddress);
+        query.bindValue(17, hasOnlineAccount);
+        query.bindValue(18, isOnline);
+        query.bindValue(19, isDeactivated);
 
         // Incidental state only applies to creation
-        query.bindValue(19, !contact.details<QContactIncidental>().isEmpty());
+        query.bindValue(20, !contact.details<QContactIncidental>().isEmpty());
     }
 
     return query;

@@ -39,6 +39,7 @@
 #include <QContactPhoneNumber>
 #include <QContactAvatar>
 #include <QContactName>
+#include <QContactDisplayLabel>
 
 // Defines the extended values supported by qtcontacts-sqlite
 
@@ -51,6 +52,9 @@ static const int QContactDetail__FieldNonexportable = (QContactDetail::FieldLink
 
 // In QContactName, we support the customLabel property
 static const int QContactName__FieldCustomLabel = (QContactName::FieldSuffix+1);
+
+// In QContactDisplayLabel, we support the labelGroup property
+static const int QContactDisplayLabel__FieldLabelGroup = (QContactDisplayLabel::FieldLabel+1);
 
 // In QContactOnlineAccount we support the following properties:
 //   AccountPath - identifying path value for the account

@@ -71,6 +71,9 @@
 // qtpim doesn't support the customLabel field natively, but qtcontact-sqlite provides it
 #define CUSTOM_LABEL_STORAGE_SUPPORTED
 
+// qtpim doesn't support the displayLabelGroup field natively, but qtcontacts-sqlite provides it
+#define DISPLAY_LABEL_GROUP_STORAGE_SUPPORTED
+
 // Eventually these will make it into qtestcase.h
 // but we might need to tweak the timeout values here.
 #ifndef QTRY_COMPARE

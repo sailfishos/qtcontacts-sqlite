@@ -142,7 +142,8 @@ static QVariant dateValue(const QVariant &columnValue)
 
 static const FieldInfo displayLabelFields[] =
 {
-    { QContactDisplayLabel::FieldLabel, "displayLabel", LocalizedField }
+    { QContactDisplayLabel::FieldLabel, "displayLabel", LocalizedField },
+    { QContactDisplayLabel__FieldLabelGroup, "displayLabelGroup", LocalizedField }
 };
 
 static const FieldInfo nameFields[] =
@@ -1935,7 +1936,30 @@ QContactManager::Error ContactReader::queryContacts(
     QContactManager::Error err = QContactManager::NoError;
 
     const QString idsQueryStatement(QString::fromLatin1(
-        "SELECT Contacts.* "
+        "SELECT " // Contacts.*, but order can change due to schema upgrades, so list manually.
+            "Contacts.contactId, "
+            "Contacts.displayLabel, "
+            "Contacts.displayLabelGroup, "
+            "Contacts.firstName, "
+            "Contacts.lowerFirstName, "
+            "Contacts.lastName, "
+            "Contacts.lowerLastName, "
+            "Contacts.middleName, "
+            "Contacts.prefix, "
+            "Contacts.suffix, "
+            "Contacts.customLabel, "
+            "Contacts.syncTarget, "
+            "Contacts.created, "
+            "Contacts.modified, "
+            "Contacts.gender, "
+            "Contacts.isFavorite, "
+            "Contacts.hasPhoneNumber, "
+            "Contacts.hasEmailAddress, "
+            "Contacts.hasOnlineAccount, "
+            "Contacts.isOnline, "
+            "Contacts.isDeactivated, "
+            "Contacts.isIncidental, "
+            "Contacts.type "
         "FROM temp.%1 "
         "CROSS JOIN Contacts ON temp.%1.contactId = Contacts.contactId " // Cross join ensures we scan the temp table first
         "ORDER BY temp.%1.rowId ASC").arg(tableName));
@@ -2117,22 +2141,22 @@ QContactManager::Error ContactReader::queryContacts(
         contact.setId(id);
 
         QString persistedDL = contactQuery.value(1).toString();
-        if (!persistedDL.isEmpty())
-            ContactsEngine::setContactDisplayLabel(&contact, persistedDL);
+        QString displayLabelGroup = contactQuery.value(2).toString();
+        ContactsEngine::setContactDisplayLabel(&contact, persistedDL, displayLabelGroup);
 
         QContactName name;
-        setValue(&name, QContactName::FieldFirstName  , contactQuery.value(2));
+        setValue(&name, QContactName::FieldFirstName  , contactQuery.value(3));
         // ignore lowerFirstName
-        setValue(&name, QContactName::FieldLastName   , contactQuery.value(4));
+        setValue(&name, QContactName::FieldLastName   , contactQuery.value(5));
         // ignore lowerLastName
-        setValue(&name, QContactName::FieldMiddleName , contactQuery.value(6));
-        setValue(&name, QContactName::FieldPrefix     , contactQuery.value(7));
-        setValue(&name, QContactName::FieldSuffix     , contactQuery.value(8));
-        setValue(&name, QContactName__FieldCustomLabel, contactQuery.value(9));
+        setValue(&name, QContactName::FieldMiddleName , contactQuery.value(7));
+        setValue(&name, QContactName::FieldPrefix     , contactQuery.value(8));
+        setValue(&name, QContactName::FieldSuffix     , contactQuery.value(9));
+        setValue(&name, QContactName__FieldCustomLabel, contactQuery.value(10));
         if (!name.isEmpty())
             contact.saveDetail(&name);
 
-        const QString syncTarget(contactQuery.value(10).toString());
+        const QString syncTarget(contactQuery.value(11).toString());
 
         QContactSyncTarget starget;
         setValue(&starget, QContactSyncTarget::FieldSyncTarget, syncTarget);
@@ -2140,27 +2164,27 @@ QContactManager::Error ContactReader::queryContacts(
             contact.saveDetail(&starget);
 
         QContactTimestamp timestamp;
-        setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , ContactsDatabase::fromDateTimeString(contactQuery.value(11).toString()));
-        setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, ContactsDatabase::fromDateTimeString(contactQuery.value(12).toString()));
+        setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , ContactsDatabase::fromDateTimeString(contactQuery.value(12).toString()));
+        setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, ContactsDatabase::fromDateTimeString(contactQuery.value(13).toString()));
 
         QContactGender gender;
         // Gender is an enum in qtpim
-        QString genderText = contactQuery.value(13).toString();
+        QString genderText = contactQuery.value(14).toString();
         gender.setGender(static_cast<QContactGender::GenderField>(genderText.toInt()));
         contact.saveDetail(&gender);
 
         QContactFavorite favorite;
-        setValue(&favorite, QContactFavorite::FieldFavorite, contactQuery.value(14).toBool());
+        setValue(&favorite, QContactFavorite::FieldFavorite, contactQuery.value(15).toBool());
         if (!favorite.isEmpty())
             contact.saveDetail(&favorite);
 
         QContactStatusFlags flags;
-        flags.setFlag(QContactStatusFlags::HasPhoneNumber, contactQuery.value(15).toBool());
-        flags.setFlag(QContactStatusFlags::HasEmailAddress, contactQuery.value(16).toBool());
-        flags.setFlag(QContactStatusFlags::HasOnlineAccount, contactQuery.value(17).toBool());
-        flags.setFlag(QContactStatusFlags::IsOnline, contactQuery.value(18).toBool());
-        flags.setFlag(QContactStatusFlags::IsDeactivated, contactQuery.value(19).toBool());
-        flags.setFlag(QContactStatusFlags::IsIncidental, contactQuery.value(20).toBool());
+        flags.setFlag(QContactStatusFlags::HasPhoneNumber, contactQuery.value(16).toBool());
+        flags.setFlag(QContactStatusFlags::HasEmailAddress, contactQuery.value(17).toBool());
+        flags.setFlag(QContactStatusFlags::HasOnlineAccount, contactQuery.value(18).toBool());
+        flags.setFlag(QContactStatusFlags::IsOnline, contactQuery.value(19).toBool());
+        flags.setFlag(QContactStatusFlags::IsDeactivated, contactQuery.value(20).toBool());
+        flags.setFlag(QContactStatusFlags::IsIncidental, contactQuery.value(21).toBool());
 
         if (flags.testFlag(QContactStatusFlags::IsDeactivated)) {
             QContactDeactivated deactivated;
@@ -2171,7 +2195,7 @@ QContactManager::Error ContactReader::queryContacts(
             contact.saveDetail(&incidental);
         }
 
-        int contactType = contactQuery.value(21).toInt();
+        int contactType = contactQuery.value(22).toInt();
         QContactType typeDetail = contact.detail<QContactType>();
         typeDetail.setType(static_cast<QContactType::TypeValues>(contactType));
         contact.saveDetail(&typeDetail);
