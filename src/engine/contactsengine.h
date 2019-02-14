@@ -159,7 +159,7 @@ public:
     bool removeOOB(const QString &scope, const QStringList &keys);
     bool removeOOB(const QString &scope);
 
-    static bool setContactDisplayLabel(QContact *contact, const QString &label);
+    static bool setContactDisplayLabel(QContact *contact, const QString &label, const QString &group);
 
     static QString normalizedPhoneNumber(const QString &input);
 

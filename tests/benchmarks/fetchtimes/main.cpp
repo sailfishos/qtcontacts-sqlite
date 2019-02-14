@@ -52,6 +52,8 @@
 #include <QDateTime>
 #include <QtDebug>
 
+#include "../../../src/extensions/qtcontacts-extensions.h"
+
 QTCONTACTS_USE_NAMESPACE
 
 #include <QContactIdFilter>
@@ -1161,7 +1163,7 @@ qint64 simpleFilterAndSort(QContactManager &manager, bool quickMode)
     qDebug() << "Starting save (chunks) / fetch (filter + sort) / delete (all) test...";
     QList<QContact> testData, testData2;
     const int chunkSize = quickMode ? 25 : 50;
-    const int prefillCount = quickMode ? 250 : 500;
+    const int prefillCount = quickMode ? 250 : 1000;
     for (int i = 0; i < prefillCount/2; ++i) {
         testData.append(generateContact(QString::fromLatin1("simpleFilterAndSort"), true));
         testData2.append(generateContact(QString::fromLatin1("simpleFilterAndSort2"), true));
@@ -1182,7 +1184,7 @@ qint64 simpleFilterAndSort(QContactManager &manager, bool quickMode)
     listDisplayFetchHint.setDetailTypesHint(QList<QContactDetail::DetailType>()
             << QContactDisplayLabel::Type << QContactName::Type << QContactAvatar::Type);
     QContactSortOrder sort;
-    sort.setDetailType(QContactName::Type, QContactName::FieldLastName);
+    sort.setDetailType(QContactDisplayLabel::Type, QContactDisplayLabel__FieldLabelGroup);
     QContactDetailFilter phoneFilter;
     phoneFilter.setDetailType(QContactPhoneNumber::Type); // existence filter, don't care about value.
     QContactDetailFilter syncTargetFilter;

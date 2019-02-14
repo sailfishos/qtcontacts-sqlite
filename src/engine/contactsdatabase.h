@@ -162,6 +162,8 @@ public:
     // Output is UTC
     static QDateTime fromDateTimeString(const QString &s);
 
+    static QString determineDisplayLabelGroup(const QString &firstName, const QString &lastName, const QString &displayLabel);
+
 private:
     QSqlDatabase m_database;
     ContactsTransientStore m_transientStore;
