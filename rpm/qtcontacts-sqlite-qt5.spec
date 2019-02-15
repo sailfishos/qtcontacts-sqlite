@@ -23,7 +23,6 @@ Requires: qt5-plugin-sqldriver-sqlite
 Summary:    Unit tests for qtcontacts-sqlite-qt5
 Group:      System/Libraries
 BuildRequires:  pkgconfig(Qt5Test)
-Requires:   blts-tools
 Requires:   %{name} = %{version}-%{release}
 
 %description tests
