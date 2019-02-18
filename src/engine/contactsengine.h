@@ -165,6 +165,8 @@ public:
 
     QString synthesizedDisplayLabel(const QContact &contact, QContactManager::Error *error) const;
 
+    QStringList displayLabelGroups() override;
+
 private slots:
     void _q_contactsChanged(const QVector<quint32> &contactIds);
     void _q_contactsPresenceChanged(const QVector<quint32> &contactIds);
@@ -174,6 +176,7 @@ private slots:
     void _q_selfContactIdChanged(quint32,quint32);
     void _q_relationshipsAdded(const QVector<quint32> &contactIds);
     void _q_relationshipsRemoved(const QVector<quint32> &contactIds);
+    void _q_displayLabelGroupsChanged(const QStringList &groups);
 
 private:
     QString databaseUuid();

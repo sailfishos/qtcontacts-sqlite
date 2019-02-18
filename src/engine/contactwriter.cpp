@@ -5620,7 +5620,7 @@ ContactsDatabase::Query ContactWriter::bindContactDetails(const QContact &contac
     QContactDisplayLabel label = contact.detail<QContactDisplayLabel>();
     const QString displayLabel = label.label().trimmed();
     query.bindValue(0, displayLabel);
-    query.bindValue(1, ContactsDatabase::determineDisplayLabelGroup(firstName, lastName, displayLabel));
+    query.bindValue(1, m_database.determineDisplayLabelGroup(contact));
 
     query.bindValue(2, firstName);
     query.bindValue(3, firstName.toLower());

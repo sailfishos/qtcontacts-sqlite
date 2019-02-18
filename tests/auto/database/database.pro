@@ -28,6 +28,9 @@ SOURCES += ../../../src/engine/memorytable.cpp
 HEADERS += ../../../src/engine/conversion_p.h
 SOURCES += ../../../src/engine/conversion.cpp
 
+HEADERS += ../../../src/engine/defaultdlggenerator.h
+SOURCES += ../../../src/engine/defaultdlggenerator.cpp
+
 SOURCES += stub_contactsengine.cpp
 
 SOURCES += tst_database.cpp

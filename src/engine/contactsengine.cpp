@@ -39,6 +39,7 @@
 
 #include "qtcontacts-extensions.h"
 #include "qtcontacts-extensions_impl.h"
+#include "displaylabelgroupgenerator.h"
 
 #include <QCoreApplication>
 #include <QMutex>
@@ -1182,9 +1183,9 @@ void ContactsEngine::regenerateDisplayLabel(QContact &contact) const
         return;
     }
 
-    const QString group = ContactsDatabase::determineDisplayLabelGroup(contact.detail<QContactName>().firstName(),
-                                                                       contact.detail<QContactName>().lastName(),
-                                                                       label);
+    QContact tempContact(contact);
+    setContactDisplayLabel(&tempContact, label, QString());
+    const QString group = m_database ? m_database->determineDisplayLabelGroup(tempContact) : QString();
     setContactDisplayLabel(&contact, label, group);
 }
 
@@ -1283,6 +1284,11 @@ bool ContactsEngine::removeOOB(const QString &scope, const QStringList &keys)
 bool ContactsEngine::removeOOB(const QString &scope)
 {
     return writer()->removeOOB(scope, QStringList());
+}
+
+QStringList ContactsEngine::displayLabelGroups()
+{
+    return database().displayLabelGroups();
 }
 
 bool ContactsEngine::setContactDisplayLabel(QContact *contact, const QString &label, const QString &group)
@@ -1404,6 +1410,11 @@ void ContactsEngine::_q_contactsPresenceChanged(const QVector<quint32> &contactI
 void ContactsEngine::_q_syncContactsChanged(const QStringList &syncTargets)
 {
     emit syncContactsChanged(syncTargets);
+}
+
+void ContactsEngine::_q_displayLabelGroupsChanged(const QStringList &groups)
+{
+    emit displayLabelGroupsChanged(groups);
 }
 
 void ContactsEngine::_q_contactsRemoved(const QVector<quint32> &contactIds)

@@ -34,6 +34,7 @@
 
 #include "semaphore_p.h"
 #include "contactstransientstore.h"
+#include "../extensions/displaylabelgroupgenerator.h"
 
 #include <QHash>
 #include <QMutex>
@@ -42,6 +43,9 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QVariantList>
+#include <QVector>
+
+#include <QContact>
 
 class ContactsDatabase
 {
@@ -148,6 +152,9 @@ public:
     bool removeTransientDetails(quint32 contactId);
     bool removeTransientDetails(const QList<quint32> &contactIds);
 
+    QString determineDisplayLabelGroup(const QContact &c) const;
+    QStringList displayLabelGroups() const;
+
     static bool execute(QSqlQuery &query);
     static bool executeBatch(QSqlQuery &query, QSqlQuery::BatchExecutionMode mode = QSqlQuery::ValuesAsRows);
 
@@ -162,8 +169,6 @@ public:
     // Output is UTC
     static QDateTime fromDateTimeString(const QString &s);
 
-    static QString determineDisplayLabelGroup(const QString &firstName, const QString &lastName, const QString &displayLabel);
-
 private:
     QSqlDatabase m_database;
     ContactsTransientStore m_transientStore;
@@ -172,6 +177,8 @@ private:
     bool m_nonprivileged;
     QString m_localeName;
     QHash<QString, QSqlQuery> m_preparedQueries;
+    QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> m_dlgGenerators;
+    QScopedPointer<QtContactsSqliteExtensions::DisplayLabelGroupGenerator> m_defaultGenerator;
 };
 
 #endif
