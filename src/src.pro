@@ -20,5 +20,6 @@ OTHER_FILES = \
     extensions/qtcontacts-extensions.h \
     extensions/qtcontacts-extensions_impl.h \
     extensions/twowaycontactsyncadapter.h \
-    extensions/twowaycontactsyncadapter_impl.h
+    extensions/twowaycontactsyncadapter_impl.h \
+    extensions/displaylabelgroupgenerator.h
 

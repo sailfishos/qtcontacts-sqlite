@@ -3,6 +3,7 @@ include(../config.pri)
 QT = \
     core \
     testlib
+
 TEMPLATE = app
 CONFIG -= app_bundle
 

@@ -31,14 +31,18 @@
 
 #include "contactsdatabase.h"
 #include "contactsengine.h"
+#include "defaultdlggenerator.h"
 #include "conversion_p.h"
 #include "trace_p.h"
 
 #include <QContactGender>
+#include <QContactName>
+#include <QContactDisplayLabel>
 
+#include <QPluginLoader>
+#include <QElapsedTimer>
 #include <QStandardPaths>
 #include <QDir>
-#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QLocale>
@@ -351,6 +355,11 @@ static const char *createOOBTable =
         "\n value BLOB,"
         "\n compressed INTEGER DEFAULT 0);";
 
+static const char *createDbSettingsTable =
+        "\n CREATE TABLE DbSettings ("
+        "\n name TEXT PRIMARY KEY,"
+        "\n value TEXT );";
+
 static const char *createRemoveTrigger =
         "\n CREATE TRIGGER RemoveContactDetails"
         "\n BEFORE DELETE"
@@ -636,6 +645,7 @@ static const char *createStatements[] =
     createRelationshipsTable,
     createDeletedContactsTable,
     createOOBTable,
+    createDbSettingsTable,
     createRemoveTrigger,
     createContactsSyncTargetIndex,
     createContactsFirstNameIndex,
@@ -1288,6 +1298,7 @@ static const char *upgradeVersion16[] = {
     0 // NULL-terminated
 };
 static const char *upgradeVersion17[] = {
+    createDbSettingsTable,
     "PRAGMA user_version=18",
     0 // NULL-terminated
 };
@@ -1705,57 +1716,6 @@ static bool addDisplayLabelGroup(QSqlDatabase &database)
         alterQuery.finish();
     }
 
-    // for every single contact in our database, read the data required to generate the display label group data.
-    QVariantList contactIds;
-    QVariantList displayLabelGroups;
-    {
-        QSqlQuery selectQuery(database);
-        selectQuery.setForwardOnly(true);
-        const QString statement = QStringLiteral("SELECT contactId, firstName, lastName, displayLabel FROM Contacts");
-        if (!selectQuery.prepare(statement)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare display label groups data selection query: %1\n%2")
-                    .arg(selectQuery.lastError().text())
-                    .arg(statement));
-            return false;
-        }
-        if (!selectQuery.exec()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to select display label groups data: %1\n%2")
-                    .arg(selectQuery.lastError().text())
-                    .arg(statement));
-            return false;
-        }
-        while (selectQuery.next()) {
-            const quint32 dbId = selectQuery.value(0).toUInt();
-            const QString firstName = selectQuery.value(1).toString();
-            const QString lastName = selectQuery.value(2).toString();
-            const QString displayLabel = selectQuery.value(3).toString();
-            contactIds.append(dbId);
-            displayLabelGroups.append(ContactsDatabase::determineDisplayLabelGroup(firstName, lastName, displayLabel));
-        }
-        selectQuery.finish();
-    }
-
-    // now write the generated data back to the database.
-    {
-        QSqlQuery updateQuery(database);
-        const QString statement = QStringLiteral("UPDATE Contacts SET displayLabelGroup = ? WHERE contactId = ?");
-        if (!updateQuery.prepare(statement)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare update display label groups query: %1\n%2")
-                    .arg(updateQuery.lastError().text())
-                    .arg(statement));
-            return false;
-        }
-        updateQuery.addBindValue(displayLabelGroups);
-        updateQuery.addBindValue(contactIds);
-        if (!updateQuery.execBatch()) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to update display label groups: %1\n%2")
-                    .arg(updateQuery.lastError().text())
-                    .arg(statement));
-            return false;
-        }
-        updateQuery.finish();
-    }
-
     return true;
 }
 
@@ -1829,6 +1789,127 @@ static bool finalizeTransaction(QSqlDatabase &database, bool success)
 
 template <typename T> static int lengthOf(T) { return 0; }
 template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
+
+static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &database, ContactsDatabase *cdb)
+{
+    // determine if the current system locale is equal to that used for the display label groups
+    // if not, update them all.
+    bool settingExists = false;
+    const QString localeName = QLocale().name();
+    {
+        QSqlQuery selectQuery(database);
+        selectQuery.setForwardOnly(true);
+        const QString statement = QStringLiteral("SELECT Value FROM DbSettings WHERE Name = 'LocaleName'");
+        if (!selectQuery.prepare(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare locale setting selection query: %1\n%2")
+                    .arg(selectQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        if (!selectQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to select locale setting value: %1\n%2")
+                    .arg(selectQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        if (selectQuery.next()) {
+            settingExists = true;
+            if (selectQuery.value(0).toString() == localeName) {
+                return true; // no need to update the display label groups.
+            }
+        }
+    }
+
+    // update the database settings with the current locale name.
+    {
+        QSqlQuery setLocaleQuery(database);
+        const QString statement = settingExists
+                                ? QStringLiteral("UPDATE DbSettings SET Value = ? WHERE Name = 'LocaleName'")
+                                : QStringLiteral("INSERT INTO DbSettings (Name, Value) VALUES ('LocaleName', ?)");
+        if (!setLocaleQuery.prepare(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare locale setting update query: %1\n%2")
+                    .arg(setLocaleQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        setLocaleQuery.addBindValue(QVariant(localeName));
+        if (!setLocaleQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to update locale setting value: %1\n%2")
+                    .arg(setLocaleQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+    }
+
+    // for every single contact in our database, read the data required to generate the display label group data.
+    QVariantList contactIds;
+    QVariantList displayLabelGroups;
+    {
+        QSqlQuery selectQuery(database);
+        selectQuery.setForwardOnly(true);
+        const QString statement = QStringLiteral("SELECT contactId, firstName, lastName, displayLabel FROM Contacts");
+        if (!selectQuery.prepare(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare display label groups data selection query: %1\n%2")
+                    .arg(selectQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        if (!selectQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to select display label groups data: %1\n%2")
+                    .arg(selectQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        while (selectQuery.next()) {
+            const quint32 dbId = selectQuery.value(0).toUInt();
+            const QString firstName = selectQuery.value(1).toString();
+            const QString lastName = selectQuery.value(2).toString();
+            const QString displayLabel = selectQuery.value(3).toString();
+            contactIds.append(dbId);
+
+            QContactName n;
+            n.setFirstName(firstName);
+            n.setLastName(lastName);
+            QContactDisplayLabel dl;
+            dl.setLabel(displayLabel);
+            QContact c;
+            c.saveDetail(&n);
+            c.saveDetail(&dl);
+
+            displayLabelGroups.append(cdb->determineDisplayLabelGroup(c));
+        }
+        selectQuery.finish();
+    }
+
+    // now write the generated data back to the database.
+    // do it in batches, otherwise it can fail if any single batch is too big.
+    {
+        for (int i = 0; i < displayLabelGroups.size(); i += 167) {
+            const QVariantList groups = displayLabelGroups.mid(i, qMin(displayLabelGroups.size() - i, 167));
+            const QVariantList ids = contactIds.mid(i, qMin(displayLabelGroups.size() - i, 167));
+
+            QSqlQuery updateQuery(database);
+            const QString statement = QStringLiteral("UPDATE Contacts SET displayLabelGroup = ? WHERE contactId = ?");
+            if (!updateQuery.prepare(statement)) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare update display label groups query: %1\n%2")
+                        .arg(updateQuery.lastError().text())
+                        .arg(statement));
+                return false;
+            }
+            updateQuery.addBindValue(groups);
+            updateQuery.addBindValue(ids);
+            if (!updateQuery.execBatch()) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to update display label groups: %1\n%2")
+                        .arg(updateQuery.lastError().text())
+                        .arg(statement));
+                return false;
+            }
+            updateQuery.finish();
+        }
+    }
+
+    return true;
+}
 
 static bool executeUpgradeStatements(QSqlDatabase &database)
 {
@@ -1906,12 +1987,15 @@ static bool checkDatabase(QSqlDatabase &database)
     return false;
 }
 
-static bool upgradeDatabase(QSqlDatabase &database)
+static bool upgradeDatabase(QSqlDatabase &database, ContactsDatabase *cdb)
 {
     if (!beginTransaction(database))
         return false;
 
     bool success = executeUpgradeStatements(database);
+    if (success) {
+        success = executeDisplayLabelGroupLocalizationStatements(database, cdb);
+    }
 
     return finalizeTransaction(database, success);
 }
@@ -1990,7 +2074,7 @@ static bool executeSelfContactStatements(QSqlDatabase &database, const bool aggr
     return true;
 }
 
-static bool prepareDatabase(QSqlDatabase &database, const bool aggregating, QString &localeName)
+static bool prepareDatabase(QSqlDatabase &database, ContactsDatabase *cdb, const bool aggregating, QString &localeName)
 {
     if (!configureDatabase(database, localeName))
         return false;
@@ -2001,6 +2085,9 @@ static bool prepareDatabase(QSqlDatabase &database, const bool aggregating, QStr
     bool success = executeCreationStatements(database);
     if (success) {
         success = executeSelfContactStatements(database, aggregating);
+    }
+    if (success) {
+        success = executeDisplayLabelGroupLocalizationStatements(database, cdb);
     }
 
     return finalizeTransaction(database, success);
@@ -2521,6 +2608,34 @@ static size_t databaseOwnershipIndex = 0;
 static size_t databaseConnectionsIndex = 1;
 static size_t writeAccessIndex = 2;
 
+static QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> initializeDisplayLabelGroupGenerators()
+{
+    QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> generators;
+    const QString pluginsPath = QStringLiteral("/usr/lib/qtcontacts-sqlite-qt5/");
+    QDir pluginDir(pluginsPath);
+    const QStringList pluginNames = pluginDir.entryList();
+    for (const QString &plugin : pluginNames) {
+        if (plugin.endsWith(QStringLiteral(".so"))) {
+            QPluginLoader loader(pluginsPath + plugin);
+            QtContactsSqliteExtensions::DisplayLabelGroupGenerator *generator = qobject_cast<QtContactsSqliteExtensions::DisplayLabelGroupGenerator *>(loader.instance());
+            bool inserted = false;
+            const int prio = generator->priority();
+            for (int i = 0; i < generators.size(); ++i) {
+                if (generators.at(i)->priority() < prio) {
+                    generators.insert(i, generator);
+                    inserted = true;
+                    break;
+                }
+            }
+            if (!inserted) {
+                generators.append(generator);
+            }
+        }
+    }
+    return generators;
+}
+static QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> s_dlgGenerators = initializeDisplayLabelGroupGenerators();
+
 // Adapted from the inter-process mutex in QMF
 // The first user creates the semaphore that all subsequent instances
 // attach to.  We rely on undo semantics to release locked semaphores
@@ -2586,6 +2701,7 @@ ContactsDatabase::ContactsDatabase()
     : m_mutex(QMutex::Recursive)
     , m_nonprivileged(false)
     , m_localeName(QLocale().name())
+    , m_defaultGenerator(new DefaultDlgGenerator)
 {
 }
 
@@ -2619,6 +2735,15 @@ bool directoryIsRW(const QString &dirPath)
 bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, bool autoTest, bool secondaryConnection)
 {
     QMutexLocker locker(accessMutex());
+
+    if (m_dlgGenerators.isEmpty()) {
+        for (auto generator : s_dlgGenerators) {
+            if (generator && (generator->name().contains(QStringLiteral("test")) == autoTest)) {
+                m_dlgGenerators.append(generator);
+            }
+        }
+        m_dlgGenerators.append(m_defaultGenerator.data());
+    }
 
     if (m_database.isOpen()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to open database when already open: %1").arg(connectionName));
@@ -2666,7 +2791,7 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
         return false;
     }
 
-    if (!databasePreexisting && !prepareDatabase(m_database, aggregating(), m_localeName)) {
+    if (!databasePreexisting && !prepareDatabase(m_database, this, aggregating(), m_localeName)) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare contacts database - removing: %1")
                 .arg(m_database.lastError().text()));
 
@@ -2696,7 +2821,7 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
                 return false;
             }
 
-            if (!upgradeDatabase(m_database)) {
+            if (!upgradeDatabase(m_database, this)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to upgrade contacts database: %1")
                         .arg(m_database.lastError().text()));
                 m_database.close();
@@ -3098,28 +3223,104 @@ QDateTime ContactsDatabase::fromDateTimeString(const QString &s)
     return QDateTime(datepart, timepart, Qt::UTC);
 }
 
-QString ContactsDatabase::determineDisplayLabelGroup(const QString &firstName, const QString &lastName, const QString &displayLabel)
+QString ContactsDatabase::determineDisplayLabelGroup(const QContact &c) const
 {
-    // XXX TODO!
-    // This is a hacky example only.
-    // In reality, we need to load plugins which do this properly for e.g. Chinese etc also.
-    // And we need to check the system settings to determine if first or last name should be preferred.
+    // TODO: read the preferred detail and field from system settings!
+    const int preferredDetail = QContactName::Type;
+    const int preferredField = QContactName::FieldLastName;
+    QString data;
+    if (preferredDetail == QContactName::Type) {
+        // try to use the preferred field data.
+        if (preferredField == QContactName::FieldLastName) {
+            data = c.detail<QContactName>().lastName();
+        } else if (preferredField == QContactName::FieldFirstName) {
+            data = c.detail<QContactName>().firstName();
+        }
 
-    const QString preferred =
-            !lastName.trimmed().isEmpty() ? lastName :
-            !firstName.trimmed().isEmpty() ? firstName : displayLabel;
+        // preferred field is empty?  try to use the other.
+        if (data.isEmpty()) {
+            if (preferredField == QContactName::FieldLastName) {
+                data = c.detail<QContactName>().firstName();
+            } else {
+                data = c.detail<QContactName>().lastName();
+            }
+        }
 
-    const QChar firstChar = preferred.trimmed().at(0).toUpper();
-
-    if (firstChar >= QChar('A') && firstChar <= QChar('Z')) {
-        return QString(firstChar);
+        // fall back to using display label data
+        if (data.isEmpty()) {
+            data = c.detail<QContactDisplayLabel>().label();
+        }
     }
 
-    if (firstChar.isDigit()) {
-        return QString(QChar('#'));
+    if (preferredDetail == QContactDisplayLabel::Type) {
+        // try to use the preferred field data.
+        data = c.detail<QContactDisplayLabel>().label();
+        // if display label is empty, fall back to name data.
+        if (data.isEmpty()) {
+            data = c.detail<QContactName>().firstName();
+        }
+        if (data.isEmpty()) {
+            data = c.detail<QContactName>().lastName();
+        }
     }
 
-    return QString(QChar('!'));
+    QLocale locale;
+    QString group;
+    for (int i = 0; i < m_dlgGenerators.size(); ++i) {
+        if (m_dlgGenerators.at(i)->validForLocale(locale)) {
+            group = m_dlgGenerators.at(i)->displayLabelGroup(data);
+            if (!group.isNull()) {
+                break;
+            }
+        }
+    }
+
+    return group;
+}
+
+QStringList ContactsDatabase::displayLabelGroups() const
+{
+    QStringList groups;
+    const QLocale locale;
+    for (int i = 0; i < m_dlgGenerators.size(); ++i) {
+        if (m_dlgGenerators.at(i)->validForLocale(locale)) {
+            groups = m_dlgGenerators.at(i)->displayLabelGroups();
+            break;
+        }
+    }
+
+    if (groups.contains(QStringLiteral("#"))) {
+        groups.removeAll(QStringLiteral("#"));
+    }
+
+    {
+        QMutexLocker locker(accessMutex());
+        QSqlQuery selectQuery(m_database);
+        selectQuery.setForwardOnly(true);
+        const QString statement = QStringLiteral("SELECT DISTINCT DisplayLabelGroup FROM Contacts");
+        if (!selectQuery.prepare(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare distinct display label group selection query: %1\n%2")
+                    .arg(selectQuery.lastError().text())
+                    .arg(statement));
+            return QStringList();
+        }
+        if (!selectQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to select distinct display label groups: %1\n%2")
+                    .arg(selectQuery.lastError().text())
+                    .arg(statement));
+            return QStringList();
+        }
+        while (selectQuery.next()) {
+            // naive, but the number of groups should be small.
+            const QString seenGroup = selectQuery.value(0).toString();
+            if (seenGroup != QStringLiteral("#") && !groups.contains(seenGroup)) {
+                groups.append(seenGroup);
+            }
+        }
+    }
+
+    groups.append("#");
+    return groups;
 }
 
 #include "../extensions/qcontactdeactivated_impl.h"
