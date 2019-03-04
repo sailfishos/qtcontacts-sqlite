@@ -154,6 +154,7 @@ public:
 
     QString determineDisplayLabelGroup(const QContact &c) const;
     QStringList displayLabelGroups() const;
+    QStringList possibleDisplayLabelGroups() const;
 
     static bool execute(QSqlQuery &query);
     static bool executeBatch(QSqlQuery &query, QSqlQuery::BatchExecutionMode mode = QSqlQuery::ValuesAsRows);
@@ -179,6 +180,7 @@ private:
     QHash<QString, QSqlQuery> m_preparedQueries;
     QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> m_dlgGenerators;
     QScopedPointer<QtContactsSqliteExtensions::DisplayLabelGroupGenerator> m_defaultGenerator;
+    QStringList m_possibleDisplayLabelGroups;
 };
 
 #endif
