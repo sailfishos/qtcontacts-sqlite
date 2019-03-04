@@ -1411,7 +1411,10 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
         return QString();
     }
 
-    QString sortExpression(QStringLiteral("%1.%2").arg(detail.joinToSort ? detail.table : QStringLiteral("Contacts")).arg(field.column));
+    const bool isDisplayLabelGroup = detail.detailType == QContactDisplayLabel::Type && field.field == QContactDisplayLabel__FieldLabelGroup;
+    QString sortExpression(QStringLiteral("%1.%2")
+            .arg(detail.joinToSort ? detail.table : QStringLiteral("Contacts"))
+            .arg(isDisplayLabelGroup ? QStringLiteral("DisplayLabelGroupSortOrder") : field.column));
     bool sortBlanks = true;
     bool collate = true;
     bool localized = field.fieldType == LocalizedField;
@@ -1458,7 +1461,7 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
 
     result.append(sortExpression);
 
-    if (collate) {
+    if (!isDisplayLabelGroup && collate) {
         if (localized && useLocale) {
             result.append(QLatin1String(" COLLATE localeCollation"));
         } else {
@@ -1936,7 +1939,7 @@ QContactManager::Error ContactReader::queryContacts(
     QContactManager::Error err = QContactManager::NoError;
 
     const QString idsQueryStatement(QString::fromLatin1(
-        "SELECT " // Contacts.*, but order can change due to schema upgrades, so list manually.
+        "SELECT " // order and content can change due to schema upgrades, so list manually.
             "Contacts.contactId, "
             "Contacts.displayLabel, "
             "Contacts.displayLabelGroup, "

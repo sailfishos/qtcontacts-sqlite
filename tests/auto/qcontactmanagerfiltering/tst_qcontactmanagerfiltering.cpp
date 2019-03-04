@@ -1923,11 +1923,6 @@ void tst_QContactManagerFiltering::sorting_data()
         // Note - the current display label algorithm follows that of nemo-qml-plugin-contacts, and does not include prefix
         //newMRow("display label insensitive, binary collation", manager) << manager << dldef << dlfld << asc << false << 0 << ci << "bcdefgaijhk" << "efg"; // the display label is synthesized so that A has "Sir" at the start of it (instead of "Aaron").
         //newMRow("display label sensitive, binary collation", manager) << manager << dldef << dlfld << asc << false << 0 << cs << "bcdefgaikjh" << "efg";
-
-#ifdef DISPLAY_LABEL_GROUP_STORAGE_SUPPORTED
-        FieldIdentifier dlgfld = QContactDisplayLabel__FieldLabelGroup;
-        newMRow("display label group descending, locale collation", manager) << manager << dldef << dlgfld << asc << false << 0 << cs << "abcdefghijk" << "hijk";
-#endif
     }
 }
 

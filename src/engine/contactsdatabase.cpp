@@ -67,7 +67,8 @@ static const char *createContactsTable =
         "\n CREATE TABLE Contacts ("
         "\n contactId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
         "\n displayLabel TEXT,"
-        "\n displayLabelGroup TEXT," // Don't specify `COLLATE localeCollation` as a change in locale would be equivalent to a database corruption
+        "\n displayLabelGroup TEXT,"
+        "\n displayLabelGroupSortOrder INTEGER,"
         "\n firstName TEXT,"
         "\n lowerFirstName TEXT,"
         "\n lastName TEXT,"
@@ -1715,6 +1716,24 @@ static bool addDisplayLabelGroup(QSqlDatabase &database)
         }
         alterQuery.finish();
     }
+    // add the display label group sort order column (precalculated sort index)
+    {
+        QSqlQuery alterQuery(database);
+        const QString statement = QStringLiteral("ALTER TABLE Contacts ADD COLUMN displayLabelGroupSortOrder INTEGER");
+        if (!alterQuery.prepare(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare add display label group sort order column query: %1\n%2")
+                    .arg(alterQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        if (!alterQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to add display label group sort order column: %1\n%2")
+                    .arg(alterQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        alterQuery.finish();
+    }
 
     return true;
 }
@@ -1844,6 +1863,7 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
     // for every single contact in our database, read the data required to generate the display label group data.
     QVariantList contactIds;
     QVariantList displayLabelGroups;
+    QVariantList displayLabelGroupSortOrders;
     {
         QSqlQuery selectQuery(database);
         selectQuery.setForwardOnly(true);
@@ -1876,7 +1896,9 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
             c.saveDetail(&n);
             c.saveDetail(&dl);
 
-            displayLabelGroups.append(cdb->determineDisplayLabelGroup(c));
+            const QString dlg = cdb->determineDisplayLabelGroup(c);
+            displayLabelGroups.append(dlg);
+            displayLabelGroupSortOrders.append(cdb->possibleDisplayLabelGroups().indexOf(dlg) + 1);
         }
         selectQuery.finish();
     }
@@ -1886,10 +1908,11 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
     {
         for (int i = 0; i < displayLabelGroups.size(); i += 167) {
             const QVariantList groups = displayLabelGroups.mid(i, qMin(displayLabelGroups.size() - i, 167));
+            const QVariantList sortorders = displayLabelGroupSortOrders.mid(i, qMin(displayLabelGroups.size() - i, 167));
             const QVariantList ids = contactIds.mid(i, qMin(displayLabelGroups.size() - i, 167));
 
             QSqlQuery updateQuery(database);
-            const QString statement = QStringLiteral("UPDATE Contacts SET displayLabelGroup = ? WHERE contactId = ?");
+            const QString statement = QStringLiteral("UPDATE Contacts SET displayLabelGroup = ?, displayLabelGroupSortOrder = ? WHERE contactId = ?");
             if (!updateQuery.prepare(statement)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare update display label groups query: %1\n%2")
                         .arg(updateQuery.lastError().text())
@@ -1897,6 +1920,7 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
                 return false;
             }
             updateQuery.addBindValue(groups);
+            updateQuery.addBindValue(sortorders);
             updateQuery.addBindValue(ids);
             if (!updateQuery.execBatch()) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to update display label groups: %1\n%2")
@@ -2743,6 +2767,22 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
             }
         }
         m_dlgGenerators.append(m_defaultGenerator.data());
+
+        // and build a "superlist" of possible display label groups
+        // which defines a total sort ordering for display label groups.
+        const QLocale locale;
+        for (auto generator : m_dlgGenerators) {
+            if (generator->validForLocale(locale)) {
+                const QStringList groups = generator->displayLabelGroups();
+                for (const QString &group : groups) {
+                    if (!m_possibleDisplayLabelGroups.contains(group)) {
+                        m_possibleDisplayLabelGroups.append(group);
+                    }
+                }
+            }
+        }
+        m_possibleDisplayLabelGroups.removeAll(QStringLiteral("#"));
+        m_possibleDisplayLabelGroups.append(QStringLiteral("#"));
     }
 
     if (m_database.isOpen()) {
@@ -3321,6 +3361,11 @@ QStringList ContactsDatabase::displayLabelGroups() const
 
     groups.append("#");
     return groups;
+}
+
+QStringList ContactsDatabase::possibleDisplayLabelGroups() const
+{
+    return m_possibleDisplayLabelGroups;
 }
 
 #include "../extensions/qcontactdeactivated_impl.h"

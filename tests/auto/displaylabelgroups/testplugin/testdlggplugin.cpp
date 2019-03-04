@@ -77,8 +77,8 @@ QStringList TestDlgg::displayLabelGroups() const
         QStringLiteral("3"),
         QStringLiteral("4"),
         QStringLiteral("5"),
+        QStringLiteral("O"), // sort O before E to test DisplayLabelGroupSortOrder semantics
         QStringLiteral("E"),
-        QStringLiteral("O"),
     };
     return allGroups;
 }

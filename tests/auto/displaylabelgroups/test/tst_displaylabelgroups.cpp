@@ -238,8 +238,8 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
     // fixup for potential ambiguity in sort order.  3, 7 and 9 all sort equally.
     actualOrder.replace(QChar('7'), QChar('3'));
     actualOrder.replace(QChar('9'), QChar('3'));
-    QCOMPARE(actualOrder,  QStringLiteral("158233346"));
-    QCOMPARE(actualGroups, QStringLiteral("1345EEEOZ"));
+    QCOMPARE(actualOrder,  QStringLiteral("615824333"));
+    QCOMPARE(actualGroups, QStringLiteral("Z1345OEEE"));
 
     // Now sort by display label group followed by last name.
     // We expect the same sorting as display-group-only sorting,
@@ -259,8 +259,8 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
     }
     // fixup for potential ambiguity in sort order.  3 and 9 sort equally.
     actualOrder.replace(QChar('9'), QChar('3'));
-    QCOMPARE(actualOrder,  QStringLiteral("158233746"));
-    QCOMPARE(actualGroups, QStringLiteral("1345EEEOZ"));
+    QCOMPARE(actualOrder,  QStringLiteral("615824337"));
+    QCOMPARE(actualGroups, QStringLiteral("Z1345OEEE"));
 
     // Now sort by display label group followed by first name.
     // We expect the same sorting as display-group-only sorting,
@@ -278,8 +278,8 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
         }
         actualGroups += c.detail<QContactDisplayLabel>().value(QContactDisplayLabel__FieldLabelGroup).toString();
     }
-    QCOMPARE(actualOrder,  QStringLiteral("158279346"));
-    QCOMPARE(actualGroups, QStringLiteral("1345EEEOZ"));
+    QCOMPARE(actualOrder,  QStringLiteral("615824793"));
+    QCOMPARE(actualGroups, QStringLiteral("Z1345OEEE"));
 
     // Now sort by display label group followed by last name followed by first name.
     // We expect the same sorting as display-group-only sorting,
@@ -295,8 +295,8 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
         }
         actualGroups += c.detail<QContactDisplayLabel>().value(QContactDisplayLabel__FieldLabelGroup).toString();
     }
-    QCOMPARE(actualOrder,  QStringLiteral("158293746"));
-    QCOMPARE(actualGroups, QStringLiteral("1345EEEOZ"));
+    QCOMPARE(actualOrder,  QStringLiteral("615824937"));
+    QCOMPARE(actualGroups, QStringLiteral("Z1345OEEE"));
 }
 
 QTEST_MAIN(tst_DisplayLabelGroups)
