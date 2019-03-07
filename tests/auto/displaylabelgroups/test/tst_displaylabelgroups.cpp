@@ -40,6 +40,9 @@
 #include <QContactPhoneNumber>
 #include <QContactHobby>
 
+#include <private/qcontactmanager_p.h>
+#include "contactmanagerengine.h"
+
 #include "qtcontacts-extensions.h"
 
 QTCONTACTS_USE_NAMESPACE
@@ -120,6 +123,19 @@ void tst_DisplayLabelGroups::cleanup()
         m_createdIds.clear();
     }
 }
+
+#define DETERMINE_ACTUAL_ORDER_AND_GROUPS \
+    do { \
+        actualOrder.clear(); \
+        actualGroups.clear(); \
+        for (const QContact &c : sorted) { \
+            actualOrder += c.detail<QContactPhoneNumber>().number(); \
+            if (c.detail<QContactPhoneNumber>().number().isEmpty()) { \
+                actualOrder += c.detail<QContactHobby>().hobby(); \
+            } \
+            actualGroups += c.detail<QContactDisplayLabel>().value(QContactDisplayLabel__FieldLabelGroup).toString(); \
+        } \
+    } while (0)
 
 void tst_DisplayLabelGroups::testDisplayLabelGroups()
 {
@@ -228,13 +244,7 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
     displayLabelGroupSort.setDetailType(QContactDisplayLabel::Type, QContactDisplayLabel__FieldLabelGroup);
     QList<QContact> sorted = m_cm->contacts(displayLabelGroupSort);
     QString actualOrder, actualGroups;
-    for (const QContact &c : sorted) {
-        actualOrder += c.detail<QContactPhoneNumber>().number();
-        if (c.detail<QContactPhoneNumber>().number().isEmpty()) {
-            actualOrder += c.detail<QContactHobby>().hobby();
-        }
-        actualGroups += c.detail<QContactDisplayLabel>().value(QContactDisplayLabel__FieldLabelGroup).toString();
-    }
+    DETERMINE_ACTUAL_ORDER_AND_GROUPS;
     // fixup for potential ambiguity in sort order.  3, 7 and 9 all sort equally.
     actualOrder.replace(QChar('7'), QChar('3'));
     actualOrder.replace(QChar('9'), QChar('3'));
@@ -248,15 +258,7 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
     QContactSortOrder lastNameSort;
     lastNameSort.setDetailType(QContactName::Type, QContactName::FieldLastName);
     sorted = m_cm->contacts(QList<QContactSortOrder>() << displayLabelGroupSort << lastNameSort);
-    actualOrder.clear();
-    actualGroups.clear();
-    for (const QContact &c : sorted) {
-        actualOrder += c.detail<QContactPhoneNumber>().number();
-        if (c.detail<QContactPhoneNumber>().number().isEmpty()) {
-            actualOrder += c.detail<QContactHobby>().hobby();
-        }
-        actualGroups += c.detail<QContactDisplayLabel>().value(QContactDisplayLabel__FieldLabelGroup).toString();
-    }
+    DETERMINE_ACTUAL_ORDER_AND_GROUPS;
     // fixup for potential ambiguity in sort order.  3 and 9 sort equally.
     actualOrder.replace(QChar('9'), QChar('3'));
     QCOMPARE(actualOrder,  QStringLiteral("615824337"));
@@ -269,15 +271,7 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
     QContactSortOrder firstNameSort;
     firstNameSort.setDetailType(QContactName::Type, QContactName::FieldFirstName);
     sorted = m_cm->contacts(QList<QContactSortOrder>() << displayLabelGroupSort << firstNameSort);
-    actualOrder.clear();
-    actualGroups.clear();
-    for (const QContact &c : sorted) {
-        actualOrder += c.detail<QContactPhoneNumber>().number();
-        if (c.detail<QContactPhoneNumber>().number().isEmpty()) {
-            actualOrder += c.detail<QContactHobby>().hobby();
-        }
-        actualGroups += c.detail<QContactDisplayLabel>().value(QContactDisplayLabel__FieldLabelGroup).toString();
-    }
+    DETERMINE_ACTUAL_ORDER_AND_GROUPS;
     QCOMPARE(actualOrder,  QStringLiteral("615824793"));
     QCOMPARE(actualGroups, QStringLiteral("Z1345OEEE"));
 
@@ -286,17 +280,56 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
     // except that contact 9's last name causes it to be sorted before contact 7,
     // and contact 9 should sort before contact 3 due to the first name.
     sorted = m_cm->contacts(QList<QContactSortOrder>() << displayLabelGroupSort << lastNameSort << firstNameSort);
-    actualOrder.clear();
-    actualGroups.clear();
-    for (const QContact &c : sorted) {
-        actualOrder += c.detail<QContactPhoneNumber>().number();
-        if (c.detail<QContactPhoneNumber>().number().isEmpty()) {
-            actualOrder += c.detail<QContactHobby>().hobby();
-        }
-        actualGroups += c.detail<QContactDisplayLabel>().value(QContactDisplayLabel__FieldLabelGroup).toString();
-    }
+    DETERMINE_ACTUAL_ORDER_AND_GROUPS;
     QCOMPARE(actualOrder,  QStringLiteral("615824937"));
     QCOMPARE(actualGroups, QStringLiteral("Z1345OEEE"));
+
+    // Now add a contact which has a special name such that the test
+    // display label group generator plugin will generate a group
+    // for it which was previously "unknown".
+    // We expect that group to be added before '#' but after other groups.
+    typedef QtContactsSqliteExtensions::ContactManagerEngine EngineType;
+    EngineType *cme = dynamic_cast<EngineType *>(QContactManagerData::managerData(m_cm)->m_engine);
+    const QStringList oldContactDisplayLabelGroups = cme->displayLabelGroups();
+    QSignalSpy dlgcSpy(cme, SIGNAL(displayLabelGroupsChanged(QStringList)));
+
+    QContact c10, c11;
+    QContactName n10, n11;
+    QContactDisplayLabel d10, d11;
+    QContactPhoneNumber p10, p11;
+
+    n10.setLastName("10ten"); // first letter is digit, should be in #.
+    n10.setFirstName("Ten");
+    d10.setLabel("Test J Contact");
+    p10.setNumber("J");
+    c10.saveDetail(&n10);
+    c10.saveDetail(&d10);
+    c10.saveDetail(&p10);
+
+    n11.setLastName("tst_displaylabelgroups_unknown_dlg"); // special case, group &.
+    n11.setFirstName("Eleven");
+    d11.setLabel("Test K Contact");
+    p11.setNumber("K");
+    c11.saveDetail(&n11);
+    c11.saveDetail(&d11);
+    c11.saveDetail(&p11);
+
+    QVERIFY(m_cm->saveContact(&c10));
+    QVERIFY(m_cm->saveContact(&c11));
+
+    // ensure that the resultant sort order is expected
+    sorted = m_cm->contacts(QList<QContactSortOrder>() << displayLabelGroupSort << lastNameSort << firstNameSort);
+    DETERMINE_ACTUAL_ORDER_AND_GROUPS;
+    QCOMPARE(actualOrder,  QStringLiteral("615824937KJ"));
+    QCOMPARE(actualGroups, QStringLiteral("Z1345OEEE&#"));
+
+    // should have received signal that display label groups have changed.
+    QTest::qWait(250);
+    QCOMPARE(dlgcSpy.count(), 1);
+    QStringList expected(oldContactDisplayLabelGroups);
+    expected.insert(expected.size() - 1, QStringLiteral("&")); // & group should have been inserted before #.
+    QList<QVariant> data = dlgcSpy.takeFirst();
+    QCOMPARE(data.first().value<QStringList>(), expected);
 }
 
 QTEST_MAIN(tst_DisplayLabelGroups)
