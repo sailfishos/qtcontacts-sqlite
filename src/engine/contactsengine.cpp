@@ -69,13 +69,13 @@ class Job
 {
 public:
     struct WriterProxy {
-        const ContactsEngine &engine;
+        ContactsEngine &engine;
         ContactsDatabase &database;
         ContactNotifier &notifier;
         ContactReader &reader;
         mutable ContactWriter *writer;
 
-        WriterProxy(const ContactsEngine &e, ContactsDatabase &db, ContactNotifier &n, ContactReader &r)
+        WriterProxy(ContactsEngine &e, ContactsDatabase &db, ContactNotifier &n, ContactReader &r)
             : engine(e), database(db), notifier(n), reader(r), writer(0)
         {
         }
@@ -518,6 +518,7 @@ public:
     JobThread(ContactsEngine *engine, const QString &databaseUuid, bool nonprivileged, bool autoTest)
         : m_currentJob(0)
         , m_engine(engine)
+        , m_database(engine)
         , m_databaseUuid(databaseUuid)
         , m_updatePending(false)
         , m_running(false)
@@ -1174,7 +1175,7 @@ QList<QContactType::TypeValues> ContactsEngine::supportedContactTypes() const
     return QList<QContactType::TypeValues>() << QContactType::TypeContact;
 }
 
-void ContactsEngine::regenerateDisplayLabel(QContact &contact) const
+void ContactsEngine::regenerateDisplayLabel(QContact &contact)
 {
     QContactManager::Error displayLabelError = QContactManager::NoError;
     const QString label = synthesizedDisplayLabel(contact, &displayLabelError);
@@ -1412,9 +1413,9 @@ void ContactsEngine::_q_syncContactsChanged(const QStringList &syncTargets)
     emit syncContactsChanged(syncTargets);
 }
 
-void ContactsEngine::_q_displayLabelGroupsChanged(const QStringList &groups)
+void ContactsEngine::_q_displayLabelGroupsChanged()
 {
-    emit displayLabelGroupsChanged(groups);
+    emit displayLabelGroupsChanged(displayLabelGroups());
 }
 
 void ContactsEngine::_q_contactsRemoved(const QVector<quint32> &contactIds)
@@ -1443,7 +1444,7 @@ ContactsDatabase &ContactsEngine::database()
         QString dbId(QStringLiteral("qtcontacts-sqlite%1-%2"));
         dbId = dbId.arg(m_autoTest ? QStringLiteral("-test") : QString()).arg(databaseUuid());
 
-        m_database.reset(new ContactsDatabase);
+        m_database.reset(new ContactsDatabase(this));
         if (!m_database->open(dbId, m_nonprivileged, m_autoTest, true)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to open synchronous engine database connection"));
         }

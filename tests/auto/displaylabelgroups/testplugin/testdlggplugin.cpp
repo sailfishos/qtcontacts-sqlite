@@ -79,12 +79,23 @@ QStringList TestDlgg::displayLabelGroups() const
         QStringLiteral("5"),
         QStringLiteral("O"), // sort O before E to test DisplayLabelGroupSortOrder semantics
         QStringLiteral("E"),
+        QStringLiteral("#"),
     };
     return allGroups;
 }
 
 QString TestDlgg::displayLabelGroup(const QString &data) const
 {
+    if (data.size() && data.at(0).isDigit()) {
+        return QStringLiteral("#"); // default # group for numeric names
+    }
+
+    if (data == QStringLiteral("tst_displaylabelgroups_unknown_dlg")) {
+        // special case: return a group which is NOT included in the "all groups" above.
+        // this allows us to test that dynamic group adding works as expected.
+        return QStringLiteral("&"); // should be sorted before '#' but after every other group.
+    }
+
     if (data.size() > 5) {
         return (data.size() % 2 == 0) ? QStringLiteral("E") : QStringLiteral("O");
     }

@@ -132,7 +132,7 @@ public:
     bool isRelationshipTypeSupported(const QString &relationshipType, QContactType::TypeValues contactType) const override;
     QList<QContactType::TypeValues> supportedContactTypes() const override;
 
-    void regenerateDisplayLabel(QContact &contact) const;
+    void regenerateDisplayLabel(QContact &contact);
 
     bool fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
                            QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
@@ -176,7 +176,7 @@ private slots:
     void _q_selfContactIdChanged(quint32,quint32);
     void _q_relationshipsAdded(const QVector<quint32> &contactIds);
     void _q_relationshipsRemoved(const QVector<quint32> &contactIds);
-    void _q_displayLabelGroupsChanged(const QStringList &groups);
+    void _q_displayLabelGroupsChanged();
 
 private:
     QString databaseUuid();

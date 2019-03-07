@@ -47,6 +47,7 @@
 
 #include <QContact>
 
+class ContactsEngine;
 class ContactsDatabase
 {
 public:
@@ -105,7 +106,7 @@ public:
         void reportError(const char *text) const;
     };
 
-    ContactsDatabase();
+    ContactsDatabase(ContactsEngine *engine);
     ~ContactsDatabase();
 
     QMutex *accessMutex() const;
@@ -152,9 +153,9 @@ public:
     bool removeTransientDetails(quint32 contactId);
     bool removeTransientDetails(const QList<quint32> &contactIds);
 
-    QString determineDisplayLabelGroup(const QContact &c) const;
+    QString determineDisplayLabelGroup(const QContact &c);
     QStringList displayLabelGroups() const;
-    QStringList possibleDisplayLabelGroups() const;
+    int displayLabelGroupSortValue(const QString &group) const;
 
     static bool execute(QSqlQuery &query);
     static bool executeBatch(QSqlQuery &query, QSqlQuery::BatchExecutionMode mode = QSqlQuery::ValuesAsRows);
@@ -171,6 +172,7 @@ public:
     static QDateTime fromDateTimeString(const QString &s);
 
 private:
+    ContactsEngine *m_engine;
     QSqlDatabase m_database;
     ContactsTransientStore m_transientStore;
     QMutex m_mutex;
@@ -180,7 +182,7 @@ private:
     QHash<QString, QSqlQuery> m_preparedQueries;
     QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> m_dlgGenerators;
     QScopedPointer<QtContactsSqliteExtensions::DisplayLabelGroupGenerator> m_defaultGenerator;
-    QStringList m_possibleDisplayLabelGroups;
+    QMap<QString, int> m_knownDisplayLabelGroupsSortValues;
 };
 
 #endif

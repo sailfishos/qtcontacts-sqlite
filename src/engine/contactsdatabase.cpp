@@ -1898,7 +1898,7 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
 
             const QString dlg = cdb->determineDisplayLabelGroup(c);
             displayLabelGroups.append(dlg);
-            displayLabelGroupSortOrders.append(cdb->possibleDisplayLabelGroups().indexOf(dlg) + 1);
+            displayLabelGroupSortOrders.append(cdb->displayLabelGroupSortValue(dlg));
         }
         selectQuery.finish();
     }
@@ -2660,6 +2660,60 @@ static QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> initiali
 }
 static QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> s_dlgGenerators = initializeDisplayLabelGroupGenerators();
 
+static qint32 displayLabelGroupSortValue(const QString &group, const QMap<QString, int> &knownDisplayLabelGroups)
+{
+    static const int maxUnicodeCodePointValue = 1114111; // 0x10FFFF
+    static const int numberGroupSortValue = maxUnicodeCodePointValue + 1;
+
+    qint32 retn = -1;
+    if (!group.isEmpty()) {
+        retn = group == QStringLiteral("#") ? numberGroupSortValue : knownDisplayLabelGroups.value(group, -1);
+        if (retn < 0) {
+            // the group is not a previously-known display label group.
+            // convert the group to a utf32 code point value.
+            const QChar first = group.at(0);
+            if (first.isSurrogate()) {
+                if (group.size() >= 2) {
+                    const QChar second = group.at(1);
+                    retn = ((first.isHighSurrogate() ? first.unicode() : second.unicode() - 0xD800) * 0x400)
+                         + (second.isLowSurrogate() ? second.unicode() : first.unicode() - 0xDC00) + 0x10000;
+                } else {
+                    // cannot calculate the true codepoint without the second character in the surrogate pair.
+                    // assume that it's the very last possible codepoint.
+                    retn = maxUnicodeCodePointValue;
+                }
+            } else {
+                // use the unicode code point value as the sort value.
+                retn = first.unicode();
+
+                // resolve overlap issue by compressing overlapping groups
+                // into a single subsequent group.
+                // e.g. in Chinese locale, there may be more than
+                // 65 default display label groups, and thus the
+                // letter 'A' (whose unicode value is 65) would overlap.
+                int lastContiguousSortValue = -1;
+                for (int sortValue : knownDisplayLabelGroups) {
+                    if (sortValue != (lastContiguousSortValue + 1)) {
+                        break;
+                    }
+                    lastContiguousSortValue = sortValue;
+                }
+
+                // instead of placing into LCSV+1, we place into LCSV+2
+                // to ensure that ALL overlapping groups are compressed
+                // into the same group, in order to avoid "first seen
+                // will sort first" issues (e.g. B < A).
+                const int compressedSortValue = lastContiguousSortValue + 2;
+                if (retn < compressedSortValue) {
+                    retn = compressedSortValue;
+                }
+            }
+        }
+    }
+
+    return retn;
+}
+
 // Adapted from the inter-process mutex in QMF
 // The first user creates the semaphore that all subsequent instances
 // attach to.  We rely on undo semantics to release locked semaphores
@@ -2721,8 +2775,9 @@ void ContactsDatabase::Query::reportError(const char *text) const
     reportError(QString::fromLatin1(text));
 }
 
-ContactsDatabase::ContactsDatabase()
-    : m_mutex(QMutex::Recursive)
+ContactsDatabase::ContactsDatabase(ContactsEngine *engine)
+    : m_engine(engine)
+    , m_mutex(QMutex::Recursive)
     , m_nonprivileged(false)
     , m_localeName(QLocale().name())
     , m_defaultGenerator(new DefaultDlgGenerator)
@@ -2768,21 +2823,38 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
         }
         m_dlgGenerators.append(m_defaultGenerator.data());
 
-        // and build a "superlist" of possible display label groups
-        // which defines a total sort ordering for display label groups.
+        // and build a "superlist" of known display label groups.
         const QLocale locale;
+        QStringList knownDisplayLabelGroups;
         for (auto generator : m_dlgGenerators) {
             if (generator->validForLocale(locale)) {
                 const QStringList groups = generator->displayLabelGroups();
                 for (const QString &group : groups) {
-                    if (!m_possibleDisplayLabelGroups.contains(group)) {
-                        m_possibleDisplayLabelGroups.append(group);
+                    if (!knownDisplayLabelGroups.contains(group)) {
+                        knownDisplayLabelGroups.append(group);
                     }
                 }
             }
         }
-        m_possibleDisplayLabelGroups.removeAll(QStringLiteral("#"));
-        m_possibleDisplayLabelGroups.append(QStringLiteral("#"));
+        knownDisplayLabelGroups.removeAll(QStringLiteral("#"));
+        knownDisplayLabelGroups.append(QStringLiteral("#"));
+
+        // from that list, build a mapping from group to sort priority value,
+        // based upon the position of each group in the list,
+        // which defines a total sort ordering for known display label groups.
+        for (int i = 0; i < knownDisplayLabelGroups.size(); ++i) {
+            const QString &group(knownDisplayLabelGroups.at(i));
+            m_knownDisplayLabelGroupsSortValues.insert(
+                    group,
+                    group == QStringLiteral("#")
+                            ? ::displayLabelGroupSortValue(group, m_knownDisplayLabelGroupsSortValues)
+                            : i);
+        }
+
+        // XXX TODO: do we need to add groups which currently exist in the database,
+        // but which aren't currently included in the m_knownDisplayLabelGroupsSortValues?
+        // I don't think we do, since it only matters on write, and we will update
+        // the m_knownDisplayLabelGroupsSortValues in determineDisplayLabelGroup() during write...
     }
 
     if (m_database.isOpen()) {
@@ -3263,11 +3335,12 @@ QDateTime ContactsDatabase::fromDateTimeString(const QString &s)
     return QDateTime(datepart, timepart, Qt::UTC);
 }
 
-QString ContactsDatabase::determineDisplayLabelGroup(const QContact &c) const
+QString ContactsDatabase::determineDisplayLabelGroup(const QContact &c)
 {
-    // TODO: read the preferred detail and field from system settings!
+    // XXXXXXXX TODO: read the preferred detail and field from system settings!
     const int preferredDetail = QContactName::Type;
     const int preferredField = QContactName::FieldLastName;
+
     QString data;
     if (preferredDetail == QContactName::Type) {
         // try to use the preferred field data.
@@ -3315,6 +3388,21 @@ QString ContactsDatabase::determineDisplayLabelGroup(const QContact &c) const
         }
     }
 
+    if (!group.isEmpty() && !m_knownDisplayLabelGroupsSortValues.contains(group)) {
+        // We are about to write a contact to the database which has a
+        // display label group which previously was not known / observed.
+        // Calculate the sort value for the display label group,
+        // and add it to our map of displayLabelGroup->sortValue.
+        // Note: this should be thread-safe since we only call this method within writes.
+        m_knownDisplayLabelGroupsSortValues.insert(
+                group, ::displayLabelGroupSortValue(
+                    group,
+                    m_knownDisplayLabelGroupsSortValues));
+
+        // and invoke engine->_q_displayLabelGroupsChanged() asynchronously.
+        QMetaObject::invokeMethod(m_engine, "_q_displayLabelGroupsChanged", Qt::QueuedConnection);
+    }
+
     return group;
 }
 
@@ -3337,7 +3425,7 @@ QStringList ContactsDatabase::displayLabelGroups() const
         QMutexLocker locker(accessMutex());
         QSqlQuery selectQuery(m_database);
         selectQuery.setForwardOnly(true);
-        const QString statement = QStringLiteral("SELECT DISTINCT DisplayLabelGroup FROM Contacts");
+        const QString statement = QStringLiteral("SELECT DISTINCT DisplayLabelGroup FROM Contacts ORDER BY DisplayLabelGroupSortOrder ASC");
         if (!selectQuery.prepare(statement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare distinct display label group selection query: %1\n%2")
                     .arg(selectQuery.lastError().text())
@@ -3363,9 +3451,11 @@ QStringList ContactsDatabase::displayLabelGroups() const
     return groups;
 }
 
-QStringList ContactsDatabase::possibleDisplayLabelGroups() const
+int ContactsDatabase::displayLabelGroupSortValue(const QString &group) const
 {
-    return m_possibleDisplayLabelGroups;
+    static const int maxUnicodeCodePointValue = 1114111; // 0x10FFFF
+    static const int nullGroupSortValue = maxUnicodeCodePointValue + 1;
+    return m_knownDisplayLabelGroupsSortValues.value(group, nullGroupSortValue);
 }
 
 #include "../extensions/qcontactdeactivated_impl.h"

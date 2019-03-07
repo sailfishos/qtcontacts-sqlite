@@ -139,7 +139,7 @@ static const QString matchEmailAddressesTable(QString::fromLatin1("matchEmailAdd
 static const QString matchPhoneNumbersTable(QString::fromLatin1("matchPhoneNumbers"));
 static const QString matchOnlineAccountsTable(QString::fromLatin1("matchOnlineAccounts"));
 
-ContactWriter::ContactWriter(const ContactsEngine &engine, ContactsDatabase &database, ContactNotifier *notifier, ContactReader *reader)
+ContactWriter::ContactWriter(ContactsEngine &engine, ContactsDatabase &database, ContactNotifier *notifier, ContactReader *reader)
     : m_engine(engine)
     , m_database(database)
     , m_notifier(notifier)
@@ -5625,7 +5625,7 @@ ContactsDatabase::Query ContactWriter::bindContactDetails(const QContact &contac
     query.bindValue(0, displayLabel);
     const QString displayLabelGroup = m_database.determineDisplayLabelGroup(contact);
     query.bindValue(1, displayLabelGroup);
-    const int displayLabelGroupSortOrder = m_database.possibleDisplayLabelGroups().indexOf(displayLabelGroup) + 1;
+    const int displayLabelGroupSortOrder = m_database.displayLabelGroupSortValue(displayLabelGroup);
     query.bindValue(2, displayLabelGroupSortOrder);
 
     query.bindValue(3, firstName);
