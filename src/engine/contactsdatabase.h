@@ -36,6 +36,10 @@
 #include "contactstransientstore.h"
 #include "../extensions/displaylabelgroupgenerator.h"
 
+#ifdef HAS_MLITE
+#include <mgconfitem.h>
+#endif
+
 #include <QHash>
 #include <QMutex>
 #include <QScopedPointer>
@@ -153,6 +157,8 @@ public:
     bool removeTransientDetails(quint32 contactId);
     bool removeTransientDetails(const QList<quint32> &contactIds);
 
+    void regenerateDisplayLabelGroups();
+    QString displayLabelGroupPreferredProperty() const;
     QString determineDisplayLabelGroup(const QContact &c);
     QStringList displayLabelGroups() const;
     int displayLabelGroupSortValue(const QString &group) const;
@@ -183,6 +189,9 @@ private:
     QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> m_dlgGenerators;
     QScopedPointer<QtContactsSqliteExtensions::DisplayLabelGroupGenerator> m_defaultGenerator;
     QMap<QString, int> m_knownDisplayLabelGroupsSortValues;
+#ifdef HAS_MLITE
+    MGConfItem m_groupPropertyConf;
+#endif // HAS_MLITE
 };
 
 #endif

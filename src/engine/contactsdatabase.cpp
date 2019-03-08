@@ -1809,10 +1809,11 @@ static bool finalizeTransaction(QSqlDatabase &database, bool success)
 template <typename T> static int lengthOf(T) { return 0; }
 template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
 
-static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &database, ContactsDatabase *cdb)
+static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &database, ContactsDatabase *cdb, bool *changed = Q_NULLPTR)
 {
-    // determine if the current system locale is equal to that used for the display label groups
+    // determine if the current system locale is equal to that used for the display label groups.
     // if not, update them all.
+    bool sameLocale = false;
     bool settingExists = false;
     const QString localeName = QLocale().name();
     {
@@ -1834,13 +1835,13 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
         if (selectQuery.next()) {
             settingExists = true;
             if (selectQuery.value(0).toString() == localeName) {
-                return true; // no need to update the display label groups.
+                sameLocale = true; // no need to update the display label groups due to locale.
             }
         }
     }
 
-    // update the database settings with the current locale name.
-    {
+    // update the database settings with the current locale name if needed.
+    if (!sameLocale) {
         QSqlQuery setLocaleQuery(database);
         const QString statement = settingExists
                                 ? QStringLiteral("UPDATE DbSettings SET Value = ? WHERE Name = 'LocaleName'")
@@ -1858,6 +1859,68 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
                     .arg(statement));
             return false;
         }
+    }
+
+#ifndef HAS_MLITE
+    bool sameGroupProperty = true;
+#else
+    // also determine if the current system setting for deriving the group from the first vs last
+    // name is the same since the display label groups were generated.
+    // if not, update them all.
+    bool sameGroupProperty = false;
+    const QString groupProperty = cdb->displayLabelGroupPreferredProperty();
+    {
+        QSqlQuery selectQuery(database);
+        selectQuery.setForwardOnly(true);
+        const QString statement = QStringLiteral("SELECT Value FROM DbSettings WHERE Name = 'GroupProperty'");
+        if (!selectQuery.prepare(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare group property setting selection query: %1\n%2")
+                    .arg(selectQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        if (!selectQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to select group property setting value: %1\n%2")
+                    .arg(selectQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        if (selectQuery.next()) {
+            settingExists = true;
+            if (selectQuery.value(0).toString() == groupProperty) {
+                sameGroupProperty = true; // no need to update the display label groups due to group property.
+            }
+        }
+    }
+
+    // update the database settings with the current group property name if needed.
+    if (!sameGroupProperty) {
+        QSqlQuery setGroupPropertyQuery(database);
+        const QString statement = settingExists
+                                ? QStringLiteral("UPDATE DbSettings SET Value = ? WHERE Name = 'GroupProperty'")
+                                : QStringLiteral("INSERT INTO DbSettings (Name, Value) VALUES ('GroupProperty', ?)");
+        if (!setGroupPropertyQuery.prepare(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare group property setting update query: %1\n%2")
+                    .arg(setGroupPropertyQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        setGroupPropertyQuery.addBindValue(QVariant(groupProperty));
+        if (!setGroupPropertyQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to update group property setting value: %1\n%2")
+                    .arg(setGroupPropertyQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+    }
+#endif // HAS_MLITE
+
+    if (sameLocale && sameGroupProperty) {
+        // no need to update the previously generated display label groups.
+        if (changed) *changed = false;
+        return true;
+    } else {
+        if (changed) *changed = true;
     }
 
     // for every single contact in our database, read the data required to generate the display label group data.
@@ -2781,7 +2844,20 @@ ContactsDatabase::ContactsDatabase(ContactsEngine *engine)
     , m_nonprivileged(false)
     , m_localeName(QLocale().name())
     , m_defaultGenerator(new DefaultDlgGenerator)
+#ifdef HAS_MLITE
+    , m_groupPropertyConf(QLatin1String("/org/nemomobile/contacts/group_property"))
+#endif // HAS_MLITE
 {
+#ifdef HAS_MLITE
+    QObject::connect(&m_groupPropertyConf, &MGConfItem::valueChanged, [this, engine] {
+        this->regenerateDisplayLabelGroups();
+        // expensive, but if we don't do it, in multi-process case some clients may not get updated...
+        // if contacts backend were daemonised, this problem would go away...
+        // Emit some engine signals asynchronously.
+        QMetaObject::invokeMethod(engine, "_q_displayLabelGroupsChanged", Qt::QueuedConnection);
+        QMetaObject::invokeMethod(engine, "dataChanged", Qt::QueuedConnection);
+    });
+#endif // HAS_MLITE
 }
 
 ContactsDatabase::~ContactsDatabase()
@@ -3335,11 +3411,58 @@ QDateTime ContactsDatabase::fromDateTimeString(const QString &s)
     return QDateTime(datepart, timepart, Qt::UTC);
 }
 
+void ContactsDatabase::regenerateDisplayLabelGroups()
+{
+    if (!beginTransaction()) {
+        qWarning() << "Unable to begin transaction to regenerate display label groups";
+    } else {
+        bool changed = false;
+        bool success = executeDisplayLabelGroupLocalizationStatements(m_database, this, &changed);
+        if (success) {
+            if (!commitTransaction()) {
+                qWarning() << "Failed to commit regenerated display label groups";
+                rollbackTransaction();
+            } else if (changed) {
+                // TODO: when daemonised, emit here instead of in the lambda!
+                // Emit some engine signals asynchronously.
+                //QMetaObject::invokeMethod(m_engine, "_q_displayLabelGroupsChanged", Qt::QueuedConnection);
+                //QMetaObject::invokeMethod(m_engine, "dataChanged", Qt::QueuedConnection);
+            }
+        } else {
+            qWarning() << "Failed to regenerate display label groups";
+            rollbackTransaction();
+        }
+    }
+}
+
+QString ContactsDatabase::displayLabelGroupPreferredProperty() const
+{
+    QString retn(QStringLiteral("QContactName::FieldLastName"));
+#ifdef HAS_MLITE
+    const QVariant groupPropertyConf = m_groupPropertyConf.value();
+    if (groupPropertyConf.isValid()) {
+        const QString gpcString = groupPropertyConf.toString();
+        if (gpcString.compare(QStringLiteral("FirstName"), Qt::CaseInsensitive) == 0) {
+            retn = QStringLiteral("QContactName::FieldFirstName");
+        } else if (gpcString.compare(QStringLiteral("DisplayLabel"), Qt::CaseInsensitive) == 0) {
+            retn = QStringLiteral("QContactDisplayLabel::FieldLabel");
+        }
+    }
+#endif
+    return retn;
+}
+
 QString ContactsDatabase::determineDisplayLabelGroup(const QContact &c)
 {
-    // XXXXXXXX TODO: read the preferred detail and field from system settings!
-    const int preferredDetail = QContactName::Type;
-    const int preferredField = QContactName::FieldLastName;
+    // Read system setting to determine whether display label group
+    // should be generated from last name, first name, or display label.
+    const QString prefDlgProp = displayLabelGroupPreferredProperty();
+    const int preferredDetail = prefDlgProp.startsWith("QContactName")
+            ? QContactName::Type
+            : QContactDisplayLabel::Type;
+    const int preferredField = prefDlgProp.endsWith("FieldLastName")
+            ? QContactName::FieldLastName
+            : QContactName::FieldFirstName;
 
     QString data;
     if (preferredDetail == QContactName::Type) {

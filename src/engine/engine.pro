@@ -10,7 +10,12 @@ PLUGIN_TYPE=contacts
 DESTDIR=$${PLUGIN_TYPE}
 
 CONFIG += link_pkgconfig
-PKGCONFIG += mlocale5
+packagesExist(mlite5) {
+    PKGCONFIG += mlite5
+    DEFINES += HAS_MLITE
+} else {
+    warning("mlite not available. Display label groups will be generated from last name.")
+}
 
 # we hardcode this for Qt4 as there's no GenericDataLocation offered by QDesktopServices
 DEFINES += 'QTCONTACTS_SQLITE_PRIVILEGED_DIR=\'\"privileged\"\''
