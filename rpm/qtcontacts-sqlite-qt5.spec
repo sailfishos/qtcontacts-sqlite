@@ -10,6 +10,7 @@ BuildRequires: pkgconfig(Qt5Core)
 BuildRequires: pkgconfig(Qt5Sql)
 BuildRequires: pkgconfig(Qt5DBus)
 BuildRequires: pkgconfig(Qt5Contacts)
+BuildRequires: pkgconfig(mlite5)
 Requires: qt5-plugin-sqldriver-sqlite
 
 %description
