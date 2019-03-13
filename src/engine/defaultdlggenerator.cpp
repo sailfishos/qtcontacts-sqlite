@@ -110,7 +110,7 @@ QStringList DefaultDlgGenerator::displayLabelGroups() const
         QStringLiteral("Y"),
         QStringLiteral("Z"),
         QStringLiteral("#"),
-        QStringLiteral("!")
+        QStringLiteral("?")
     };
     return groups;
 }
@@ -130,8 +130,8 @@ QString DefaultDlgGenerator::displayLabelGroup(const QString &data) const
     }
 
     if (group.isEmpty()) {
-        // unknown group. put in "other" group '!'
-        group = QStringLiteral("!");
+        // unknown group. put in "other" group '?'
+        group = QStringLiteral("?");
     }
 
     return group;
