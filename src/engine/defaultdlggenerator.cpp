@@ -50,7 +50,7 @@
       is within 'A'..'Z' it returns that character.
       (TODO: perform a unidecode transliteration first.)
 
-   4) otherwise, the group is '!'
+   4) otherwise, the group is '?'
 
    For example, if the preferred detail is
    QContactName::Type and the preferred field is
@@ -110,7 +110,7 @@ QStringList DefaultDlgGenerator::displayLabelGroups() const
         QStringLiteral("Y"),
         QStringLiteral("Z"),
         QStringLiteral("#"),
-        QStringLiteral("!")
+        QStringLiteral("?")
     };
     return groups;
 }
@@ -130,8 +130,8 @@ QString DefaultDlgGenerator::displayLabelGroup(const QString &data) const
     }
 
     if (group.isEmpty()) {
-        // unknown group. put in "other" group '!'
-        group = QStringLiteral("!");
+        // unknown group. put in "other" group '?'
+        group = QStringLiteral("?");
     }
 
     return group;
