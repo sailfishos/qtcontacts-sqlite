@@ -39,8 +39,8 @@ namespace {
 QString normalize(const QString &input, int flags, int maxCharacters)
 {
     // Allow '[' and ']' even though RFC3966 doesn't
-    static const QString allowedSeparators(QString::fromLatin1(" .-()[]"));
-    static const QString dtmfChars(QString::fromLatin1("pPwWxX#*"));
+    static const QString allowedSeparators(QString::fromLatin1(" -()[]"));
+    static const QString dtmfChars(QString::fromLatin1("pP,.wWxX#*"));
     static const QString sipScheme(QString::fromLatin1("sips:"));
     static const QString hashControl(QString::fromLatin1("#31#"));
     static const QString starControl(QString::fromLatin1("*31#"));
