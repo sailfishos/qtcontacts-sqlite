@@ -240,7 +240,7 @@ static void setValues(QContactAnniversary *detail, QSqlQuery *query, const int o
 
     setValue(detail, T::FieldOriginalDate, dateValue(query->value(offset + 0)));
     setValue(detail, T::FieldCalendarId  , query->value(offset + 1));
-    setValue(detail, T::FieldSubType     , QVariant::fromValue<int>(query->value(offset + 2).toString().toInt()));
+    setValue(detail, T::FieldSubType     , QVariant::fromValue<QString>(query->value(offset + 2).toString()));
     setValue(detail, T::FieldEvent       , query->value(offset + 3));
 }
 
@@ -532,7 +532,7 @@ static void setValues(QContactUrl *detail, QSqlQuery *query, const int offset)
     typedef QContactUrl T;
 
     setValue(detail, T::FieldUrl    , urlValue(query->value(offset + 0)));
-    setValue(detail, T::FieldSubType, QVariant::fromValue<int>(query->value(offset + 1).toString().toInt()));
+    setValue(detail, T::FieldSubType, QVariant::fromValue<QString>(query->value(offset + 1).toString()));
 }
 
 static const FieldInfo originMetadataFields[] =

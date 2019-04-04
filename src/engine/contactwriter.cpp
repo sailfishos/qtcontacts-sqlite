@@ -1659,7 +1659,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.addBindValue(contactId);
     query.addBindValue(detailValue(detail, T::FieldOriginalDate));
     query.addBindValue(detailValue(detail, T::FieldCalendarId));
-    query.addBindValue(QString::number(detail.subType()));
+    query.addBindValue(detail.hasValue(T::FieldSubType) ? QString::number(detail.subType()) : QString());
     query.addBindValue(detail.value<QString>(T::FieldEvent).trimmed());
     return query;
 }
@@ -2172,7 +2172,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.addBindValue(detailId);
     query.addBindValue(contactId);
     query.addBindValue(detail.value<QString>(T::FieldUrl).trimmed());
-    query.addBindValue(QString::number(detail.subType()));
+    query.addBindValue(detail.hasValue(T::FieldSubType) ? QString::number(detail.subType()) : QString());
     return query;
 }
 
