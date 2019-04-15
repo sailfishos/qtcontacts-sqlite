@@ -72,7 +72,7 @@ class ContactWriter
 public:
     typedef QList<QContactDetail::DetailType> DetailList;
 
-    ContactWriter(const ContactsEngine &engine, ContactsDatabase &database, ContactNotifier *notifier, ContactReader *reader);
+    ContactWriter(ContactsEngine &engine, ContactsDatabase &database, ContactNotifier *notifier, ContactReader *reader);
     ~ContactWriter();
 
     QContactManager::Error save(
@@ -167,7 +167,7 @@ private:
 
     template <typename T> bool removeCommonDetails(quint32 contactId, QContactManager::Error *error);
 
-    const ContactsEngine &m_engine;
+    ContactsEngine &m_engine;
     ContactsDatabase &m_database;
     ContactNotifier *m_notifier;
     ContactReader *m_reader;

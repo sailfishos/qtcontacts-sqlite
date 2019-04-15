@@ -31,6 +31,8 @@
 
 #include <QContactManager>
 #include <QContactFetchRequest>
+#include <QContactRemoveRequest>
+#include <QContactSaveRequest>
 #include <QContactFavorite>
 #include <QContactName>
 #include <QContactEmailAddress>
@@ -47,7 +49,10 @@
 #include <QContactFetchHint>
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QDateTime>
 #include <QtDebug>
+
+#include "../../../src/extensions/qtcontacts-extensions.h"
 
 QTCONTACTS_USE_NAMESPACE
 
@@ -265,103 +270,631 @@ QContact generateContact(const QString &syncTarget = QString(QLatin1String("loca
     return retn;
 }
 
-int main(int argc, char  *argv[])
+static qint64 aggregatedPresenceUpdate(QContactManager &manager, bool quickMode)
 {
-    QCoreApplication application(argc, argv);
-
-    const QStringList &args(application.arguments());
-
-    const bool quickMode(args.contains(QStringLiteral("-q")) || args.contains(QStringLiteral("--quick")));
-
-    QMap<QString, QString> parameters;
-    parameters.insert(QString::fromLatin1("autoTest"), QString::fromLatin1("true"));
-    parameters.insert(QString::fromLatin1("mergePresenceChanges"), QString::fromLatin1("false"));
-
-    QContactManager manager(QString::fromLatin1("org.nemomobile.contacts.sqlite"), parameters);
-
-    QContactFetchRequest request;
-    request.setManager(&manager);
-
-    // Perform an initial request to ensure the database has been created before we start timing
-    request.start();
-    request.waitForFinished();
-
     qint64 elapsedTimeTotal = 0;
+    QElapsedTimer syncTimer;
 
-    QElapsedTimer asyncTotalTimer;
-    asyncTotalTimer.start();
+    // This presence update benchmark should show whether presence update
+    // time/cost scales linearly (we hope) or exponentially (which would be bad)
+    // with the number of contacts in database if many of them are aggregated.
+    // About of the "morePrefillData" contacts should share an aggregate
+    // with one of the "prefillData" contacts.
+    // This also benchmarks the effect of the per-contact-size (number of details
+    // in each contact which change) of the update, and the effect of using
+    // a filter mask to reduce the amount of work to be done.
+    qDebug() << "--------";
+    qDebug() << "Performing scaling aggregated batch (connectivity change) presence update tests:";
 
-    // Fetch all, no optimization hints
-    for (int i = 0; i < 3; ++i) {
-        QElapsedTimer timer;
-        timer.start();
-        request.start();
-        request.waitForFinished();
-
-        qint64 elapsed = timer.elapsed();
-        qDebug() << i << ": Fetch completed in" << elapsed << "ms";
-        elapsedTimeTotal += elapsed;
+    // prefill the database
+    const int prefillCount = quickMode ? 250 : 500;
+    QList<QContact> prefillData;
+    prefillData.reserve(prefillCount);
+    for (int i = 0; i < prefillCount; ++i) {
+        prefillData.append(generateContact(QStringLiteral("aggregatedPresenceUpdate")));
+    }
+    qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
+    manager.saveContacts(&prefillData);
+    QList<QContactId> deleteIds;
+    for (const QContact &c : prefillData) {
+        deleteIds.append(c.id());
     }
 
-    // Skip relationships
-    QContactFetchHint hint;
-    hint.setOptimizationHints(QContactFetchHint::NoRelationships);
-    request.setFetchHint(hint);
-
-    for (int i = 0; i < 3; ++i) {
-        QElapsedTimer timer;
-        timer.start();
-        request.start();
-        request.waitForFinished();
-
-        qint64 elapsed = timer.elapsed();
-        qDebug() << i << ": No-relationships fetch completed in" << elapsed << "ms";
-        elapsedTimeTotal += elapsed;
+    qDebug() << "    generating aggregated prefill data, please wait...";
+    QList<QContact> morePrefillData;
+    for (int i = 0; i < prefillCount; ++i) {
+        if (i % 2 == 0) {
+            morePrefillData.append(generateContact("aggregatedPresenceUpdate2", false)); // false = don't aggregate.
+        } else {
+            morePrefillData.append(generateContact("aggregatedPresenceUpdate2", true)); // false = don't aggregate.
+        }
+    }
+    manager.saveContacts(&morePrefillData);
+    for (const QContact &c : morePrefillData) {
+        deleteIds.append(c.id());
     }
 
-    // Reduce data access
-    hint.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactName::Type << QContactAddress::Type);
-    request.setFetchHint(hint);
-
-    for (int i = 0; i < 3; ++i) {
-        QElapsedTimer timer;
-        timer.start();
-        request.start();
-        request.waitForFinished();
-
-        qint64 elapsed = timer.elapsed();
-        qDebug() << i << ": Reduced data fetch completed in" << elapsed << "ms";
-        elapsedTimeTotal += elapsed;
+    // now do the update
+    QList<QContact> contactsToUpdate;
+    QDateTime timestamp = QDateTime::currentDateTime();
+    QStringList presenceAvatars = generateAvatarsList();
+    for (int j = 0; j < morePrefillData.size(); ++j) {
+        QContact curr = morePrefillData.at(j);
+        QString genstr = QString::number(j) + "5";
+        QContactPresence cp = curr.detail<QContactPresence>();
+        QContactNickname nn = curr.detail<QContactNickname>();
+        QContactAvatar av = curr.detail<QContactAvatar>();
+        cp.setNickname(genstr);
+        cp.setCustomMessage(genstr);
+        cp.setTimestamp(timestamp);
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
+        nn.setNickname(nn.nickname() + genstr);
+        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
+        curr.saveDetail(&cp);
+        curr.saveDetail(&nn);
+        curr.saveDetail(&av);
+        contactsToUpdate.append(curr);
     }
 
-    // Reduce number of results
-    hint.setMaxCountHint(request.contacts().count() / 8);
-    request.setFetchHint(hint);
+    // perform a batch save.
+    syncTimer.start();
+    manager.saveContacts(&contactsToUpdate);
+    qint64 presenceElapsed = syncTimer.elapsed();
+    int totalAggregatesInDatabase = manager.contactIds().count();
+    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, partial overlap):" << presenceElapsed
+             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
 
-    for (int i = 0; i < 3; ++i) {
-        QElapsedTimer timer;
-        timer.start();
-        request.start();
-        request.waitForFinished();
-
-        qint64 elapsed = timer.elapsed();
-        qDebug() << i << ": Max count fetch completed in" << elapsed << "ms";
-        elapsedTimeTotal += elapsed;
+    // now test just update the presence status (not nickname or avatar details).
+    morePrefillData = contactsToUpdate;
+    contactsToUpdate.clear();
+    for (int j = 0; j < morePrefillData.size(); ++j) {
+        QContact curr = morePrefillData.at(j);
+        QContactPresence cp = curr.detail<QContactPresence>();
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
+        curr.saveDetail(&cp);
+        contactsToUpdate.append(curr);
     }
-    qint64 asyncTotalElapsed = asyncTotalTimer.elapsed();
 
+    // perform a batch save.
+    syncTimer.start();
+    manager.saveContacts(&contactsToUpdate);
+    presenceElapsed = syncTimer.elapsed();
+    totalAggregatesInDatabase = manager.contactIds().count();
+    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence only (with" << totalAggregatesInDatabase << "existing in database, partial overlap):" << presenceElapsed
+             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
 
+    // also pass a "detail type mask" to the update.  This allows the backend
+    // to perform optimisation based upon which details are modified.
+    morePrefillData = contactsToUpdate;
+    contactsToUpdate.clear();
+    for (int j = 0; j < morePrefillData.size(); ++j) {
+        QContact curr = morePrefillData.at(j);
+        QContactPresence cp = curr.detail<QContactPresence>();
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
+        curr.saveDetail(&cp);
+        contactsToUpdate.append(curr);
+    }
 
+    // perform a batch save.
+    QList<QContactDetail::DetailType> typeMask;
+    typeMask << QContactDetail::TypePresence;
+    syncTimer.start();
+    manager.saveContacts(&contactsToUpdate, typeMask);
+    presenceElapsed = syncTimer.elapsed();
+    totalAggregatesInDatabase = manager.contactIds().count();
+    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") masked presence only (with" << totalAggregatesInDatabase << "existing in database, partial overlap):" << presenceElapsed
+             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
+
+    syncTimer.start();
+    manager.removeContacts(deleteIds);
+    qint64 deleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
+
+    elapsedTimeTotal += deleteTime;
+    return elapsedTimeTotal;
+}
+
+static qint64 nonAggregatedPresenceUpdate(QContactManager &manager, bool quickMode)
+{
+    qint64 elapsedTimeTotal = 0;
+    QElapsedTimer syncTimer;
+
+    // this presence update benchmark should show whether presence update
+    // time/cost scales linearly (we hope) or exponentially (which would be bad)
+    // with the number of contacts in database even if they are unrelated / non-aggregated.
+    qDebug() << "--------";
+    qDebug() << "Performing scaling non-aggregated batch (connectivity change) presence update tests:";
+
+    // prefill the database
+    const int prefillCount = quickMode ? 250 : 500;
+    QList<QContact> prefillData;
+    prefillData.reserve(prefillCount);
+    for (int i = 0; i < prefillCount; ++i) {
+        prefillData.append(generateContact(QStringLiteral("nonAggregatedPresenceUpdate")));
+    }
+    qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
+    manager.saveContacts(&prefillData);
+    QList<QContactId> deleteIds;
+    for (const QContact &c : prefillData) {
+        deleteIds.append(c.id());
+    }
+
+    qDebug() << "    generating non-overlapping / non-aggregated prefill data, please wait...";
+    QList<QContact> morePrefillData;
+    for (int i = 0; i < prefillCount; ++i) {
+        morePrefillData.append(generateContact("nonAggregatedPresenceUpdate2", false)); // false = don't aggregate.
+    }
+    manager.saveContacts(&morePrefillData);
+    for (const QContact &c : morePrefillData) {
+        deleteIds.append(c.id());
+    }
+
+    // now do the update of only one set of those contacts
+    QList<QContact> contactsToUpdate;
+    QDateTime timestamp = QDateTime::currentDateTime();
+    QStringList presenceAvatars = generateAvatarsList();
+    for (int j = 0; j < morePrefillData.size(); ++j) {
+        QContact curr = morePrefillData.at(j);
+        QString genstr = QString::number(j) + "4";
+        QContactPresence cp = curr.detail<QContactPresence>();
+        QContactNickname nn = curr.detail<QContactNickname>();
+        QContactAvatar av = curr.detail<QContactAvatar>();
+        cp.setNickname(genstr);
+        cp.setCustomMessage(genstr);
+        cp.setTimestamp(timestamp);
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
+        nn.setNickname(nn.nickname() + genstr);
+        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
+        curr.saveDetail(&cp);
+        curr.saveDetail(&nn);
+        curr.saveDetail(&av);
+        contactsToUpdate.append(curr);
+    }
+
+    // perform a batch save.
+    syncTimer.start();
+    manager.saveContacts(&contactsToUpdate);
+    qint64 presenceElapsed = syncTimer.elapsed();
+    int totalAggregatesInDatabase = manager.contactIds().count();
+    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, no overlap):" << presenceElapsed
+             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
+
+    syncTimer.start();
+    manager.removeContacts(deleteIds);
+    qint64 deleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
+
+    elapsedTimeTotal += deleteTime;
+    return elapsedTimeTotal;
+}
+
+static qint64 scalingPresenceUpdate(QContactManager &manager, bool quickMode)
+{
+    qint64 elapsedTimeTotal = 0;
+    QElapsedTimer syncTimer;
+
+    // this presence update benchmark should show whether presence update
+    // time/cost scales linearly (we hope) or exponentially (which would be bad)
+    // with the number of contacts in database and the number of updates.
+    qDebug() << "--------";
+    qDebug() << "Performing scaling entire batch (connectivity change) presence update tests:";
+
+    // prefill the database
+    const int prefillCount = quickMode ? 250 : 500;
+    QList<QContact> prefillData;
+    prefillData.reserve(prefillCount);
+    for (int i = 0; i < prefillCount; ++i) {
+        prefillData.append(generateContact(QStringLiteral("scalingPresenceUpdate")));
+    }
+    qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
+    manager.saveContacts(&prefillData);
+    QList<QContactId> deleteIds;
+    for (const QContact &c : prefillData) {
+        deleteIds.append(c.id());
+    }
+
+    // now do the updates and save.
+    QList<QContact> contactsToUpdate;
+    QDateTime timestamp = QDateTime::currentDateTime();
+    QStringList presenceAvatars = generateAvatarsList();
+    for (int j = 0; j < prefillData.size(); ++j) {
+        QContact curr = prefillData.at(j);
+        QString genstr = QString::number(j) + "3";
+        QContactPresence cp = curr.detail<QContactPresence>();
+        QContactNickname nn = curr.detail<QContactNickname>();
+        QContactAvatar av = curr.detail<QContactAvatar>();
+        cp.setNickname(genstr);
+        cp.setCustomMessage(genstr);
+        cp.setTimestamp(timestamp);
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
+        nn.setNickname(nn.nickname() + genstr);
+        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
+        curr.saveDetail(&cp);
+        curr.saveDetail(&nn);
+        curr.saveDetail(&av);
+        contactsToUpdate.append(curr);
+    }
+
+    // perform a batch save.
+    syncTimer.start();
+    manager.saveContacts(&contactsToUpdate);
+    qint64 presenceElapsed = syncTimer.elapsed();
+    int totalAggregatesInDatabase = manager.contactIds().count();
+    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, all overlap):" << presenceElapsed
+             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
+
+    syncTimer.start();
+    manager.removeContacts(deleteIds);
+    qint64 deleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
+
+    elapsedTimeTotal += deleteTime;
+    return elapsedTimeTotal;
+}
+
+static qint64 entireBatchPresenceUpdate(QContactManager &manager, bool quickMode)
+{
+    qint64 elapsedTimeTotal = 0;
+    QElapsedTimer syncTimer;
+
+    // in the second presence update test, we update ALL of the contacts
+    // This simulates having a large number of contacts from a single source (eg, a social network)
+    // where (due to changed connectivity status) presence updates for the entire set become available.
+    qDebug() << "--------";
+    qDebug() << "Performing entire batch (connectivity change) presence update tests:";
+
+    // prefill the database
+    const int prefillCount = quickMode ? 100 : 250;
+    QList<QContact> prefillData;
+    prefillData.reserve(prefillCount);
+    for (int i = 0; i < prefillCount; ++i) {
+        prefillData.append(generateContact(QStringLiteral("entireBatchPresenceUpdate")));
+    }
+    qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
+    manager.saveContacts(&prefillData);
+    QList<QContactId> deleteIds;
+    for (const QContact &c : prefillData) {
+        deleteIds.append(c.id());
+    }
+
+    QList<QContact> contactsToUpdate;
+    QDateTime timestamp = QDateTime::currentDateTime();
+    QStringList presenceAvatars = generateAvatarsList();
+    for (int j = 0; j < prefillData.size(); ++j) {
+        QContact curr = prefillData.at(j);
+        QString genstr = QString::number(j) + "2";
+        QContactPresence cp = curr.detail<QContactPresence>();
+        QContactNickname nn = curr.detail<QContactNickname>();
+        QContactAvatar av = curr.detail<QContactAvatar>();
+        cp.setNickname(genstr);
+        cp.setCustomMessage(genstr);
+        cp.setTimestamp(timestamp);
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
+        nn.setNickname(nn.nickname() + genstr);
+        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
+        curr.saveDetail(&cp);
+        curr.saveDetail(&nn);
+        curr.saveDetail(&av);
+        contactsToUpdate.append(curr);
+    }
+
+    // perform a batch save.
+    syncTimer.start();
+    manager.saveContacts(&contactsToUpdate);
+    qint64 presenceElapsed = syncTimer.elapsed();
+    int totalAggregatesInDatabase = manager.contactIds().count();
+    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, all overlap):" << presenceElapsed
+             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
+
+    syncTimer.start();
+    manager.removeContacts(deleteIds);
+    qint64 deleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
+
+    elapsedTimeTotal += deleteTime;
+    return elapsedTimeTotal;
+}
+
+static qint64 smallBatchPresenceUpdate(QContactManager &manager, bool quickMode)
+{
+    qint64 elapsedTimeTotal = 0;
+    QElapsedTimer syncTimer;
+
+    // The next test is about updating existing contacts, amongst a large set.
+    // We're especially interested in presence updates, as these are common.
+    qDebug() << "--------";
+    qDebug() << "Performing small batch presence update tests:";
+
+    // prefill the database
+    const int prefillCount = quickMode ? 100 : 250;
+    QList<QContact> prefillData;
+    prefillData.reserve(prefillCount);
+    for (int i = 0; i < prefillCount; ++i) {
+        prefillData.append(generateContact(QStringLiteral("smallBatchPresenceUpdate")));
+    }
+    qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
+    manager.saveContacts(&prefillData);
+    QList<QContactId> deleteIds;
+    for (const QContact &c : prefillData) {
+        deleteIds.append(c.id());
+    }
+
+    // in the first presence update test, we update a small number of contacts.
+    QStringList presenceAvatars = generateAvatarsList();
+    QList<QContact> contactsToUpdate;
+    const int smallBatchSize = quickMode ? 5 : 10;
+    for (int i = 0; i < smallBatchSize; ++i) {
+        contactsToUpdate.append(prefillData.at(prefillData.size() - 1 - i));
+    }
+
+    // modify the presence, nickname and avatar of the test data
+    for (int j = 0; j < contactsToUpdate.size(); ++j) {
+        QString genstr = QString::number(j);
+        QContact curr = contactsToUpdate[j];
+        QContactPresence cp = curr.detail<QContactPresence>();
+        QContactNickname nn = curr.detail<QContactNickname>();
+        QContactAvatar av = curr.detail<QContactAvatar>();
+        cp.setNickname(genstr);
+        cp.setCustomMessage(genstr);
+        cp.setTimestamp(QDateTime::currentDateTime());
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>(qrand() % 4));
+        nn.setNickname(nn.nickname() + genstr);
+        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
+        curr.saveDetail(&cp);
+        curr.saveDetail(&nn);
+        curr.saveDetail(&av);
+        contactsToUpdate.replace(j, curr);
+    }
+
+    // perform a batch save.
+    syncTimer.start();
+    manager.saveContacts(&contactsToUpdate);
+    qint64 presenceElapsed = syncTimer.elapsed();
+    int totalAggregatesInDatabase = manager.contactIds().count();
+    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, all overlap):" << presenceElapsed
+             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
+    elapsedTimeTotal += presenceElapsed;
+
+    syncTimer.start();
+    manager.removeContacts(deleteIds);
+    qint64 deleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
+
+    elapsedTimeTotal += deleteTime;
+    return elapsedTimeTotal;
+}
+
+static qint64 aggregationOperations(QContactManager &manager, bool quickMode)
+{
+    qint64 elapsedTimeTotal = 0;
+    QElapsedTimer syncTimer;
+
+    // The next test is about saving contacts which should get aggregated into others.
+    // Aggregation is an expensive operation, so we expect these save operations to take longer.
+    qDebug() << "--------";
+    qDebug() << "Performing aggregation tests";
+
+    // prefill the database
+    const int prefillCount = quickMode ? 100 : 250;
+    QList<QContact> prefillData;
+    prefillData.reserve(prefillCount);
+    for (int i = 0; i < prefillCount; ++i) {
+        prefillData.append(generateContact(QStringLiteral("aggregationOperations")));
+    }
+    qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
+    manager.saveContacts(&prefillData);
+    QList<QContactId> deleteIds;
+    for (const QContact &c : prefillData) {
+        deleteIds.append(c.id());
+    }
+
+    // generate contacts which will be aggregated into the prefill contacts.
+    const int aggregateCount = quickMode ? 50 : 100;
+    QList<QContact> contactsToAggregate;
+    for (int i = 0; i < aggregateCount; ++i) {
+        QContact existingContact = prefillData.at(prefillData.size() - 1 - i);
+        QContact contactToAggregate;
+        QContactSyncTarget newSyncTarget;
+        newSyncTarget.setSyncTarget(QString(QLatin1String("aggregationOperations")));
+        QContactName aggName = existingContact.detail<QContactName>(); // ensures it'll get aggregated
+        QContactOnlineAccount newOnlineAcct; // new data, which should get promoted up etc.
+        newOnlineAcct.setAccountUri(QString(QLatin1String("aggregationOperations%1@fetchtimes.benchmark")).arg(i));
+        contactToAggregate.saveDetail(&newSyncTarget);
+        contactToAggregate.saveDetail(&aggName);
+        contactToAggregate.saveDetail(&newOnlineAcct);
+        contactsToAggregate.append(contactToAggregate);
+    }
+
+    syncTimer.start();
+    manager.saveContacts(&contactsToAggregate);
+    qint64 aggregationElapsed = syncTimer.elapsed();
+    int totalAggregatesInDatabase = manager.contactIds().count();
+    qDebug() << "    average time for aggregation of" << contactsToAggregate.size() << "contacts (with" << totalAggregatesInDatabase << "existing in database):" << aggregationElapsed
+             << "milliseconds (" << ((1.0 * aggregationElapsed) / (1.0 * contactsToAggregate.size())) << " msec per aggregated contact )";
+    elapsedTimeTotal += aggregationElapsed;
+    for (const QContact &c : contactsToAggregate) {
+        deleteIds.append(c.id());
+    }
+
+    // Now perform the test again, this time with more aggregates, to test nonlinearity.
+    contactsToAggregate.clear();
+    const int high = prefillData.size() / 2, low = high / 2;
+    for (int i = low; i < high; ++i) {
+        QContact existingContact = prefillData.at(prefillData.size() - 1 - i);
+        QContact contactToAggregate;
+        QContactSyncTarget newSyncTarget;
+        newSyncTarget.setSyncTarget(QString(QLatin1String("aggregationOperations2")));
+        QContactName aggName = existingContact.detail<QContactName>(); // ensures it'll get aggregated
+        QContactOnlineAccount newOnlineAcct; // new data, which should get promoted up etc.
+        newOnlineAcct.setAccountUri(QString(QLatin1String("aggregationOperations%1@fetchtimes.benchmark")).arg(i));
+        contactToAggregate.saveDetail(&newSyncTarget);
+        contactToAggregate.saveDetail(&aggName);
+        contactToAggregate.saveDetail(&newOnlineAcct);
+        contactsToAggregate.append(contactToAggregate);
+    }
+
+    syncTimer.start();
+    manager.saveContacts(&contactsToAggregate);
+    aggregationElapsed = syncTimer.elapsed();
+    totalAggregatesInDatabase = manager.contactIds().count();
+    qDebug() << "    average time for aggregation of" << contactsToAggregate.size() << "contacts (with" << totalAggregatesInDatabase << "existing in database):" << aggregationElapsed
+             << "milliseconds (" << ((1.0 * aggregationElapsed) / (1.0 * contactsToAggregate.size())) << " msec per aggregated contact )";
+    elapsedTimeTotal += aggregationElapsed;
+    for (const QContact &c : contactsToAggregate) {
+        deleteIds.append(c.id());
+    }
+
+    syncTimer.start();
+    manager.removeContacts(deleteIds);
+    qint64 deleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
+
+    elapsedTimeTotal += deleteTime;
+    return elapsedTimeTotal;
+}
+
+static qint64 smallBatchWithExistingData(QContactManager &manager, bool quickMode)
+{
+    qint64 elapsedTimeTotal = 0;
+    QElapsedTimer syncTimer;
+
+    // these tests are slightly different to the others.  They operate on much smaller
+    // batches, but occur after the database has already been prefilled with some data.
+    qDebug() << "--------";
+    qDebug() << "Performing test of small batch updates with large existing data set";
+    QList<int> smallerNbrContacts;
+    if (quickMode) {
+        smallerNbrContacts << 20;
+    } else {
+        smallerNbrContacts << 1 << 2 << 5 << 10 << 20 << 50;
+    }
+    QList<QList<QContact> > smallerTestData;
+    qDebug() << "    generating smaller test data for prefilled timings...";
+    for (int i = 0; i < smallerNbrContacts.size(); ++i) {
+        int howMany = smallerNbrContacts.at(i);
+        QList<QContact> newTestData;
+        newTestData.reserve(howMany);
+
+        for (int j = 0; j < howMany; ++j) {
+            newTestData.append(generateContact(QStringLiteral("smallBatchWithExistingData")));
+        }
+
+        smallerTestData.append(newTestData);
+    }
+
+    // prefill the database
+    const int prefillCount = quickMode ? 100 : 250;
+    QList<QContact> prefillData;
+    prefillData.reserve(prefillCount);
+    for (int i = 0; i < prefillCount; ++i) {
+        prefillData.append(generateContact(QStringLiteral("smallBatchWithExistingData")));
+    }
+    qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
+    manager.saveContacts(&prefillData);
+
+    qDebug() << "    now performing timings (shouldn't get aggregated)...";
+    for (int i = 0; i < smallerTestData.size(); ++i) {
+        QList<QContact> td = smallerTestData.at(i);
+        qint64 ste = 0;
+        qDebug() << "    performing tests for" << td.size() << "contacts:";
+
+        syncTimer.start();
+        manager.saveContacts(&td);
+        ste = syncTimer.elapsed();
+        qDebug() << "    saving took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
+
+        QContactFetchHint fh;
+        syncTimer.start();
+        QList<QContact> readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
+        ste = syncTimer.elapsed();
+        qDebug() << "    reading all (" << readContacts.size() << "), all details, took" << ste << "milliseconds";
+        elapsedTimeTotal += ste;
+
+        fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
+                << QContactName::Type << QContactAvatar::Type
+                << QContactPhoneNumber::Type << QContactEmailAddress::Type);
+        syncTimer.start();
+        readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
+        ste = syncTimer.elapsed();
+        qDebug() << "    reading all, common details, took" << ste << "milliseconds";
+        elapsedTimeTotal += ste;
+
+        fh.setOptimizationHints(QContactFetchHint::NoRelationships);
+        fh.setDetailTypesHint(QList<QContactDetail::DetailType>());
+        syncTimer.start();
+        readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
+        ste = syncTimer.elapsed();
+        qDebug() << "    reading all, no relationships, took" << ste << "milliseconds";
+        elapsedTimeTotal += ste;
+
+        fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
+                << QContactName::Type << QContactAvatar::Type);
+        syncTimer.start();
+        readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
+        ste = syncTimer.elapsed();
+        qDebug() << "    reading all, display details + no rels, took" << ste << "milliseconds";
+        elapsedTimeTotal += ste;
+
+        QContactDetailFilter firstNameStartsA;
+        firstNameStartsA.setDetailType(QContactName::Type, QContactName::FieldFirstName);
+        firstNameStartsA.setValue("A");
+        firstNameStartsA.setMatchFlags(QContactDetailFilter::MatchStartsWith);
+        fh.setDetailTypesHint(QList<QContactDetail::DetailType>());
+        syncTimer.start();
+        readContacts = manager.contacts(firstNameStartsA, QList<QContactSortOrder>(), fh);
+        ste = syncTimer.elapsed();
+        qDebug() << "    reading filtered (" << readContacts.size() << "), no relationships, took" << ste << "milliseconds";
+        elapsedTimeTotal += ste;
+
+        QList<QContactId> idsToRemove;
+        for (int j = 0; j < td.size(); ++j) {
+            idsToRemove.append(retrievalId(td.at(j)));
+        }
+
+        syncTimer.start();
+        manager.removeContacts(idsToRemove);
+        ste = syncTimer.elapsed();
+        qDebug() << "    removing test data took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
+        elapsedTimeTotal += ste;
+    }
+
+    qDebug() << "    removing prefill data";
+    QList<QContactId> deleteIds;
+    for (const QContact &c : prefillData) {
+        deleteIds.append(c.id());
+    }
+    syncTimer.start();
+    manager.removeContacts(deleteIds);
+    qint64 deleteTime = syncTimer.elapsed();
+    elapsedTimeTotal += deleteTime;
+    qDebug() << "    removing prefill data took" << deleteTime << "milliseconds";
+
+    return elapsedTimeTotal;
+}
+
+static qint64 synchronousOperations(QContactManager &manager, bool quickMode)
+{
     // Time some synchronous operations.  First, generate the test data.
-    qsrand((int)asyncTotalElapsed);
+    QElapsedTimer syncTimer;
+    qint64 elapsedTimeTotal = 0;
     QList<int> nbrContacts;
     if (quickMode) {
-        nbrContacts << 200;
+        nbrContacts << 100;
     } else {
-        nbrContacts << 10 << 100 << 500 << 1000 << 2000;
+        nbrContacts << 10 << 100 << 200 << 500 << 1000;
     }
+
     QList<QList<QContact> > testData;
-    qDebug() << "\n\nGenerating test data for timings...";
+    qDebug() << "--------";
+    qDebug() << "Performing basic synchronous operations";
+    qDebug() << "    generating test data for timings...";
     for (int i = 0; i < nbrContacts.size(); ++i) {
         int howMany = nbrContacts.at(i);
         QList<QContact> newTestData;
@@ -369,19 +902,17 @@ int main(int argc, char  *argv[])
 
         for (int j = 0; j < howMany; ++j) {
             // Use testing sync target, so 'local' won't be modified into 'was_local' via aggregation
-            newTestData.append(generateContact(QString::fromLatin1("testing")));
+            newTestData.append(generateContact(QString::fromLatin1("synchronousOperations")));
         }
 
         testData.append(newTestData);
     }
 
-
     // Perform the timings - these all create new contacts and assume an "empty" initial database
-    QElapsedTimer syncTimer;
     for (int i = 0; i < testData.size(); ++i) {
         QList<QContact> td = testData.at(i);
         qint64 ste = 0;
-        qDebug() << "Performing tests for" << td.size() << "contacts:";
+        qDebug() << "    -> performing tests for" << td.size() << "contacts:";
 
         syncTimer.start();
         manager.saveContacts(&td);
@@ -391,7 +922,7 @@ int main(int argc, char  *argv[])
 
         QContactDetailFilter testingFilter;
         testingFilter.setDetailType(QContactSyncTarget::Type, QContactSyncTarget::FieldSyncTarget);
-        testingFilter.setValue(QString::fromLatin1("testing"));
+        testingFilter.setValue(QString::fromLatin1("synchronousOperations"));
 
         QContactFetchHint fh;
         syncTimer.start();
@@ -502,435 +1033,268 @@ int main(int argc, char  *argv[])
         elapsedTimeTotal += ste;
     }
 
-    // these tests are slightly different to those above.  They operate on much smaller
-    // batches, but occur after the database has already been prefilled with some data.
-    QList<int> smallerNbrContacts;
-    if (quickMode) {
-        smallerNbrContacts << 20;
-    } else {
-        smallerNbrContacts << 1 << 2 << 5 << 10 << 20 << 50;
-    }
-    QList<QList<QContact> > smallerTestData;
-    qDebug() << "\n\nGenerating smaller test data for prefilled timings...";
-    for (int i = 0; i < smallerNbrContacts.size(); ++i) {
-        int howMany = smallerNbrContacts.at(i);
-        QList<QContact> newTestData;
-        newTestData.reserve(howMany);
+    return elapsedTimeTotal;
+}
 
-        for (int j = 0; j < howMany; ++j) {
-            newTestData.append(generateContact());
+static qint64 performAsynchronousFetch(QContactManager &manager, bool quickMode)
+{
+    const int repeatCount = quickMode ? 1 : 3; // test caching effects
+    qint64 elapsedTimeTotal = 0;
+    QContactFetchRequest request;
+    request.setManager(&manager);
+
+    // Fetch all, no optimization hints
+    for (int i = 0; i < repeatCount; ++i) {
+        QElapsedTimer timer;
+        timer.start();
+        request.start();
+        request.waitForFinished();
+
+        qint64 elapsed = timer.elapsed();
+        qDebug() << "    " << i << ": Fetch completed in" << elapsed << "ms";
+        elapsedTimeTotal += elapsed;
+    }
+
+    // Skip relationships
+    QContactFetchHint hint;
+    hint.setOptimizationHints(QContactFetchHint::NoRelationships);
+    request.setFetchHint(hint);
+
+    for (int i = 0; i < repeatCount; ++i) {
+        QElapsedTimer timer;
+        timer.start();
+        request.start();
+        request.waitForFinished();
+
+        qint64 elapsed = timer.elapsed();
+        qDebug() << "    "  << i << ": No-relationships fetch completed in" << elapsed << "ms";
+        elapsedTimeTotal += elapsed;
+    }
+
+    // Reduce data access
+    hint.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactName::Type << QContactAddress::Type);
+    request.setFetchHint(hint);
+
+    for (int i = 0; i < repeatCount; ++i) {
+        QElapsedTimer timer;
+        timer.start();
+        request.start();
+        request.waitForFinished();
+
+        qint64 elapsed = timer.elapsed();
+        qDebug() << "    "  << i << ": Reduced data fetch completed in" << elapsed << "ms";
+        elapsedTimeTotal += elapsed;
+    }
+
+    // Reduce number of results
+    hint.setMaxCountHint(request.contacts().count() / 8);
+    request.setFetchHint(hint);
+
+    for (int i = 0; i < repeatCount; ++i) {
+        QElapsedTimer timer;
+        timer.start();
+        request.start();
+        request.waitForFinished();
+
+        qint64 elapsed = timer.elapsed();
+        qDebug() << "    "  << i << ": Max count fetch completed in" << elapsed << "ms";
+        elapsedTimeTotal += elapsed;
+    }
+
+    return elapsedTimeTotal;
+}
+
+static qint64 asynchronousOperations(QContactManager &manager, bool quickMode)
+{
+    const int numberContacts = quickMode ? 100 : 1000;
+    QElapsedTimer totalTimeTimer;
+    totalTimeTimer.start();
+
+    qDebug() << "--------";
+    qDebug() << "Performing asynchronous fetch with empty database";
+    qint64 requestTime = performAsynchronousFetch(manager, quickMode);
+    qDebug() << "    asynchronous fetch requests took:" << requestTime << "milliseconds";
+
+    qDebug() << "--------";
+    qDebug() << "Performing asynchronous save of" << numberContacts << "contacts";
+    QList<QContact> testData;
+    for (int i = 0; i < numberContacts; ++i) {
+        testData.append(generateContact(QStringLiteral("asynchronousOperations")));
+    }
+    QElapsedTimer storeTimer;
+    storeTimer.start();
+    QContactSaveRequest sreq;
+    sreq.setManager(&manager);
+    sreq.setContacts(testData);
+    sreq.start();
+    sreq.waitForFinished();
+    QList<QContact> savedContacts = sreq.contacts();
+    qint64 storeTime = storeTimer.elapsed();
+    qDebug() << "    saved" << numberContacts << "contacts in" << storeTime << "milliseconds";
+
+    qDebug() << "--------";
+    qDebug() << "Performing asynchronous fetch with filled database";
+    requestTime = performAsynchronousFetch(manager, quickMode);
+    qDebug() << "    asynchronous fetch requests took:" << requestTime << "milliseconds";
+
+    qDebug() << "--------";
+    qDebug() << "Performing asynchronous remove with filled database";
+    QList<QContactId> deleteIds;
+    for (const QContact &c : savedContacts) {
+        deleteIds.append(c.id());
+    }
+    QElapsedTimer deleteTimer;
+    deleteTimer.start();
+    QContactRemoveRequest rreq;
+    rreq.setManager(&manager);
+    rreq.setContactIds(deleteIds);
+    rreq.start();
+    rreq.waitForFinished();
+    qint64 deleteTime = deleteTimer.elapsed();
+    qDebug() << "    asynchronous remove request took" << deleteTime << "milliseconds";
+
+    return totalTimeTimer.elapsed();
+}
+
+qint64 simpleFilterAndSort(QContactManager &manager, bool quickMode)
+{
+    // Now we perform a simple create+filter+sort test, where contacts are saved in small chunks.
+    qDebug() << "--------";
+    qDebug() << "Starting save (chunks) / fetch (filter + sort) / delete (all) test...";
+    QList<QContact> testData, testData2;
+    const int chunkSize = quickMode ? 25 : 50;
+    const int prefillCount = quickMode ? 250 : 1000;
+    for (int i = 0; i < prefillCount/2; ++i) {
+        testData.append(generateContact(QString::fromLatin1("simpleFilterAndSort"), true));
+        testData2.append(generateContact(QString::fromLatin1("simpleFilterAndSort2"), true));
+    }
+
+    QList<QList<QContact> > chunks, chunks2;
+    for (int i = 0; i < testData.size(); i += chunkSize) {
+        QList<QContact> chunk, chunk2;
+        for (int j = 0; j < chunkSize && ((i+j) < testData.size()); ++j) {
+            chunk.append(testData[i+j]);
+            chunk2.append(testData2[i+j]);
         }
-
-        smallerTestData.append(newTestData);
+        chunks.append(chunk);
+        chunks2.append(chunk2);
     }
 
-    // prefill the database
-    QList<QContact> prefillData;
-    for (int i = 0; i < testData.size() && testData.at(i).size() < 1001; ++i) {
-        prefillData = testData.at(i);
-    }
-    qDebug() << "Prefilling database with" << prefillData.size() << "contacts... this will take a while...";
-    manager.saveContacts(&prefillData);
-    qDebug() << "Now performing timings (shouldn't get aggregated)...";
-    for (int i = 0; i < smallerTestData.size(); ++i) {
-        QList<QContact> td = smallerTestData.at(i);
-        qint64 ste = 0;
-        qDebug() << "Performing tests for" << td.size() << "contacts:";
+    QContactFetchHint listDisplayFetchHint;
+    listDisplayFetchHint.setDetailTypesHint(QList<QContactDetail::DetailType>()
+            << QContactDisplayLabel::Type << QContactName::Type << QContactAvatar::Type);
+    QContactSortOrder sort;
+    sort.setDetailType(QContactDisplayLabel::Type, QContactDisplayLabel__FieldLabelGroup);
+    QContactDetailFilter phoneFilter;
+    phoneFilter.setDetailType(QContactPhoneNumber::Type); // existence filter, don't care about value.
+    QContactDetailFilter syncTargetFilter;
+    syncTargetFilter.setDetailType(QContactSyncTarget::Type, QContactSyncTarget::FieldSyncTarget);
+    syncTargetFilter.setValue(QStringLiteral("aggregate"));
 
-        syncTimer.start();
-        manager.saveContacts(&td);
-        ste = syncTimer.elapsed();
-        qDebug() << "    saving took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
-        elapsedTimeTotal += ste;
-
-        QContactFetchHint fh;
-        syncTimer.start();
-        QList<QContact> readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
-        ste = syncTimer.elapsed();
-        qDebug() << "    reading all (" << readContacts.size() << "), all details, took" << ste << "milliseconds";
-        elapsedTimeTotal += ste;
-
-        fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
-                << QContactName::Type << QContactAvatar::Type
-                << QContactPhoneNumber::Type << QContactEmailAddress::Type);
-        syncTimer.start();
-        readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
-        ste = syncTimer.elapsed();
-        qDebug() << "    reading all, common details, took" << ste << "milliseconds";
-        elapsedTimeTotal += ste;
-
-        fh.setOptimizationHints(QContactFetchHint::NoRelationships);
-        fh.setDetailTypesHint(QList<QContactDetail::DetailType>());
-        syncTimer.start();
-        readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
-        ste = syncTimer.elapsed();
-        qDebug() << "    reading all, no relationships, took" << ste << "milliseconds";
-        elapsedTimeTotal += ste;
-
-        fh.setDetailTypesHint(QList<QContactDetail::DetailType>() << QContactDisplayLabel::Type
-                << QContactName::Type << QContactAvatar::Type);
-        syncTimer.start();
-        readContacts = manager.contacts(QContactFilter(), QList<QContactSortOrder>(), fh);
-        ste = syncTimer.elapsed();
-        qDebug() << "    reading all, display details + no rels, took" << ste << "milliseconds";
-        elapsedTimeTotal += ste;
-
-        QContactDetailFilter firstNameStartsA;
-        firstNameStartsA.setDetailType(QContactName::Type, QContactName::FieldFirstName);
-        firstNameStartsA.setValue("A");
-        firstNameStartsA.setMatchFlags(QContactDetailFilter::MatchStartsWith);
-        fh.setDetailTypesHint(QList<QContactDetail::DetailType>());
-        syncTimer.start();
-        readContacts = manager.contacts(firstNameStartsA, QList<QContactSortOrder>(), fh);
-        ste = syncTimer.elapsed();
-        qDebug() << "    reading filtered (" << readContacts.size() << "), no relationships, took" << ste << "milliseconds";
-        elapsedTimeTotal += ste;
-
-        QList<QContactId> idsToRemove;
-        for (int j = 0; j < td.size(); ++j) {
-            idsToRemove.append(retrievalId(td.at(j)));
-        }
-
-        syncTimer.start();
-        manager.removeContacts(idsToRemove);
-        ste = syncTimer.elapsed();
-        qDebug() << "    removing test data took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
-        elapsedTimeTotal += ste;
-    }
-
-    // The next test is about saving contacts which should get aggregated into others.
-    // Aggregation is an expensive operation, so we expect these save operations to take longer.
-    qDebug() << "\n\nPerforming aggregation tests";
-    QList<QContact> contactsToAggregate;
-    for (int i = 0; i < 100; ++i) {
-        QContact existingContact = prefillData.at(prefillData.size() - 1 - i);
-        QContact contactToAggregate;
-        QContactSyncTarget newSyncTarget;
-        newSyncTarget.setSyncTarget(QString(QLatin1String("fetchtimes-aggregation")));
-        QContactName aggName = existingContact.detail<QContactName>(); // ensures it'll get aggregated
-        QContactOnlineAccount newOnlineAcct; // new data, which should get promoted up etc.
-        newOnlineAcct.setAccountUri(QString(QLatin1String("test-aggregation-%1@fetchtimes")).arg(i));
-        contactToAggregate.saveDetail(&newSyncTarget);
-        contactToAggregate.saveDetail(&aggName);
-        contactToAggregate.saveDetail(&newOnlineAcct);
-        contactsToAggregate.append(contactToAggregate);
-    }
-
+    qDebug() << "    storing" << prefillCount << "contacts... this will take a while...";
+    QElapsedTimer syncTimer;
     syncTimer.start();
-    manager.saveContacts(&contactsToAggregate);
-    qint64 aggregationElapsed = syncTimer.elapsed();
-    int totalAggregatesInDatabase = manager.contactIds().count();
-    qDebug() << "Average time for aggregation of" << contactsToAggregate.size() << "contacts (with" << totalAggregatesInDatabase << "existing in database):" << aggregationElapsed
-             << "milliseconds (" << ((1.0 * aggregationElapsed) / (1.0 * contactsToAggregate.size())) << " msec per aggregated contact )";
-    elapsedTimeTotal += aggregationElapsed;
-
-    // Now perform the test again, this time with more aggregates, to test nonlinearity.
-    contactsToAggregate.clear();
-    const int high = prefillData.size() / 2, low = high / 2;
-    for (int i = low; i < high; ++i) {
-        QContact existingContact = prefillData.at(prefillData.size() - 1 - i);
-        QContact contactToAggregate;
-        QContactSyncTarget newSyncTarget;
-        newSyncTarget.setSyncTarget(QString(QLatin1String("fetchtimes-aggregation")));
-        QContactName aggName = existingContact.detail<QContactName>(); // ensures it'll get aggregated
-        QContactOnlineAccount newOnlineAcct; // new data, which should get promoted up etc.
-        newOnlineAcct.setAccountUri(QString(QLatin1String("test-aggregation-%1@fetchtimes")).arg(i));
-        contactToAggregate.saveDetail(&newSyncTarget);
-        contactToAggregate.saveDetail(&aggName);
-        contactToAggregate.saveDetail(&newOnlineAcct);
-        contactsToAggregate.append(contactToAggregate);
+    for (int i = 0; i < chunks.size(); ++i) {
+        manager.saveContacts(&chunks[i]);
     }
+    for (int i = 0; i < chunks2.size(); ++i) {
+        manager.saveContacts(&chunks2[i]);
+    }
+    qint64 saveTime = syncTimer.elapsed();
+    qDebug() << "    stored" << (testData.size()+testData2.size()) << "contacts in" << saveTime << "milliseconds";
 
+    qDebug() << "    retrieving aggregate contacts with filter, sort order, and fetch hint applied";
     syncTimer.start();
-    manager.saveContacts(&contactsToAggregate);
-    aggregationElapsed = syncTimer.elapsed();
-    totalAggregatesInDatabase = manager.contactIds().count();
-    qDebug() << "Average time for aggregation of" << contactsToAggregate.size() << "contacts (with" << totalAggregatesInDatabase << "existing in database):" << aggregationElapsed
-             << "milliseconds (" << ((1.0 * aggregationElapsed) / (1.0 * contactsToAggregate.size())) << " msec per aggregated contact )";
-    elapsedTimeTotal += aggregationElapsed;
+    QList<QContact> filteredSorted = manager.contacts(syncTargetFilter & phoneFilter, sort, listDisplayFetchHint);
+    qint64 fetchTime = syncTimer.elapsed();
+    qDebug() << "    retrieved" << filteredSorted.size() << "contacts in" << fetchTime << "milliseconds";
 
-
-    // The next test is about updating existing contacts, amongst a large set.
-    // We're especially interested in presence updates, as these are common.
-    qDebug() << "\n\nPerforming presence update tests:";
-
-    // in the first presence update test, we update a small number of contacts.
-    QStringList presenceAvatars = generateAvatarsList();
-    QList<QContact> contactsToUpdate;
-    for (int i = 0; i < 10; ++i) {
-        contactsToUpdate.append(prefillData.at(prefillData.size() - 1 - i));
-    }
-
-    // modify the presence, nickname and avatar of the test data
-    for (int j = 0; j < contactsToUpdate.size(); ++j) {
-        QString genstr = QString::number(j);
-        QContact curr = contactsToUpdate[j];
-        QContactPresence cp = curr.detail<QContactPresence>();
-        QContactNickname nn = curr.detail<QContactNickname>();
-        QContactAvatar av = curr.detail<QContactAvatar>();
-        cp.setNickname(genstr);
-        cp.setCustomMessage(genstr);
-        cp.setTimestamp(QDateTime::currentDateTime());
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>(qrand() % 4));
-        nn.setNickname(nn.nickname() + genstr);
-        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
-        curr.saveDetail(&cp);
-        curr.saveDetail(&nn);
-        curr.saveDetail(&av);
-        contactsToUpdate.replace(j, curr);
-    }
-
-    // perform a batch save.
-    syncTimer.start();
-    manager.saveContacts(&contactsToUpdate);
-    qint64 presenceElapsed = syncTimer.elapsed();
-    totalAggregatesInDatabase = manager.contactIds().count();
-    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, all overlap):" << presenceElapsed
-             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
-    elapsedTimeTotal += presenceElapsed;
-
-    // in the second presence update test, we update ALL of the contacts
-    // This simulates having a large number of contacts from a single source (eg, a social network)
-    // where (due to changed connectivity status) presence updates for the entire set become available.
-    contactsToUpdate.clear();
-    QDateTime timestamp = QDateTime::currentDateTime();
-    for (int j = 0; j < prefillData.size(); ++j) {
-        QContact curr = prefillData.at(j);
-        QString genstr = QString::number(j) + "2";
-        QContactPresence cp = curr.detail<QContactPresence>();
-        QContactNickname nn = curr.detail<QContactNickname>();
-        QContactAvatar av = curr.detail<QContactAvatar>();
-        cp.setNickname(genstr);
-        cp.setCustomMessage(genstr);
-        cp.setTimestamp(timestamp);
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
-        nn.setNickname(nn.nickname() + genstr);
-        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
-        curr.saveDetail(&cp);
-        curr.saveDetail(&nn);
-        curr.saveDetail(&av);
-        contactsToUpdate.append(curr);
-    }
-
-    // perform a batch save.
-    syncTimer.start();
-    manager.saveContacts(&contactsToUpdate);
-    presenceElapsed = syncTimer.elapsed();
-    totalAggregatesInDatabase = manager.contactIds().count();
-    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, all overlap):" << presenceElapsed
-             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
-    elapsedTimeTotal += presenceElapsed;
-
-    // the third presence update test is identical to the previous, but with 2000 prefilled contacts in database.
-    qDebug() << "    Adding more prefill data, please wait...";
-    QList<QContact> morePrefillData;
-    for (int i = 0; i < contactsToUpdate.size(); ++i) {
-        morePrefillData.append(generateContact(QString::fromLatin1("testing")));
-    }
-    manager.saveContacts(&morePrefillData);
-
-    // now do the updates and save.
-    contactsToUpdate.clear();
-    timestamp = QDateTime::currentDateTime();
-    for (int j = 0; j < prefillData.size(); ++j) {
-        QContact curr = prefillData.at(j);
-        QString genstr = QString::number(j) + "3";
-        QContactPresence cp = curr.detail<QContactPresence>();
-        QContactNickname nn = curr.detail<QContactNickname>();
-        QContactAvatar av = curr.detail<QContactAvatar>();
-        cp.setNickname(genstr);
-        cp.setCustomMessage(genstr);
-        cp.setTimestamp(timestamp);
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
-        nn.setNickname(nn.nickname() + genstr);
-        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
-        curr.saveDetail(&cp);
-        curr.saveDetail(&nn);
-        curr.saveDetail(&av);
-        contactsToUpdate.append(curr);
-    }
-    for (int j = 0; j < morePrefillData.size(); ++j) {
-        QContact curr = morePrefillData.at(j);
-        QString genstr = QString::number(j) + "3";
-        QContactPresence cp = curr.detail<QContactPresence>();
-        QContactNickname nn = curr.detail<QContactNickname>();
-        QContactAvatar av = curr.detail<QContactAvatar>();
-        cp.setNickname(genstr);
-        cp.setCustomMessage(genstr);
-        cp.setTimestamp(timestamp);
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
-        nn.setNickname(nn.nickname() + genstr);
-        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
-        curr.saveDetail(&cp);
-        curr.saveDetail(&nn);
-        curr.saveDetail(&av);
-        contactsToUpdate.append(curr);
-    }
-
-    // perform a batch save.
-    syncTimer.start();
-    manager.saveContacts(&contactsToUpdate);
-    presenceElapsed = syncTimer.elapsed();
-    totalAggregatesInDatabase = manager.contactIds().count();
-    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, all overlap):" << presenceElapsed
-             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
-    elapsedTimeTotal += presenceElapsed;
-
-    // clean up the "more prefill data"
-    qDebug() << "    cleaning up extra prefill data, please wait...";
-    QList<QContactId> morePrefillIds;
-    for (int j = 0; j < morePrefillData.size(); ++j) {
-        morePrefillIds.append(retrievalId(morePrefillData.at(j)));
-    }
-
-    manager.removeContacts(morePrefillIds);
-
-    // the fourth presence update test checks update time for non-overlapping sets of data.
-    qDebug() << "    generating non-overlapping / aggregated prefill data, please wait...";
-    morePrefillData.clear();
-    for (int i = 0; i < prefillData.size(); ++i) {
-        morePrefillData.append(generateContact("test-presence-4", false)); // false = don't aggregate.
-    }
-    manager.saveContacts(&morePrefillData);
-
-    // now do the update
-    contactsToUpdate.clear();
-    timestamp = QDateTime::currentDateTime();
-    for (int j = 0; j < morePrefillData.size(); ++j) {
-        QContact curr = morePrefillData.at(j);
-        QString genstr = QString::number(j) + "4";
-        QContactPresence cp = curr.detail<QContactPresence>();
-        QContactNickname nn = curr.detail<QContactNickname>();
-        QContactAvatar av = curr.detail<QContactAvatar>();
-        cp.setNickname(genstr);
-        cp.setCustomMessage(genstr);
-        cp.setTimestamp(timestamp);
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
-        nn.setNickname(nn.nickname() + genstr);
-        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
-        curr.saveDetail(&cp);
-        curr.saveDetail(&nn);
-        curr.saveDetail(&av);
-        contactsToUpdate.append(curr);
-    }
-
-    // perform a batch save.
-    syncTimer.start();
-    manager.saveContacts(&contactsToUpdate);
-    presenceElapsed = syncTimer.elapsed();
-    totalAggregatesInDatabase = manager.contactIds().count();
-    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, no overlap):" << presenceElapsed
-             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
-    elapsedTimeTotal += presenceElapsed;
-
-    // clean up the "more prefill data"
-    qDebug() << "    cleaning up extra prefill data, please wait...";
-    morePrefillIds.clear();
-    for (int j = 0; j < morePrefillData.size(); ++j) {
-        morePrefillIds.append(morePrefillData.at(j).id());
-    }
-    manager.removeContacts(morePrefillIds);
-
-    // the fifth presence update test is similar to the above except that half of
-    // the extra contacts have a (high) chance of being aggregated into an existing contact.
-    // So, database should have 2000 constituents, 1000 from "local", 1000 from "test-presence-5"
-    // with 1500 aggregates (about 500 of test-presence-5 contacts will share an aggregate with
-    // a local contact).  TODO: check what happens if multiple aggregates for local contacts
-    // could possibly match a given test-presence-5 contact (which is possible, since the backend
-    // never aggregates two contacts from the same sync source...)
-    qDebug() << "    generating partially-overlapping / aggregated prefill data, please wait...";
-    morePrefillData.clear();
-    for (int i = 0; i < prefillData.size(); ++i) {
-        if (i < (prefillData.size() / 2)) {
-            morePrefillData.append(generateContact("test-presence-5", false)); // false = don't aggregate.
-        } else {
-            morePrefillData.append(generateContact("test-presence-5", true));  // true = possibly aggregate.
+    QList<QContactId> deleteIds;
+    for (const QList<QContact> &chunk : chunks) {
+        for (const QContact &c : chunk) {
+            deleteIds.append(c.id());
         }
     }
-    manager.saveContacts(&morePrefillData);
-
-    // now do the update
-    contactsToUpdate.clear();
-    timestamp = QDateTime::currentDateTime();
-    for (int j = 0; j < morePrefillData.size(); ++j) {
-        QContact curr = morePrefillData.at(j);
-        QString genstr = QString::number(j) + "5";
-        QContactPresence cp = curr.detail<QContactPresence>();
-        QContactNickname nn = curr.detail<QContactNickname>();
-        QContactAvatar av = curr.detail<QContactAvatar>();
-        cp.setNickname(genstr);
-        cp.setCustomMessage(genstr);
-        cp.setTimestamp(timestamp);
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
-        nn.setNickname(nn.nickname() + genstr);
-        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
-        curr.saveDetail(&cp);
-        curr.saveDetail(&nn);
-        curr.saveDetail(&av);
-        contactsToUpdate.append(curr);
+    for (const QList<QContact> &chunk2 : chunks2) {
+        for (const QContact &c : chunk2) {
+            deleteIds.append(c.id());
+        }
     }
 
-    // perform a batch save.
     syncTimer.start();
-    manager.saveContacts(&contactsToUpdate);
-    presenceElapsed = syncTimer.elapsed();
-    totalAggregatesInDatabase = manager.contactIds().count();
-    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence+nick+avatar (with" << totalAggregatesInDatabase << "existing in database, partial overlap):" << presenceElapsed
-             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
-    elapsedTimeTotal += presenceElapsed;
+    manager.removeContacts(deleteIds);
+    qint64 deleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
 
-    // the sixth presence update test is identical to the fifth test, except that we ONLY
-    // update the presence status (not nickname or avatar).
-    morePrefillData = contactsToUpdate;
-    contactsToUpdate.clear();
-    for (int j = 0; j < morePrefillData.size(); ++j) {
-        QContact curr = morePrefillData.at(j);
-        QContactPresence cp = curr.detail<QContactPresence>();
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
-        curr.saveDetail(&cp);
-        contactsToUpdate.append(curr);
+    if (filteredSorted.size() == 0) {
+        qWarning() << "Zero aggregate contacts found.  Are you sure you're running with privileged permissions?";
     }
 
-    // perform a batch save.
-    syncTimer.start();
-    manager.saveContacts(&contactsToUpdate);
-    presenceElapsed = syncTimer.elapsed();
-    totalAggregatesInDatabase = manager.contactIds().count();
-    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") presence only (with" << totalAggregatesInDatabase << "existing in database, partial overlap):" << presenceElapsed
-             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
-    elapsedTimeTotal += presenceElapsed;
+    return saveTime + fetchTime + deleteTime;
+}
 
-    // the seventh presence update test is identical to the 6th test, except that
-    // we also pass a "detail type mask" to the update.  This allows the backend
-    // to perform optimisation based upon which details are modified.
-    morePrefillData = contactsToUpdate;
-    contactsToUpdate.clear();
-    for (int j = 0; j < morePrefillData.size(); ++j) {
-        QContact curr = morePrefillData.at(j);
-        QContactPresence cp = curr.detail<QContactPresence>();
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
-        curr.saveDetail(&cp);
-        contactsToUpdate.append(curr);
+int main(int argc, char  *argv[])
+{
+    QCoreApplication application(argc, argv);
+
+    const QStringList &args(application.arguments());
+    QStringList functionArgs;
+
+    if (args.size() <= 1) {
+        qDebug() << "usage: fetchtimes [--stable] [--quick] --help|--all|--function=<function>";
+        return 0;
+    } else if (args.contains("--help") || args.contains("-h")) {
+        qDebug() << "usage: fetchtimes [--stable] --help|--all|--quick|<function>";
+        qDebug() << "If --stable is specified, a stable prng seed will be used.";
+        qDebug() << "If --quick is specified, the benchmark will complete more quickly (but results will have higher variance)";
+        qDebug() << "Available functions:";
+        qDebug() << "    simpleFilterAndSort";
+        qDebug() << "    asynchronousOperations";
+        qDebug() << "    synchronousOperations";
+        qDebug() << "    smallBatchWithExistingData";
+        qDebug() << "    aggregationOperations";
+        qDebug() << "    smallBatchPresenceUpdate";
+        qDebug() << "    entireBatchPresenceUpdate";
+        qDebug() << "    scalingPresenceUpdate";
+        qDebug() << "    nonAggregatedPresenceUpdate";
+        qDebug() << "    aggregatedPresenceUpdate";
+        return 0;
     }
 
-    // perform a batch save.
-    QList<QContactDetail::DetailType> typeMask;
-    typeMask << QContactDetail::TypePresence;
-    syncTimer.start();
-    manager.saveContacts(&contactsToUpdate, typeMask);
-    presenceElapsed = syncTimer.elapsed();
-    totalAggregatesInDatabase = manager.contactIds().count();
-    qDebug() << "    update ( batch of" << contactsToUpdate.size() << ") masked presence only (with" << totalAggregatesInDatabase << "existing in database, partial overlap):" << presenceElapsed
-             << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
-    elapsedTimeTotal += presenceElapsed;
-
-    // clean up the "more prefill data"
-    qDebug() << "    cleaning up extra prefill data, please wait...";
-    morePrefillIds.clear();
-    for (int j = 0; j < morePrefillData.size(); ++j) {
-        morePrefillIds.append(morePrefillData.at(j).id());
+    for (int i = 0; i < args.size(); ++i) {
+        if (args.at(i).startsWith(QStringLiteral("--function="))) {
+            functionArgs.append(args.at(i).mid(11));
+        } else if (args.at(i).compare(QStringLiteral("-f")) == 0 && args.size() > (i+1)) {
+            i = i+1;
+            functionArgs.append(args.at(i));
+        }
     }
-    manager.removeContacts(morePrefillIds);
+
+    const bool quickMode(args.contains(QStringLiteral("-q")) || args.contains(QStringLiteral("--quick")));
+    const bool stable(args.contains(QStringLiteral("-s")) || args.contains(QStringLiteral("--stable")));
+    const bool runAll(args.contains(QStringLiteral("-a")) || args.contains(QStringLiteral("--all")));
+
+    QMap<QString, QString> parameters;
+    parameters.insert(QString::fromLatin1("autoTest"), QString::fromLatin1("true"));
+    parameters.insert(QString::fromLatin1("mergePresenceChanges"), QString::fromLatin1("false"));
+    QContactManager manager(QString::fromLatin1("org.nemomobile.contacts.sqlite"), parameters);
+    QList<QContactId> aggregateIds = manager.contactIds(); // ensure the database has been created.
+    if (!aggregateIds.isEmpty()) {
+        qWarning() << "Database not empty at beginning of test!  Contains:" << aggregateIds.size() << "aggregate contacts!";
+    }
+
+    qint64 elapsedTimeTotal = 0;
+    qsrand(stable ? 42 : QDateTime::currentDateTime().time().second());
+    elapsedTimeTotal += (runAll || functionArgs.contains("simpleFilterAndSort")) ? simpleFilterAndSort(manager, quickMode) : 0;
+    elapsedTimeTotal += (runAll || functionArgs.contains("asynchronousOperations")) ? asynchronousOperations(manager, quickMode) : 0;
+    elapsedTimeTotal += (runAll || functionArgs.contains("synchronousOperations")) ? synchronousOperations(manager, quickMode) : 0;
+    elapsedTimeTotal += (runAll || functionArgs.contains("smallBatchWithExistingData")) ? smallBatchWithExistingData(manager, quickMode) : 0;
+    elapsedTimeTotal += (runAll || functionArgs.contains("aggregationOperations")) ? aggregationOperations(manager, quickMode) : 0;
+    elapsedTimeTotal += (runAll || functionArgs.contains("smallBatchPresenceUpdate")) ? smallBatchPresenceUpdate(manager, quickMode) : 0;
+    elapsedTimeTotal += (runAll || functionArgs.contains("entireBatchPresenceUpdate")) ? entireBatchPresenceUpdate(manager, quickMode) : 0;
+    elapsedTimeTotal += (runAll || functionArgs.contains("scalingPresenceUpdate")) ? scalingPresenceUpdate(manager, quickMode) : 0;
+    elapsedTimeTotal += (runAll || functionArgs.contains("nonAggregatedPresenceUpdate")) ? nonAggregatedPresenceUpdate(manager, quickMode) : 0;
+    elapsedTimeTotal += (runAll || functionArgs.contains("aggregatedPresenceUpdate")) ? aggregatedPresenceUpdate(manager, quickMode) : 0;
 
     qDebug() << "\n\nCumulative elapsed time:" << elapsedTimeTotal << "milliseconds";
     return 0;

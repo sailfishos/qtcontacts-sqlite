@@ -10,6 +10,7 @@ BuildRequires: pkgconfig(Qt5Core)
 BuildRequires: pkgconfig(Qt5Sql)
 BuildRequires: pkgconfig(Qt5DBus)
 BuildRequires: pkgconfig(Qt5Contacts)
+BuildRequires: pkgconfig(mlite5)
 Requires: qt5-plugin-sqldriver-sqlite
 
 %description
@@ -23,7 +24,6 @@ Requires: qt5-plugin-sqldriver-sqlite
 Summary:    Unit tests for qtcontacts-sqlite-qt5
 Group:      System/Libraries
 BuildRequires:  pkgconfig(Qt5Test)
-Requires:   blts-tools
 Requires:   %{name} = %{version}-%{release}
 
 %description tests
@@ -32,6 +32,7 @@ This package contains unit tests for the qtcontacts-sqlite-qt5 library.
 %files tests
 %defattr(-,root,root,-)
 /opt/tests/qtcontacts-sqlite-qt5/*
+%{_libdir}/qtcontacts-sqlite-qt5/libtestdlgg.so
 
 %package extensions
 Summary:    QtContacts extension headers for qtcontacts-sqlite-qt5
@@ -51,7 +52,7 @@ This package contains extension headers for the qtcontacts-sqlite-qt5 library.
 %setup -q -n %{name}-%{version}
 
 %build
-%qmake5
+%qmake5 "VERSION=%{version}"
 make %{?_smp_mflags}
 
 %install

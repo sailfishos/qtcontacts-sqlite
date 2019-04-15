@@ -1934,7 +1934,7 @@ void tst_QContactManagerFiltering::sorting()
     QFETCH(int, directioni);
     QFETCH(bool, setbp);
     QFETCH(int, blankpolicyi);
-    QFETCH(int, casesensitivityi);    
+    QFETCH(int, casesensitivityi);
     QFETCH(QString, expected);
     QFETCH(QString, unstable);
 

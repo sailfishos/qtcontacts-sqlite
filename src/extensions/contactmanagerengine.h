@@ -93,9 +93,12 @@ public:
     virtual bool removeOOB(const QString &scope, const QStringList &keys) = 0;
     virtual bool removeOOB(const QString &scope) = 0;
 
+    virtual QStringList displayLabelGroups() = 0;
+
 Q_SIGNALS:
     void contactsPresenceChanged(const QList<QContactId> &contactsIds);
     void syncContactsChanged(const QStringList &syncTargets);
+    void displayLabelGroupsChanged(const QStringList &groups);
 
 protected:
     bool m_nonprivileged;
