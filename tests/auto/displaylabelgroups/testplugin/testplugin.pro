@@ -1,6 +1,7 @@
 TEMPLATE        = lib
 CONFIG         += plugin c++11 link_pkgconfig
 INCLUDEPATH    += ../../../../src/extensions/
+QT             -= gui
 HEADERS         = testdlggplugin.h
 SOURCES         = testdlggplugin.cpp
 TARGET          = $$qtLibraryTarget(testdlgg)
