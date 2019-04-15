@@ -2882,9 +2882,9 @@ ContactsDatabase::ProcessMutex *ContactsDatabase::processMutex() const
 // QDir::isReadable() doesn't support group permissions, only user permissions.
 bool directoryIsRW(const QString &dirPath)
 {
-  QFileInfo databaseDirInfo(dirPath);
-  return (databaseDirInfo.permission(QFile::ReadGroup | QFile::WriteGroup)
-       || databaseDirInfo.permission(QFile::ReadUser  | QFile::WriteUser));
+    QFileInfo databaseDirInfo(dirPath);
+    return (databaseDirInfo.permission(QFile::ReadGroup | QFile::WriteGroup)
+            || databaseDirInfo.permission(QFile::ReadUser  | QFile::WriteUser));
 }
 
 bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, bool autoTest, bool secondaryConnection)

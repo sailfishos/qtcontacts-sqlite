@@ -36,6 +36,10 @@
 
 #include <QScopedPointer>
 #include <QSqlDatabase>
+#include <QObject>
+#include <QList>
+#include <QMap>
+#include <QString>
 
 #include "contactsdatabase.h"
 #include "contactnotifier.h"

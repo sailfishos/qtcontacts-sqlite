@@ -74,39 +74,6 @@
 // qtpim doesn't support the displayLabelGroup field natively, but qtcontacts-sqlite provides it
 #define DISPLAY_LABEL_GROUP_STORAGE_SUPPORTED
 
-// Eventually these will make it into qtestcase.h
-// but we might need to tweak the timeout values here.
-#ifndef QTRY_COMPARE
-#define QTRY_COMPARE(__expr, __expected) \
-    do { \
-        const int __step = 50; \
-        const int __timeout = 5000; \
-        if ((__expr) != (__expected)) { \
-            QTest::qWait(0); \
-        } \
-        for (int __i = 0; __i < __timeout && ((__expr) != (__expected)); __i+=__step) { \
-            QTest::qWait(__step); \
-        } \
-        QCOMPARE(__expr, __expected); \
-    } while(0)
-#endif
-
-#ifndef QTRY_VERIFY
-#define QTRY_VERIFY(__expr) \
-        do { \
-        const int __step = 50; \
-        const int __timeout = 5000; \
-        if (!(__expr)) { \
-            QTest::qWait(0); \
-        } \
-        for (int __i = 0; __i < __timeout && !(__expr); __i+=__step) { \
-            QTest::qWait(__step); \
-        } \
-        QVERIFY(__expr); \
-    } while(0)
-#endif
-
-
 #define QTRY_WAIT(code, __expr) \
         do { \
         const int __step = 50; \
@@ -122,29 +89,6 @@
 
 #define QCONTACTMANAGER_REMOVE_VERSIONS_FROM_URI(params)  params.remove(QString::fromLatin1(QTCONTACTS_VERSION_NAME)); \
                                                           params.remove(QString::fromLatin1(QTCONTACTS_IMPLEMENTATION_VERSION_NAME))
-
-#define QTRY_COMPARE_SIGNALS_LOCALID_COUNT(__signalSpy, __expectedCount) \
-    do { \
-        int __spiedSigCount = 0; \
-        const int __step = 50; \
-        const int __timeout = 5000; \
-        for (int __i = 0; __i < __timeout; __i+=__step) { \
-            /* accumulate added from signals */ \
-            __spiedSigCount = 0; \
-            const QList<QList<QVariant> > __spiedSignals = __signalSpy; \
-            foreach (const QList<QVariant> &__arguments, __spiedSignals) { \
-                foreach (QContactId __apiId, __arguments.first().value<QList<QContactId> >()) { \
-                    QVERIFY(ContactId::isValid(__apiId)); \
-                    __spiedSigCount++; \
-                } \
-            } \
-            if(__spiedSigCount == __expectedCount) { \
-                break; \
-            } \
-            QTest::qWait(__step); \
-        } \
-        QCOMPARE(__spiedSigCount, __expectedCount); \
-    } while(0)
 
 QTCONTACTS_USE_NAMESPACE
 
@@ -217,77 +161,6 @@ DetailMap detailValues(const QContactDetail &detail, bool includeProvenance = tr
     }
 
     return rv;
-}
-
-static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
-{
-    // Work around incorrect result from QVariant::operator== when variants contain QList<int>
-    static const int QListIntType = QMetaType::type("QList<int>");
-
-    const int lhsType = lhs.userType();
-    if (lhsType != rhs.userType()) {
-        return false;
-    }
-
-    if (lhsType == QListIntType) {
-        return (lhs.value<QList<int> >() == rhs.value<QList<int> >());
-    }
-    return (lhs == rhs);
-}
-
-static bool detailValuesEqual(const QContactDetail &lhs, const QContactDetail &rhs)
-{
-    const DetailMap lhsValues(detailValues(lhs, false));
-    const DetailMap rhsValues(detailValues(rhs, false));
-
-    if (lhsValues.count() != rhsValues.count()) {
-        return false;
-    }
-
-    DetailMap::const_iterator lit = lhsValues.constBegin(), lend = lhsValues.constEnd();
-    DetailMap::const_iterator rit = rhsValues.constBegin();
-    for ( ; lit != lend; ++lit, ++rit) {
-        if (!variantEqual(*lit, *rit)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-static bool detailValuesSuperset(const QContactDetail &lhs, const QContactDetail &rhs)
-{
-    // True if all values in rhs are present in lhs
-    const DetailMap lhsValues(detailValues(lhs, false));
-    const DetailMap rhsValues(detailValues(rhs, false));
-
-    if (lhsValues.count() < rhsValues.count()) {
-        return false;
-    }
-
-    foreach (const DetailMap::key_type &key, rhsValues.keys()) {
-        if (!variantEqual(lhsValues[key], rhsValues[key])) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-static bool detailsEquivalent(const QContactDetail &lhs, const QContactDetail &rhs)
-{
-    // Same as operator== except ignores differences in accessConstraints values
-    if (detailType(lhs) != detailType(rhs))
-        return false;
-    return detailValuesEqual(lhs, rhs);
-}
-
-static bool detailsSuperset(const QContactDetail &lhs, const QContactDetail &rhs)
-{
-    // True is lhs is a superset of rhs
-    if (detailType(lhs) != detailType(rhs))
-        return false;
-    return detailValuesSuperset(lhs, rhs);
 }
 
 bool validContactType(const QContact &contact)
