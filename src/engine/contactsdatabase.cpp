@@ -3024,6 +3024,25 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
             m_database.close();
             return false;
         }
+    } else if (databasePreexisting && !databaseOwner) {
+        // check that the version is correct.  If not, it is probably because another process
+        // with an open database connection is preventing upgrade of the database schema.
+        QSqlQuery versionQuery(m_database);
+        versionQuery.prepare("PRAGMA user_version");
+        if (!versionQuery.exec() || !versionQuery.next()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query existing database schema version: %1").arg(versionQuery.lastError().text()));
+            m_database.close();
+            return false;
+        }
+
+        int schemaVersion = versionQuery.value(0).toInt();
+        if (schemaVersion != currentSchemaVersion) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Existing database schema version is unexpected: %1 != %2. "
+                                                          "Is a process preventing schema upgrade?")
+                                                     .arg(schemaVersion).arg(currentSchemaVersion));
+            m_database.close();
+            return false;
+        }
     }
 
     // Attach to the transient store - any process can create it, but only the primary connection of each
