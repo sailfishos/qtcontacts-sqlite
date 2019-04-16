@@ -65,6 +65,7 @@ int TestDlgg::priority() const
 
 bool TestDlgg::validForLocale(const QLocale &locale) const
 {
+    Q_UNUSED(locale)
     return true; // this test plugin is always "valid".
 }
 

@@ -2652,7 +2652,6 @@ void tst_Aggregation::wasLocalCreation()
     QSignalSpy addSpy(m_cm, contactsAddedSignal);
     QSignalSpy remSpy(m_cm, contactsRemovedSignal);
     int addSpyCount = 0;
-    int remSpyCount = 0;
 
     QContactName an;
     an.setFirstName("Alice");

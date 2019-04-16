@@ -30,8 +30,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef __MEMORYTABLE_H__
-#define __MEMORYTABLE_H__
+#ifndef MEMORYTABLE_H
+#define MEMORYTABLE_H
 
 #include <QByteArray>
 

@@ -70,6 +70,77 @@ Q_DECLARE_METATYPE(QContact)
 Q_DECLARE_METATYPE(QContactManager::Error)
 Q_DECLARE_METATYPE(Qt::CaseSensitivity)
 
+static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
+{
+    // Work around incorrect result from QVariant::operator== when variants contain QList<int>
+    static const int QListIntType = QMetaType::type("QList<int>");
+
+    const int lhsType = lhs.userType();
+    if (lhsType != rhs.userType()) {
+        return false;
+    }
+
+    if (lhsType == QListIntType) {
+        return (lhs.value<QList<int> >() == rhs.value<QList<int> >());
+    }
+    return (lhs == rhs);
+}
+
+static bool detailValuesEqual(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    const DetailMap lhsValues(detailValues(lhs, false));
+    const DetailMap rhsValues(detailValues(rhs, false));
+
+    if (lhsValues.count() != rhsValues.count()) {
+        return false;
+    }
+
+    DetailMap::const_iterator lit = lhsValues.constBegin(), lend = lhsValues.constEnd();
+    DetailMap::const_iterator rit = rhsValues.constBegin();
+    for ( ; lit != lend; ++lit, ++rit) {
+        if (!variantEqual(*lit, *rit)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool detailsEquivalent(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    // Same as operator== except ignores differences in accessConstraints values
+    if (detailType(lhs) != detailType(rhs))
+        return false;
+    return detailValuesEqual(lhs, rhs);
+}
+
+static bool detailValuesSuperset(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    // True if all values in rhs are present in lhs
+    const DetailMap lhsValues(detailValues(lhs, false));
+    const DetailMap rhsValues(detailValues(rhs, false));
+
+    if (lhsValues.count() < rhsValues.count()) {
+        return false;
+    }
+
+    foreach (const DetailMap::key_type &key, rhsValues.keys()) {
+        if (!variantEqual(lhsValues[key], rhsValues[key])) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool detailsSuperset(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    // True is lhs is a superset of rhs
+    if (detailType(lhs) != detailType(rhs))
+        return false;
+    return detailValuesSuperset(lhs, rhs);
+}
+
 class tst_QContactManager : public QObject
 {
 Q_OBJECT
@@ -2515,7 +2586,8 @@ void tst_QContactManager::signalEmission()
     /* We basically loop, processing events, until we've seen an Add signal for each contact */
     sigids.clear();
 
-    QTRY_WAIT( while(spyCA.size() > 0) {sigids += spyCA.takeFirst().at(0).value<QList<QContactId> >(); }, sigids.contains(ContactId::apiId(c)) && sigids.contains(ContactId::apiId(c2)) && sigids.contains(ContactId::apiId(c3)));
+    QTRY_WAIT( while(spyCA.size() > 0) {sigids += spyCA.takeFirst().at(0).value<QList<QContactId> >(); },
+               sigids.contains(ContactId::apiId(c)) && sigids.contains(ContactId::apiId(c2)) && sigids.contains(ContactId::apiId(c3)));
     // if we perform aggregation, aggregates might get updated; this cannot be verified:
     //QTRY_COMPARE(spyCM.count(), 0);
 
