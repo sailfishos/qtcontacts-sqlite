@@ -63,9 +63,13 @@ int TestDlgg::priority() const
     return 1; // test plugin has slightly higher than the default/fallback.
 }
 
-bool TestDlgg::validForLocale(const QLocale &locale) const
+bool TestDlgg::preferredForLocale(const QLocale &) const
 {
-    Q_UNUSED(locale)
+    return true; // this test plugin is always "preferred".
+}
+
+bool TestDlgg::validForLocale(const QLocale &) const
+{
     return true; // this test plugin is always "valid".
 }
 

@@ -3553,9 +3553,21 @@ QStringList ContactsDatabase::displayLabelGroups() const
     QStringList groups;
     const QLocale locale;
     for (int i = 0; i < m_dlgGenerators.size(); ++i) {
-        if (m_dlgGenerators.at(i)->validForLocale(locale)) {
+        if (m_dlgGenerators.at(i)->preferredForLocale(locale)) {
             groups = m_dlgGenerators.at(i)->displayLabelGroups();
-            break;
+            if (!groups.isEmpty()) {
+                break;
+            }
+        }
+    }
+    if (groups.isEmpty()) {
+        for (int i = 0; i < m_dlgGenerators.size(); ++i) {
+            if (m_dlgGenerators.at(i)->validForLocale(locale)) {
+                groups = m_dlgGenerators.at(i)->displayLabelGroups();
+                if (!groups.isEmpty()) {
+                    break;
+                }
+            }
         }
     }
 

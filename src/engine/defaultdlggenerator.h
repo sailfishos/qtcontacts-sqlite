@@ -45,6 +45,7 @@ public:
     QString name() const Q_DECL_OVERRIDE;
     int priority() const Q_DECL_OVERRIDE;
     bool validForLocale(const QLocale &locale) const Q_DECL_OVERRIDE;
+    bool preferredForLocale(const QLocale &locale) const Q_DECL_OVERRIDE;
     QString displayLabelGroup(const QString &data) const Q_DECL_OVERRIDE;
     QStringList displayLabelGroups() const Q_DECL_OVERRIDE;
 };

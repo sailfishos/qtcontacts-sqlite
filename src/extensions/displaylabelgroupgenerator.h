@@ -56,6 +56,7 @@ public:
     virtual ~DisplayLabelGroupGenerator() {}
     virtual QString name() const = 0;
     virtual int priority() const = 0; // higher priority will be used before lower priority when generating label groups.
+    virtual bool preferredForLocale(const QLocale &locale) const = 0;
     virtual bool validForLocale(const QLocale &locale) const = 0;
     virtual QString displayLabelGroup(const QString &data) const = 0;
     virtual QStringList displayLabelGroups() const = 0;
