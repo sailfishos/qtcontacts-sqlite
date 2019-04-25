@@ -1,0 +1,8 @@
+auto/aggregation/tst_aggregation
+auto/database/tst_database
+auto/memorytable/tst_memorytable
+auto/phonenumber/tst_phonenumber
+auto/qcontactmanager/tst_qcontactmanager
+auto/qcontactmanagerfiltering/tst_qcontactmanagerfiltering
+benchmarks/deltadetection/deltadetection
+benchmarks/fetchtimes/fetchtimes
