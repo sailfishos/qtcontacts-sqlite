@@ -5,6 +5,9 @@ TARGET = qtcontacts_sqlite
 
 QT = core sql dbus
 
+# Error on undefined symbols
+QMAKE_LFLAGS += $$QMAKE_LFLAGS_NOUNDEF
+
 CONFIG += plugin hide_symbols
 PLUGIN_TYPE=contacts
 DESTDIR=$${PLUGIN_TYPE}
