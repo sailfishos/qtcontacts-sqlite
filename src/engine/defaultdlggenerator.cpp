@@ -75,9 +75,14 @@ int DefaultDlgGenerator::priority() const
     return 0;
 }
 
+bool DefaultDlgGenerator::preferredForLocale(const QLocale &) const
+{
+    return false; // this default plugin is the fallback, never preferred but always valid.
+}
+
 bool DefaultDlgGenerator::validForLocale(const QLocale &) const
 {
-    return true; // this default plugin is the fallback, and always valid.
+    return true; // this default plugin is the fallback, always valid.
 }
 
 QStringList DefaultDlgGenerator::displayLabelGroups() const
