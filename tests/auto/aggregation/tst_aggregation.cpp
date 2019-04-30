@@ -6810,5 +6810,5 @@ void tst_Aggregation::testSyncAdapter()
     tsa.removeAllContacts();
 }
 
-QTEST_MAIN(tst_Aggregation)
+QTEST_GUILESS_MAIN(tst_Aggregation)
 #include "tst_aggregation.moc"
