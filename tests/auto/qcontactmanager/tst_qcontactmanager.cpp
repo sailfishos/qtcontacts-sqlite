@@ -170,6 +170,7 @@ private:
 
 public slots:
     void initTestCase();
+    void cleanup();
     void cleanupTestCase();
 private slots:
 
@@ -337,6 +338,28 @@ void tst_QContactManager::initTestCase()
     //QVERIFY(!QContactManager::availableManagers().contains("testdummy"));
     //QVERIFY(!QContactManager::availableManagers().contains("teststaticdummy"));
     //QVERIFY(!QContactManager::availableManagers().contains("maliciousplugin"));
+}
+
+void tst_QContactManager::cleanup()
+{
+    QMap<QString, QString> params;
+    params.insert("autoTest", "true");
+    params.insert("mergePresenceChanges", "false");
+
+    QString mgrUri = QContactManager::buildUri(QLatin1String(SQLITE_MANAGER), params);
+    QScopedPointer<QContactManager> cm(QContactManager::fromUri(mgrUri));
+    if (cm) {
+        QList<QContact> contacts = cm->contacts();
+        QList<QContactId> ids;
+        for (const QContact &contact: contacts) {
+            ids.append(retrievalId(contact));
+        }
+        if (!ids.isEmpty()) {
+            QSignalSpy removedSpy(cm.data(), contactsRemovedSignal);
+            cm->removeContacts(ids, 0);
+            removedSpy.wait();
+        }
+    }
 }
 
 void tst_QContactManager::cleanupTestCase()
