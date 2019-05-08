@@ -3456,13 +3456,15 @@ void ContactsDatabase::regenerateDisplayLabelGroups()
 
 QString ContactsDatabase::displayLabelGroupPreferredProperty() const
 {
-    QString retn(QStringLiteral("QContactName::FieldLastName"));
+    QString retn(QStringLiteral("QContactName::FieldFirstName"));
 #ifdef HAS_MLITE
     const QVariant groupPropertyConf = m_groupPropertyConf.value();
     if (groupPropertyConf.isValid()) {
         const QString gpcString = groupPropertyConf.toString();
         if (gpcString.compare(QStringLiteral("FirstName"), Qt::CaseInsensitive) == 0) {
             retn = QStringLiteral("QContactName::FieldFirstName");
+        } else if (gpcString.compare(QStringLiteral("LastName"), Qt::CaseInsensitive) == 0) {
+            retn = QStringLiteral("QContactName::FieldLastName");
         } else if (gpcString.compare(QStringLiteral("DisplayLabel"), Qt::CaseInsensitive) == 0) {
             retn = QStringLiteral("QContactDisplayLabel::FieldLabel");
         }
