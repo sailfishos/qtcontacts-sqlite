@@ -173,5 +173,5 @@ void tst_Database::fromDateTimeString_isodate_speed()
     }
 }
 
-QTEST_MAIN(tst_Database)
+QTEST_GUILESS_MAIN(tst_Database)
 #include "tst_database.moc"

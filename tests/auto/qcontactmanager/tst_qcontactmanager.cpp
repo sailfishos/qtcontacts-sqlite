@@ -4734,5 +4734,5 @@ void tst_QContactManager::searchSensitivity()
     QCOMPARE(m->contactIds(sensitiveMismatch).count(), originalCount[5]);
 }
 
-QTEST_MAIN(tst_QContactManager)
+QTEST_GUILESS_MAIN(tst_QContactManager)
 #include "tst_qcontactmanager.moc"

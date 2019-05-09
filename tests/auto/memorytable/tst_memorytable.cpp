@@ -685,5 +685,5 @@ void tst_MemoryTable::iteration()
     QCOMPARE(std::distance(it, end), static_cast<std::ptrdiff_t>(0));
 }
 
-QTEST_MAIN(tst_MemoryTable)
+QTEST_GUILESS_MAIN(tst_MemoryTable)
 #include "tst_memorytable.moc"

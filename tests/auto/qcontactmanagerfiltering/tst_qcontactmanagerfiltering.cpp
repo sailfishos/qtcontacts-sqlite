@@ -3705,6 +3705,6 @@ void tst_QContactManagerFiltering::dumpContacts()
     }
 }
 
-QTEST_MAIN(tst_QContactManagerFiltering)
+QTEST_GUILESS_MAIN(tst_QContactManagerFiltering)
 #include "tst_qcontactmanagerfiltering.moc"
 #include "qcontactmanager.h"
