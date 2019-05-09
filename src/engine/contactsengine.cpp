@@ -127,7 +127,7 @@ public:
         return m_request;
     }
 
-    void clear()
+    void clear() override
     {
         m_request = 0;
     }
@@ -137,7 +137,7 @@ public:
         return m_error;
     }
 
-    void setError(QContactManager::Error error)
+    void setError(QContactManager::Error error) override
     {
         m_error = error;
     }
@@ -157,18 +157,18 @@ public:
     {
     }
 
-    void execute(ContactReader *, WriterProxy &writer)
+    void execute(ContactReader *, WriterProxy &writer) override
     {
         m_error = writer->save(&m_contacts, m_definitionMask, 0, &m_errorMap, false, false, false);
     }
 
-    void updateState(QContactAbstractRequest::State state)
+    void updateState(QContactAbstractRequest::State state) override
     {
          QContactManagerEngine::updateContactSaveRequest(
                      m_request, m_contacts, m_error, m_errorMap, state);
     }
 
-    QString description() const
+    QString description() const override
     {
         QString s(QLatin1String("Save"));
         foreach (const QContact &c, m_contacts) {
@@ -192,13 +192,13 @@ public:
     {
     }
 
-    void execute(ContactReader *, WriterProxy &writer)
+    void execute(ContactReader *, WriterProxy &writer) override
     {
         m_errorMap.clear();
         m_error = writer->remove(m_contactIds, &m_errorMap, false);
     }
 
-    void updateState(QContactAbstractRequest::State state)
+    void updateState(QContactAbstractRequest::State state) override
     {
         QContactManagerEngine::updateContactRemoveRequest(
                 m_request,
@@ -207,7 +207,7 @@ public:
                 state);
     }
 
-    QString description() const
+    QString description() const override
     {
         QString s(QLatin1String("Remove"));
         foreach (const QContactId &id, m_contactIds) {
@@ -232,7 +232,7 @@ public:
     {
     }
 
-    void execute(ContactReader *reader, WriterProxy &)
+    void execute(ContactReader *reader, WriterProxy &) override
     {
         QList<QContact> contacts;
         m_error = reader->readContacts(
@@ -243,7 +243,7 @@ public:
                 m_fetchHint);
     }
 
-    void update(QMutex *mutex)
+    void update(QMutex *mutex) override
     {
         QList<QContact> contacts;      {
             QMutexLocker locker(mutex);
@@ -256,17 +256,17 @@ public:
                 QContactAbstractRequest::ActiveState);
     }
 
-    void updateState(QContactAbstractRequest::State state)
+    void updateState(QContactAbstractRequest::State state) override
     {
         QContactManagerEngine::updateContactFetchRequest(m_request, m_contacts, m_error, state);
     }
 
-    void contactsAvailable(const QList<QContact> &contacts)
+    void contactsAvailable(const QList<QContact> &contacts) override
     {
         m_contacts = contacts;
     }
 
-    QString description() const
+    QString description() const override
     {
         QString s(QLatin1String("Fetch"));
         return s;
@@ -289,13 +289,13 @@ public:
     {
     }
 
-    void execute(ContactReader *reader, WriterProxy &)
+    void execute(ContactReader *reader, WriterProxy &) override
     {
         QList<QContactId> contactIds;
         m_error = reader->readContactIds(&contactIds, m_filter, m_sorting);
     }
 
-    void update(QMutex *mutex)
+    void update(QMutex *mutex) override
     {
         QList<QContactId> contactIds;
         {
@@ -309,18 +309,18 @@ public:
                 QContactAbstractRequest::ActiveState);
     }
 
-    void updateState(QContactAbstractRequest::State state)
+    void updateState(QContactAbstractRequest::State state) override
     {
         QContactManagerEngine::updateContactIdFetchRequest(
                 m_request, m_contactIds, m_error, state);
     }
 
-    void contactIdsAvailable(const QList<QContactId> &contactIds)
+    void contactIdsAvailable(const QList<QContactId> &contactIds) override
     {
         m_contactIds = contactIds;
     }
 
-    QString description() const
+    QString description() const override
     {
         QString s(QLatin1String("Fetch IDs"));
         return s;
@@ -342,7 +342,7 @@ public:
     {
     }
 
-    void execute(ContactReader *reader, WriterProxy &)
+    void execute(ContactReader *reader, WriterProxy &) override
     {
         QList<QContact> contacts;
         m_error = reader->readContacts(
@@ -352,7 +352,7 @@ public:
                 m_fetchHint);
     }
 
-    void update(QMutex *mutex)
+    void update(QMutex *mutex) override
     {
         QList<QContact> contacts;
         {
@@ -367,7 +367,7 @@ public:
                 QContactAbstractRequest::ActiveState);
     }
 
-    void updateState(QContactAbstractRequest::State state)
+    void updateState(QContactAbstractRequest::State state) override
     {
         QContactManagerEngine::updateContactFetchByIdRequest(
                 m_request,
@@ -377,12 +377,12 @@ public:
                 state);
     }
 
-    void contactsAvailable(const QList<QContact> &contacts)
+    void contactsAvailable(const QList<QContact> &contacts) override
     {
         m_contacts = contacts;
     }
 
-    QString description() const
+    QString description() const override
     {
         QString s(QLatin1String("FetchByID"));
         foreach (const QContactId &id, m_contactIds) {
@@ -407,18 +407,18 @@ public:
     {
     }
 
-    void execute(ContactReader *, WriterProxy &writer)
+    void execute(ContactReader *, WriterProxy &writer) override
     {
         m_error = writer->save(m_relationships, &m_errorMap, false, false);
     }
 
-    void updateState(QContactAbstractRequest::State state)
+    void updateState(QContactAbstractRequest::State state) override
     {
          QContactManagerEngine::updateRelationshipSaveRequest(
                      m_request, m_relationships, m_error, m_errorMap, state);
     }
 
-    QString description() const
+    QString description() const override
     {
         QString s(QLatin1String("Relationship Save"));
         return s;
@@ -438,18 +438,18 @@ public:
     {
     }
 
-    void execute(ContactReader *, WriterProxy &writer)
+    void execute(ContactReader *, WriterProxy &writer) override
     {
         m_error = writer->remove(m_relationships, &m_errorMap, false);
     }
 
-    void updateState(QContactAbstractRequest::State state)
+    void updateState(QContactAbstractRequest::State state) override
     {
         QContactManagerEngine::updateRelationshipRemoveRequest(
                 m_request, m_error, m_errorMap, state);
     }
 
-    QString description() const
+    QString description() const override
     {
         QString s(QLatin1String("Relationship Remove"));
         return s;
@@ -471,7 +471,7 @@ public:
     {
     }
 
-    void execute(ContactReader *reader, WriterProxy &)
+    void execute(ContactReader *reader, WriterProxy &) override
     {
         m_error = reader->readRelationships(
                 &m_relationships,
@@ -480,13 +480,13 @@ public:
                 m_second);
     }
 
-    void updateState(QContactAbstractRequest::State state)
+    void updateState(QContactAbstractRequest::State state) override
     {
         QContactManagerEngine::updateRelationshipFetchRequest(
                 m_request, m_relationships, m_error, state);
     }
 
-    QString description() const
+    QString description() const override
     {
         QString s(QLatin1String("Relationship Fetch"));
         return s;
@@ -757,12 +757,12 @@ public:
     {
     }
 
-    void contactsAvailable(const QList<QContact> &contacts)
+    void contactsAvailable(const QList<QContact> &contacts) override
     {
         m_thread->contactsAvailable(contacts);
     }
 
-    void contactIdsAvailable(const QList<QContactId> &contactIds)
+    void contactIdsAvailable(const QList<QContactId> &contactIds) override
     {
         m_thread->contactIdsAvailable(contactIds);
     }
