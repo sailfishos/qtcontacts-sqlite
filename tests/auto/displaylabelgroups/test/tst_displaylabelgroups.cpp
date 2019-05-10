@@ -40,10 +40,10 @@
 #include <QContactPhoneNumber>
 #include <QContactHobby>
 
-#include <private/qcontactmanager_p.h>
 #include "contactmanagerengine.h"
 
 #include "qtcontacts-extensions.h"
+#include "qtcontacts-extensions_manager_impl.h"
 
 QTCONTACTS_USE_NAMESPACE
 
@@ -288,8 +288,8 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
     // display label group generator plugin will generate a group
     // for it which was previously "unknown".
     // We expect that group to be added before '#' but after other groups.
-    typedef QtContactsSqliteExtensions::ContactManagerEngine EngineType;
-    EngineType *cme = dynamic_cast<EngineType *>(QContactManagerData::managerData(m_cm)->m_engine);
+    QtContactsSqliteExtensions::ContactManagerEngine *cme =
+        QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
     const QStringList oldContactDisplayLabelGroups = cme->displayLabelGroups();
     QSignalSpy dlgcSpy(cme, SIGNAL(displayLabelGroupsChanged(QStringList)));
 
