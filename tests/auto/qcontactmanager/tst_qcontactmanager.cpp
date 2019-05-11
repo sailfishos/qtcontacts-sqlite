@@ -4692,6 +4692,9 @@ void tst_QContactManager::constituentOfSelf()
     // Verify that the new contact was not aggregated into the self contact
     newContact = m->contact(retrievalId(newContact));
     QVERIFY(!relatedContactIds(newContact.relatedContacts()).contains(m->selfContactId()));
+
+    // Cleanup
+    QVERIFY(m->removeContact(constituent.id()));
 }
 
 void tst_QContactManager::searchSensitivity()
