@@ -172,6 +172,7 @@ private:
     ContactNotifier *m_notifier;
     ContactReader *m_reader;
 
+    bool m_displayLabelGroupsChanged;
     QSet<QContactId> m_addedIds;
     QSet<QContactId> m_removedIds;
     QSet<QContactId> m_changedIds;

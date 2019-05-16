@@ -139,6 +139,7 @@ ContactWriter::ContactWriter(ContactsEngine &engine, ContactsDatabase &database,
     , m_database(database)
     , m_notifier(notifier)
     , m_reader(reader)
+    , m_displayLabelGroupsChanged(false)
 {
     Q_ASSERT(notifier);
     Q_ASSERT(reader);
@@ -177,6 +178,10 @@ bool ContactWriter::commitTransaction()
         return false;
     }
 
+    if (m_displayLabelGroupsChanged) {
+        m_notifier->displayLabelGroupsChanged();
+        m_displayLabelGroupsChanged = false;
+    }
     if (!m_addedIds.isEmpty()) {
         m_notifier->contactsAdded(m_addedIds.toList());
         m_addedIds.clear();
@@ -218,6 +223,7 @@ void ContactWriter::rollbackTransaction()
     m_presenceChangedIds.clear();
     m_changedIds.clear();
     m_addedIds.clear();
+    m_displayLabelGroupsChanged = false;
 }
 
 QContactManager::Error ContactWriter::setIdentity(ContactsDatabase::Identity identity, QContactId contactId)
@@ -5591,7 +5597,7 @@ ContactsDatabase::Query ContactWriter::bindContactDetails(const QContact &contac
     QContactDisplayLabel label = contact.detail<QContactDisplayLabel>();
     const QString displayLabel = label.label().trimmed();
     query.bindValue(0, displayLabel);
-    const QString displayLabelGroup = m_database.determineDisplayLabelGroup(contact);
+    const QString displayLabelGroup = m_database.determineDisplayLabelGroup(contact, &m_displayLabelGroupsChanged);
     query.bindValue(1, displayLabelGroup);
     const int displayLabelGroupSortOrder = m_database.displayLabelGroupSortValue(displayLabelGroup);
     query.bindValue(2, displayLabelGroupSortOrder);

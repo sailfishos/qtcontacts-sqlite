@@ -898,6 +898,7 @@ QContactManager::Error ContactsEngine::open()
                 m_notifier->connect("selfContactIdChanged", "uu", this, SLOT(_q_selfContactIdChanged(quint32,quint32)));
                 m_notifier->connect("relationshipsAdded", "au", this, SLOT(_q_relationshipsAdded(QVector<quint32>)));
                 m_notifier->connect("relationshipsRemoved", "au", this, SLOT(_q_relationshipsRemoved(QVector<quint32>)));
+                m_notifier->connect("displayLabelGroupsChanged", "", this, SLOT(_q_displayLabelGroupsChanged()));
             }
         } else {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to open asynchronous engine database connection"));

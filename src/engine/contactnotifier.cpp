@@ -160,6 +160,12 @@ void ContactNotifier::relationshipsRemoved(const QSet<QContactId> &contactIds)
     }
 }
 
+void ContactNotifier::displayLabelGroupsChanged()
+{
+    QDBusMessage message = createSignal("displayLabelGroupsChanged", m_nonprivileged);
+    QDBusConnection::sessionBus().send(message);
+}
+
 bool ContactNotifier::connect(const char *name, const char *signature, QObject *receiver, const char *slot)
 {
     static QDBusConnection connection(QDBusConnection::sessionBus());

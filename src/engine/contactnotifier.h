@@ -55,6 +55,7 @@ public:
     void selfContactIdChanged(QContactId oldId, QContactId newId);
     void relationshipsAdded(const QSet<QContactId> &contactIds);
     void relationshipsRemoved(const QSet<QContactId> &contactIds);
+    void displayLabelGroupsChanged();
 
     bool connect(const char *name, const char *signature, QObject *receiver, const char *slot);
 };
