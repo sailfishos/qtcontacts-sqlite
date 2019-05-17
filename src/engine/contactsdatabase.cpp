@@ -1924,6 +1924,7 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
     }
 
     // for every single contact in our database, read the data required to generate the display label group data.
+    bool emitDisplayLabelGroupChange = false;
     QVariantList contactIds;
     QVariantList displayLabelGroups;
     QVariantList displayLabelGroupSortOrders;
@@ -1959,7 +1960,7 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
             c.saveDetail(&n);
             c.saveDetail(&dl);
 
-            const QString dlg = cdb->determineDisplayLabelGroup(c);
+            const QString dlg = cdb->determineDisplayLabelGroup(c, &emitDisplayLabelGroupChange);
             displayLabelGroups.append(dlg);
             displayLabelGroupSortOrders.append(cdb->displayLabelGroupSortValue(dlg));
         }
@@ -3473,7 +3474,7 @@ QString ContactsDatabase::displayLabelGroupPreferredProperty() const
     return retn;
 }
 
-QString ContactsDatabase::determineDisplayLabelGroup(const QContact &c)
+QString ContactsDatabase::determineDisplayLabelGroup(const QContact &c, bool *emitDisplayLabelGroupChange)
 {
     // Read system setting to determine whether display label group
     // should be generated from last name, first name, or display label.
@@ -3532,19 +3533,17 @@ QString ContactsDatabase::determineDisplayLabelGroup(const QContact &c)
         }
     }
 
-    if (!group.isEmpty() && !m_knownDisplayLabelGroupsSortValues.contains(group)) {
+    if (emitDisplayLabelGroupChange && !group.isEmpty() && !m_knownDisplayLabelGroupsSortValues.contains(group)) {
         // We are about to write a contact to the database which has a
         // display label group which previously was not known / observed.
         // Calculate the sort value for the display label group,
         // and add it to our map of displayLabelGroup->sortValue.
         // Note: this should be thread-safe since we only call this method within writes.
+        *emitDisplayLabelGroupChange = true;
         m_knownDisplayLabelGroupsSortValues.insert(
                 group, ::displayLabelGroupSortValue(
                     group,
                     m_knownDisplayLabelGroupsSortValues));
-
-        // and invoke engine->_q_displayLabelGroupsChanged() asynchronously.
-        QMetaObject::invokeMethod(m_engine, "_q_displayLabelGroupsChanged", Qt::QueuedConnection);
     }
 
     return group;
