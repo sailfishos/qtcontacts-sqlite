@@ -34,6 +34,7 @@
 
 #include <QContactDetail>
 #include <QContactId>
+#include <QContactManager>
 
 #include <QContactOnlineAccount>
 #include <QContactPhoneNumber>
