@@ -34,6 +34,8 @@
 
 #include <qtcontacts-extensions.h>
 
+#include <QDebug>
+
 namespace {
 
 QString normalize(const QString &input, int flags, int maxCharacters)
