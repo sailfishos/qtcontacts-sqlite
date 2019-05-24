@@ -3211,10 +3211,11 @@ QContactManager::Error ContactWriter::calculateDelta(QContact *contact, const Co
             query.reportError("Failed to select modifiable details");
         } else {
             while (query.next()) {
-                const QString syncTarget = query.value<QString>(0);
-                const QString detail = query.value<QString>(1);
-                const quint32 contactId = query.value<quint32>(2);
-                const quint32 detailId = query.value<quint32>(3);
+                int col = 0;
+                const QString syncTarget = query.value<QString>(col++);
+                const QString detail = query.value<QString>(col++);
+                const quint32 contactId = query.value<quint32>(col++);
+                const quint32 detailId = query.value<quint32>(col++);
 
                 const QString provenance(QStringLiteral("%1:%2:%3").arg(contactId).arg(detailId).arg(syncTarget));
                 const StringPair identity = qMakePair(provenance, detail);
@@ -4069,10 +4070,11 @@ QContactManager::Error ContactWriter::syncFetch(const QString &syncTarget, const
                         return QContactManager::UnspecifiedError;
                     }
                     while (query.next()) {
-                        const quint32 aggId(query.value<quint32>(0));
-                        const quint32 constituentId(query.value<quint32>(1));
-                        const QString st(query.value<QString>(2));
-                        const bool incidental(query.value<bool>(3));
+                        int col = 0;
+                        const quint32 aggId(query.value<quint32>(col++));
+                        const quint32 constituentId(query.value<quint32>(col++));
+                        const QString st(query.value<QString>(col++));
+                        const bool incidental(query.value<bool>(col++));
 
                         ConstituentDetails details = { constituentId, st, incidental };
                         constituentDetails[aggId].append(details);
@@ -5594,35 +5596,37 @@ ContactsDatabase::Query ContactWriter::bindContactDetails(const QContact &contac
     const QString firstName(name.value<QString>(QContactName::FieldFirstName).trimmed());
     const QString lastName(name.value<QString>(QContactName::FieldLastName).trimmed());
 
+    int col = 0;
+
     QContactDisplayLabel label = contact.detail<QContactDisplayLabel>();
     const QString displayLabel = label.label().trimmed();
-    query.bindValue(0, displayLabel);
+    query.bindValue(col++, displayLabel);
     const QString displayLabelGroup = m_database.determineDisplayLabelGroup(contact, &m_displayLabelGroupsChanged);
-    query.bindValue(1, displayLabelGroup);
+    query.bindValue(col++, displayLabelGroup);
     const int displayLabelGroupSortOrder = m_database.displayLabelGroupSortValue(displayLabelGroup);
-    query.bindValue(2, displayLabelGroupSortOrder);
+    query.bindValue(col++, displayLabelGroupSortOrder);
 
-    query.bindValue(3, firstName);
-    query.bindValue(4, firstName.toLower());
-    query.bindValue(5, lastName);
-    query.bindValue(6, lastName.toLower());
-    query.bindValue(7, name.value<QString>(QContactName::FieldMiddleName).trimmed());
-    query.bindValue(8, name.value<QString>(QContactName::FieldPrefix).trimmed());
-    query.bindValue(9, name.value<QString>(QContactName::FieldSuffix).trimmed());
-    query.bindValue(10, name.value<QString>(QContactName__FieldCustomLabel).trimmed());
+    query.bindValue(col++, firstName);
+    query.bindValue(col++, firstName.toLower());
+    query.bindValue(col++, lastName);
+    query.bindValue(col++, lastName.toLower());
+    query.bindValue(col++, name.value<QString>(QContactName::FieldMiddleName).trimmed());
+    query.bindValue(col++, name.value<QString>(QContactName::FieldPrefix).trimmed());
+    query.bindValue(col++, name.value<QString>(QContactName::FieldSuffix).trimmed());
+    query.bindValue(col++, name.value<QString>(QContactName__FieldCustomLabel).trimmed());
 
     const QString syncTarget(contact.detail<QContactSyncTarget>().syncTarget());
-    query.bindValue(11, syncTarget);
+    query.bindValue(col++, syncTarget);
 
     const QContactTimestamp timestamp = contact.detail<QContactTimestamp>();
-    query.bindValue(12, ContactsDatabase::dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp).toUTC()));
-    query.bindValue(13, ContactsDatabase::dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp).toUTC()));
+    query.bindValue(col++, ContactsDatabase::dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldCreationTimestamp).toUTC()));
+    query.bindValue(col++, ContactsDatabase::dateTimeString(timestamp.value<QDateTime>(QContactTimestamp::FieldModificationTimestamp).toUTC()));
 
     const QContactGender gender = contact.detail<QContactGender>();
-    query.bindValue(14, QString::number(static_cast<int>(gender.gender())));
+    query.bindValue(col++, QString::number(static_cast<int>(gender.gender())));
 
     const QContactFavorite favorite = contact.detail<QContactFavorite>();
-    query.bindValue(15, favorite.isFavorite());
+    query.bindValue(col++, favorite.isFavorite());
 
     // Does this contact contain the information needed to update hasPhoneNumber?
     bool hasPhoneNumberKnown = definitionMask.isEmpty() || detailListContains<QContactPhoneNumber>(definitionMask);
@@ -5657,26 +5661,26 @@ ContactsDatabase::Query ContactWriter::bindContactDetails(const QContact &contac
     }
 
     if (update) {
-        query.bindValue(16, hasPhoneNumberKnown);
-        query.bindValue(17, hasPhoneNumber);
-        query.bindValue(18, hasEmailAddressKnown);
-        query.bindValue(19, hasEmailAddress);
-        query.bindValue(20, hasOnlineAccountKnown);
-        query.bindValue(21, hasOnlineAccount);
-        query.bindValue(22, isOnlineKnown);
-        query.bindValue(23, isOnline);
-        query.bindValue(24, isDeactivatedKnown);
-        query.bindValue(25, isDeactivated);
-        query.bindValue(26, contactId);
+        query.bindValue(col++, hasPhoneNumberKnown);
+        query.bindValue(col++, hasPhoneNumber);
+        query.bindValue(col++, hasEmailAddressKnown);
+        query.bindValue(col++, hasEmailAddress);
+        query.bindValue(col++, hasOnlineAccountKnown);
+        query.bindValue(col++, hasOnlineAccount);
+        query.bindValue(col++, isOnlineKnown);
+        query.bindValue(col++, isOnline);
+        query.bindValue(col++, isDeactivatedKnown);
+        query.bindValue(col++, isDeactivated);
+        query.bindValue(col++, contactId);
     } else {
-        query.bindValue(16, hasPhoneNumber);
-        query.bindValue(17, hasEmailAddress);
-        query.bindValue(18, hasOnlineAccount);
-        query.bindValue(19, isOnline);
-        query.bindValue(20, isDeactivated);
+        query.bindValue(col++, hasPhoneNumber);
+        query.bindValue(col++, hasEmailAddress);
+        query.bindValue(col++, hasOnlineAccount);
+        query.bindValue(col++, isOnline);
+        query.bindValue(col++, isDeactivated);
 
         // Incidental state only applies to creation
-        query.bindValue(21, !contact.details<QContactIncidental>().isEmpty());
+        query.bindValue(col++, !contact.details<QContactIncidental>().isEmpty());
     }
 
     return query;
