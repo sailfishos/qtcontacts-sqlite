@@ -2699,7 +2699,10 @@ static size_t writeAccessIndex = 2;
 static QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> initializeDisplayLabelGroupGenerators()
 {
     QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> generators;
-    const QString pluginsPath = QStringLiteral("/usr/lib/qtcontacts-sqlite-qt5/");
+    QByteArray pluginsPathEnv = qgetenv("QTCONTACTS_SQLITE_PLUGIN_PATH");
+    const QString pluginsPath = pluginsPathEnv.isEmpty() ?
+        QStringLiteral("/usr/lib/qtcontacts-sqlite-qt5/") :
+        QString::fromUtf8(pluginsPathEnv);
     QDir pluginDir(pluginsPath);
     const QStringList pluginNames = pluginDir.entryList();
     for (const QString &plugin : pluginNames) {
