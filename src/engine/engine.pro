@@ -12,10 +12,9 @@ CONFIG += plugin hide_symbols
 PLUGIN_TYPE=contacts
 DESTDIR=$${PLUGIN_TYPE}
 
-CONFIG += link_pkgconfig
 packagesExist(mlite5) {
     PKGCONFIG += mlite5
-    DEFINES += HAS_MLITE
+    # The `DEFINES` directive is already set in `config.pri`
 } else {
     warning("mlite not available. Display label groups will be generated from last name.")
 }
