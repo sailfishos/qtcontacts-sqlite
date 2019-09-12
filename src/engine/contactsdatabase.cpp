@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (c) 2013-2019 Jolla Ltd.
+ * Copyright (c) 2019 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -1303,6 +1304,10 @@ static const char *upgradeVersion17[] = {
     "PRAGMA user_version=18",
     0 // NULL-terminated
 };
+static const char *upgradeVersion18[] = {
+    "PRAGMA user_version=19",
+    0 // NULL-terminated
+};
 
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
@@ -1738,33 +1743,92 @@ static bool addDisplayLabelGroup(QSqlDatabase &database)
     return true;
 }
 
+static bool forceRegenDisplayLabelGroups(QSqlDatabase &database)
+{
+    bool settingExists = false;
+    const QString localeName = QLocale().name();
+    QString targetLocaleName(localeName);
+    {
+        QSqlQuery selectQuery(database);
+        selectQuery.setForwardOnly(true);
+        const QString statement = QStringLiteral("SELECT Value FROM DbSettings WHERE Name = 'LocaleName'");
+        if (!selectQuery.prepare(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare locale setting (regen) selection query: %1\n%2")
+                    .arg(selectQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        if (!selectQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to select locale setting (regen) value: %1\n%2")
+                    .arg(selectQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        if (selectQuery.next()) {
+            settingExists = true;
+            if (selectQuery.value(0).toString() == localeName) {
+                // the locale setting in the database matches the device's locale.
+                // to force regenerating the display label groups, we want to
+                // modify the database setting, to trigger the regeneration codepath.
+                targetLocaleName = localeName == QStringLiteral("en_GB")
+                                 ? QStringLiteral("fi_FI")
+                                 : QStringLiteral("en_GB");
+            }
+        }
+    }
+
+    if (settingExists) {
+        QSqlQuery setLocaleQuery(database);
+        const QString statement = settingExists
+                                ? QStringLiteral("UPDATE DbSettings SET Value = ? WHERE Name = 'LocaleName'")
+                                : QStringLiteral("INSERT INTO DbSettings (Name, Value) VALUES ('LocaleName', ?)");
+        if (!setLocaleQuery.prepare(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare locale setting update (regen) query: %1\n%2")
+                    .arg(setLocaleQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+        setLocaleQuery.addBindValue(QVariant(targetLocaleName));
+        if (!setLocaleQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to update locale setting (regen) value: %1\n%2")
+                    .arg(setLocaleQuery.lastError().text())
+                    .arg(statement));
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
 struct UpgradeOperation {
     UpgradeFunction fn;
     const char **statements;
 };
 
 static UpgradeOperation upgradeVersions[] = {
-    { 0,                        upgradeVersion0 },
-    { 0,                        upgradeVersion1 },
-    { 0,                        upgradeVersion2 },
-    { 0,                        upgradeVersion3 },
-    { 0,                        upgradeVersion4 },
-    { 0,                        upgradeVersion5 },
-    { 0,                        upgradeVersion6 },
-    { updateNormalizedNumbers,  upgradeVersion7 },
-    { 0,                        upgradeVersion8 },
-    { 0,                        upgradeVersion9 },
-    { 0,                        upgradeVersion10 },
-    { 0,                        upgradeVersion11 },
-    { 0,                        upgradeVersion12 },
-    { 0,                        upgradeVersion13 },
-    { 0,                        upgradeVersion14 },
-    { 0,                        upgradeVersion15 },
-    { updateStorageTypes,       upgradeVersion16 },
-    { addDisplayLabelGroup,     upgradeVersion17 },
+    { 0,                            upgradeVersion0 },
+    { 0,                            upgradeVersion1 },
+    { 0,                            upgradeVersion2 },
+    { 0,                            upgradeVersion3 },
+    { 0,                            upgradeVersion4 },
+    { 0,                            upgradeVersion5 },
+    { 0,                            upgradeVersion6 },
+    { updateNormalizedNumbers,      upgradeVersion7 },
+    { 0,                            upgradeVersion8 },
+    { 0,                            upgradeVersion9 },
+    { 0,                            upgradeVersion10 },
+    { 0,                            upgradeVersion11 },
+    { 0,                            upgradeVersion12 },
+    { 0,                            upgradeVersion13 },
+    { 0,                            upgradeVersion14 },
+    { 0,                            upgradeVersion15 },
+    { updateStorageTypes,           upgradeVersion16 },
+    { addDisplayLabelGroup,         upgradeVersion17 },
+    { forceRegenDisplayLabelGroups, upgradeVersion18 },
 };
 
-static const int currentSchemaVersion = 18;
+static const int currentSchemaVersion = 19;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
@@ -2731,10 +2795,15 @@ static qint32 displayLabelGroupSortValue(const QString &group, const QMap<QStrin
 {
     static const int maxUnicodeCodePointValue = 1114111; // 0x10FFFF
     static const int numberGroupSortValue = maxUnicodeCodePointValue + 1;
+    static const int otherGroupSortValue = numberGroupSortValue + 1;
 
     qint32 retn = -1;
     if (!group.isEmpty()) {
-        retn = group == QStringLiteral("#") ? numberGroupSortValue : knownDisplayLabelGroups.value(group, -1);
+        retn = group == QStringLiteral("#")
+             ? numberGroupSortValue
+             : (group == QStringLiteral("?")
+                ? otherGroupSortValue
+                : knownDisplayLabelGroups.value(group, -1));
         if (retn < 0) {
             // the group is not a previously-known display label group.
             // convert the group to a utf32 code point value.
@@ -2918,6 +2987,8 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
         }
         knownDisplayLabelGroups.removeAll(QStringLiteral("#"));
         knownDisplayLabelGroups.append(QStringLiteral("#"));
+        knownDisplayLabelGroups.removeAll(QStringLiteral("?"));
+        knownDisplayLabelGroups.append(QStringLiteral("?"));
 
         // from that list, build a mapping from group to sort priority value,
         // based upon the position of each group in the list,
@@ -2926,7 +2997,7 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
             const QString &group(knownDisplayLabelGroups.at(i));
             m_knownDisplayLabelGroupsSortValues.insert(
                     group,
-                    group == QStringLiteral("#")
+                    (group == QStringLiteral("#") || group == QStringLiteral("?"))
                             ? ::displayLabelGroupSortValue(group, m_knownDisplayLabelGroupsSortValues)
                             : i);
         }
@@ -3578,6 +3649,9 @@ QStringList ContactsDatabase::displayLabelGroups() const
     if (groups.contains(QStringLiteral("#"))) {
         groups.removeAll(QStringLiteral("#"));
     }
+    if (groups.contains(QStringLiteral("?"))) {
+        groups.removeAll(QStringLiteral("?"));
+    }
 
     {
         QMutexLocker locker(accessMutex());
@@ -3599,13 +3673,16 @@ QStringList ContactsDatabase::displayLabelGroups() const
         while (selectQuery.next()) {
             // naive, but the number of groups should be small.
             const QString seenGroup = selectQuery.value(0).toString();
-            if (seenGroup != QStringLiteral("#") && !groups.contains(seenGroup)) {
+            if (seenGroup != QStringLiteral("#")
+                    && seenGroup != QStringLiteral("?")
+                    && !groups.contains(seenGroup)) {
                 groups.append(seenGroup);
             }
         }
     }
 
     groups.append("#");
+    groups.append("?");
     return groups;
 }
 
