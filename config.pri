@@ -5,4 +5,5 @@ PKGCONFIG += Qt5Contacts
 
 packagesExist(mlite5) {
     DEFINES += HAS_MLITE
+    PKGCONFIG += mlite5
 }
