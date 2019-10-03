@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (c) 2013 - 2019 Jolla Ltd.
+ * Copyright (c) 2019 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -654,6 +655,16 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
     contact->saveDetail(&detail);
 }
 
+template <typename T>
+static void appendUniqueDetail(QList<QContactDetail> *details, QSqlQuery &query)
+{
+    T detail;
+
+    setValues(&detail, &query, 0);
+
+    details->append(detail);
+}
+
 static QContactRelationship makeRelationship(const QString &type, quint32 firstId, quint32 secondId)
 {
     QContactRelationship relationship;
@@ -669,6 +680,7 @@ static QContactRelationship makeRelationship(const QString &type, quint32 firstI
 }
 
 typedef void (*ReadDetail)(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable, const QString &syncTarget, bool relaxConstraints, int offset);
+typedef void (*AppendUniqueDetail)(QList<QContactDetail> *details, QSqlQuery &query);
 
 struct DetailInfo
 {
@@ -680,17 +692,24 @@ struct DetailInfo
     const bool includesContext;
     const bool joinToSort;
     const ReadDetail read;
+    const AppendUniqueDetail appendUnique;
 
-    QString where() const
+    QString where(bool queryContacts) const
     {
-        return table ? QString::fromLatin1("Contacts.contactId IN (SELECT contactId FROM %1 WHERE %2)").arg(QLatin1String(table))
-                     : QLatin1String("%2");
+        return table && queryContacts
+                ? QString::fromLatin1("Contacts.contactId IN (SELECT contactId FROM %1 WHERE %2)").arg(QLatin1String(table))
+                : QLatin1String("%2");
     }
 
-    QString whereExists() const
+    QString whereExists(bool queryContacts) const
     {
-        return table ? QString::fromLatin1("EXISTS (SELECT contactId FROM %1 where contactId = Contacts.contactId)").arg(QLatin1String(table))
-                     : QString::fromLatin1("Contacts.contactId != 0");
+        if (!queryContacts) {
+            return QString();
+        } else if (table) {
+            return QString::fromLatin1("EXISTS (SELECT contactId FROM %1 where contactId = Contacts.contactId)").arg(QLatin1String(table));
+        } else {
+            return QString::fromLatin1("Contacts.contactId != 0");
+        }
     }
 
     QString orderByExistence(bool asc) const
@@ -707,10 +726,10 @@ template <typename T> QContactDetail::DetailType detailIdentifier() { return T::
 
 #define PREFIX_LENGTH 8
 #define DEFINE_DETAIL(Detail, Table, fields, includesContext, joinToSort) \
-    { detailIdentifier<Detail>(), #Detail + PREFIX_LENGTH, #Table, fields, lengthOf(fields), includesContext, joinToSort, readDetail<Detail> }
+    { detailIdentifier<Detail>(), #Detail + PREFIX_LENGTH, #Table, fields, lengthOf(fields), includesContext, joinToSort, readDetail<Detail>, appendUniqueDetail<Detail> }
 
 #define DEFINE_DETAIL_PRIMARY_TABLE(Detail, fields) \
-    { detailIdentifier<Detail>(), #Detail + PREFIX_LENGTH, 0, fields, lengthOf(fields), false, false, 0 }
+    { detailIdentifier<Detail>(), #Detail + PREFIX_LENGTH, 0, fields, lengthOf(fields), false, false, nullptr, nullptr }
 
 // Note: joinToSort should be true only if there can be only a single row for each contact in that table
 static const DetailInfo detailInfo[] =
@@ -759,7 +778,7 @@ const DetailInfo &detailInformation(QContactDetail::DetailType type)
         }
     }
 
-    static const DetailInfo nullDetail = { QContactDetail::TypeUndefined, "Undefined", "", 0, 0, false, false, 0 };
+    static const DetailInfo nullDetail = { QContactDetail::TypeUndefined, "Undefined", "", 0, 0, false, false, nullptr, nullptr };
     return nullDetail;
 }
 
@@ -872,8 +891,13 @@ static QString convertFilterValueToString(const QContactDetailFilter &filter, co
     return defaultValue;
 }
 
-static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bindings,
-                          bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired)
+static QString buildWhere(
+        const QContactDetailFilter &filter,
+        bool queryContacts,
+        QVariantList *bindings,
+        bool *failed,
+        bool *transientModifiedRequired,
+        bool *globalPresenceRequired)
 {
     if (filter.matchFlags() & QContactFilter::MatchKeypadCollation) {
         *failed = true;
@@ -890,7 +914,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
 
     if (filter.detailField() == invalidField) {
         // If there is no field, we're simply testing for the existence of matching details
-        return detail.whereExists();
+        return detail.whereExists(queryContacts);
     }
 
     const FieldInfo &field(fieldInformation(detail, filter.detailField()));
@@ -904,7 +928,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
         || (filterOnField<QContactSyncTarget>(filter, QContactSyncTarget::FieldSyncTarget) &&
             filter.value().toString().isEmpty())) { // match all sync targets if empty sync target filter
         const QString comparison(QLatin1String("%1 IS NOT NULL"));
-        return detail.where().arg(comparison.arg(field.column));
+        return detail.where(queryContacts).arg(comparison.arg(field.column));
     }
 
     do {
@@ -956,7 +980,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
                 }
 
                 if (!clauses.isEmpty()) {
-                    return detail.where().arg(clauses.join(QString::fromLatin1(" AND ")));
+                    return detail.where(queryContacts).arg(clauses.join(QString::fromLatin1(" AND ")));
                 }
                 break;
             }
@@ -978,7 +1002,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
         // CaseSensitive is also specified)
         bool caseInsensitive = stringField && fixedString && ((filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0);
 
-        QString clause(detail.where());
+        QString clause(detail.where(queryContacts));
         QString comparison = QLatin1String("%1");
         QString bindValue;
         QString column;
@@ -1095,7 +1119,7 @@ static QString buildWhere(const QContactDetailFilter &filter, QVariantList *bind
     return QLatin1String("FALSE");
 }
 
-static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList *bindings, bool *failed)
+static QString buildWhere(const QContactDetailRangeFilter &filter, bool queryContacts, QVariantList *bindings, bool *failed)
 {
     const DetailInfo &detail(detailInformation(filter.detailType()));
     if (detail.detailType == QContactDetail::TypeUndefined) {
@@ -1106,7 +1130,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
 
     if (filter.detailField() == invalidField) {
         // If there is no field, we're simply testing for the existence of matching details
-        return detail.whereExists();
+        return detail.whereExists(queryContacts);
     }
 
     const FieldInfo &field(fieldInformation(detail, filter.detailField()));
@@ -1118,7 +1142,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
 
     if (!validFilterField(filter) || (!filter.minValue().isValid() && !filter.maxValue().isValid())) {
         // "match if detail exists, don't care about field or value" filter
-        return detail.where().arg(QString::fromLatin1("%1 IS NOT NULL").arg(field.column));
+        return detail.where(queryContacts).arg(QString::fromLatin1("%1 IS NOT NULL").arg(field.column));
     }
 
     // Our match query depends on the minValue/maxValue parameters
@@ -1176,7 +1200,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, QVariantList 
             comparisonArg = QString::fromLatin1("lower(%1)").arg(field.column);
         }
     }
-    return detail.where().arg(comparison.arg(comparisonArg));
+    return detail.where(queryContacts).arg(comparison.arg(comparisonArg));
 }
 
 static QString buildWhere(const QContactIdFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings, bool *failed)
@@ -1318,11 +1342,26 @@ static QString buildWhere(const QContactChangeLogFilter &filter, QVariantList *b
     return QLatin1String("FALSE");
 }
 
-static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings,
-                          bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired);
+typedef QString (*BuildFilterPart)(
+        const QContactFilter &filter,
+        ContactsDatabase &db,
+        const QString &table,
+        QContactDetail::DetailType detailType,
+        QVariantList *bindings,
+        bool *failed,
+        bool *transientModifiedRequired,
+        bool *globalPresenceRequired);
 
-static QString buildWhere(const QContactUnionFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings,
-                          bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired)
+static QString buildWhere(
+        BuildFilterPart buildWhere,
+        const QContactUnionFilter &filter,
+        ContactsDatabase &db,
+        const QString &table,
+        QContactDetail::DetailType detailType,
+        QVariantList *bindings,
+        bool *failed,
+        bool *transientModifiedRequired,
+        bool *globalPresenceRequired)
 {
     const QList<QContactFilter> filters  = filter.filters();
     if (filters.isEmpty())
@@ -1330,7 +1369,7 @@ static QString buildWhere(const QContactUnionFilter &filter, ContactsDatabase &d
 
     QStringList fragments;
     foreach (const QContactFilter &filter, filters) {
-        const QString fragment = buildWhere(filter, db, table, bindings, failed, transientModifiedRequired, globalPresenceRequired);
+        const QString fragment = buildWhere(filter, db, table, detailType, bindings, failed, transientModifiedRequired, globalPresenceRequired);
         if (!*failed && !fragment.isEmpty()) {
             fragments.append(fragment);
         }
@@ -1339,8 +1378,16 @@ static QString buildWhere(const QContactUnionFilter &filter, ContactsDatabase &d
     return QString::fromLatin1("( %1 )").arg(fragments.join(QLatin1String(" OR ")));
 }
 
-static QString buildWhere(const QContactIntersectionFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings,
-                          bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired)
+static QString buildWhere(
+        BuildFilterPart buildWhere,
+        const QContactIntersectionFilter &filter,
+        ContactsDatabase &db,
+        const QString &table,
+        QContactDetail::DetailType detailType,
+        QVariantList *bindings,
+        bool *failed,
+        bool *transientModifiedRequired,
+        bool *globalPresenceRequired)
 {
     const QList<QContactFilter> filters  = filter.filters();
     if (filters.isEmpty())
@@ -1348,7 +1395,7 @@ static QString buildWhere(const QContactIntersectionFilter &filter, ContactsData
 
     QStringList fragments;
     foreach (const QContactFilter &filter, filters) {
-        const QString fragment = buildWhere(filter, db, table, bindings, failed, transientModifiedRequired, globalPresenceRequired);
+        const QString fragment = buildWhere(filter, db, table, detailType, bindings, failed, transientModifiedRequired, globalPresenceRequired);
         if (filter.type() != QContactFilter::DefaultFilter && !*failed) {
             // default filter gets special (permissive) treatment by the intersection filter.
             fragments.append(fragment.isEmpty() ? QLatin1String("NULL") : fragment);
@@ -1358,7 +1405,7 @@ static QString buildWhere(const QContactIntersectionFilter &filter, ContactsData
     return fragments.join(QLatin1String(" AND "));
 }
 
-static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QVariantList *bindings,
+static QString buildContactWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QContactDetail::DetailType detailType, QVariantList *bindings,
                           bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired)
 {
     Q_ASSERT(failed);
@@ -1369,17 +1416,17 @@ static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, co
     case QContactFilter::DefaultFilter:
         return QString();
     case QContactFilter::ContactDetailFilter:
-        return buildWhere(static_cast<const QContactDetailFilter &>(filter), bindings, failed, transientModifiedRequired, globalPresenceRequired);
+        return buildWhere(static_cast<const QContactDetailFilter &>(filter), true, bindings, failed, transientModifiedRequired, globalPresenceRequired);
     case QContactFilter::ContactDetailRangeFilter:
-        return buildWhere(static_cast<const QContactDetailRangeFilter &>(filter), bindings, failed);
+        return buildWhere(static_cast<const QContactDetailRangeFilter &>(filter), true, bindings, failed);
     case QContactFilter::ChangeLogFilter:
         return buildWhere(static_cast<const QContactChangeLogFilter &>(filter), bindings, failed, transientModifiedRequired);
     case QContactFilter::RelationshipFilter:
         return buildWhere(static_cast<const QContactRelationshipFilter &>(filter), bindings, failed);
     case QContactFilter::IntersectionFilter:
-        return buildWhere(static_cast<const QContactIntersectionFilter &>(filter), db, table, bindings, failed, transientModifiedRequired, globalPresenceRequired);
+        return buildWhere(buildContactWhere, static_cast<const QContactIntersectionFilter &>(filter), db, table, detailType, bindings, failed, transientModifiedRequired, globalPresenceRequired);
     case QContactFilter::UnionFilter:
-        return buildWhere(static_cast<const QContactUnionFilter &>(filter), db, table, bindings, failed, transientModifiedRequired, globalPresenceRequired);
+        return buildWhere(buildContactWhere, static_cast<const QContactUnionFilter &>(filter), db, table, detailType, bindings, failed, transientModifiedRequired, globalPresenceRequired);
     case QContactFilter::IdFilter:
         return buildWhere(static_cast<const QContactIdFilter &>(filter), db, table, bindings, failed);
     default:
@@ -1389,7 +1436,94 @@ static QString buildWhere(const QContactFilter &filter, ContactsDatabase &db, co
     }
 }
 
-static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, bool *transientModifiedRequired, bool *globalPresenceRequired, bool useLocale)
+static QString buildDetailWhere(
+        const QContactFilter &filter,
+        ContactsDatabase &db,
+        const QString &table,
+        QContactDetail::DetailType detailType,
+        QVariantList *bindings,
+        bool *failed,
+        bool *transientModifiedRequired,
+        bool *globalPresenceRequired)
+{
+    Q_ASSERT(failed);
+    Q_ASSERT(globalPresenceRequired);
+    Q_ASSERT(transientModifiedRequired);
+
+    switch (filter.type()) {
+    case QContactFilter::DefaultFilter:
+        return QString();
+    case QContactFilter::ContactDetailFilter: {
+        const QContactDetailFilter &detailFilter = static_cast<const QContactDetailFilter &>(filter);
+
+        if (detailFilter.detailType() == detailType) {
+            return buildWhere(
+                        detailFilter,
+                        false,
+                        bindings,
+                        failed,
+                        transientModifiedRequired,
+                        globalPresenceRequired);
+        } else {
+            *failed = true;
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot build detail query with mismatched details type: %1 %2").arg(detailType).arg(detailFilter.detailType()));
+            return QLatin1String("FALSE");
+        }
+    }
+    case QContactFilter::ContactDetailRangeFilter: {
+        const QContactDetailRangeFilter &detailFilter = static_cast<const QContactDetailRangeFilter &>(filter);
+
+        if (detailFilter.detailType() == detailType) {
+            return buildWhere(detailFilter, false, bindings, failed);
+        } else {
+            *failed = true;
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot build detail query with mismatched details type: %1 != %2").arg(detailType).arg(detailFilter.detailType()));
+            return QLatin1String("FALSE");
+        }
+    }
+    case QContactFilter::IntersectionFilter:
+        return buildWhere(
+                    buildDetailWhere,
+                    static_cast<const QContactIntersectionFilter &>(filter),
+                    db,
+                    table,
+                    detailType,
+                    bindings,
+                    failed,
+                    transientModifiedRequired,
+                    globalPresenceRequired);
+    case QContactFilter::UnionFilter:
+        return buildWhere(
+                    buildDetailWhere,
+                    static_cast<const QContactUnionFilter &>(filter),
+                    db,
+                    table,
+                    detailType,
+                    bindings,
+                    failed,
+                    transientModifiedRequired,
+                    globalPresenceRequired);
+    case QContactFilter::ChangeLogFilter:
+    case QContactFilter::RelationshipFilter:
+    case QContactFilter::IdFilter:
+        *failed = true;
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot build a detail query with a non-detail filter type: %1").arg(filter.type()));
+        return QLatin1String("FALSE");
+    default:
+        *failed = true;
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown filter type: %1").arg(filter.type()));
+        return QLatin1String("FALSE");
+    }
+}
+
+
+static QString buildOrderBy(
+        const QContactSortOrder &order,
+        QContactDetail::DetailType detailType,
+        QStringList *joins,
+        bool *transientModifiedRequired,
+        bool *globalPresenceRequired,
+        bool useLocale )
 {
     Q_ASSERT(joins);
     Q_ASSERT(transientModifiedRequired);
@@ -1399,12 +1533,17 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
     if (detail.detailType == QContactDetail::TypeUndefined) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildOrderBy with unknown detail type: %1").arg(order.detailType()));
         return QString();
+    } else if (detailType != QContactDetail::TypeUndefined && detail.detailType != detailType) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildOrderBy with unknown detail mismatched detail types: %1 != %2").arg(detailType).arg(order.detailType()));
+        return QString();
     }
 
     if (order.detailField() == invalidField) {
         // If there is no field, we're simply sorting by the existence or otherwise of the detail
         return detail.orderByExistence(order.direction() == Qt::AscendingOrder);
     }
+
+    const bool joinToSort = detail.joinToSort && detailType == QContactDetail::TypeUndefined;
 
     const FieldInfo &field(fieldInformation(detail, order.detailField()));
     if (field.field == invalidField) {
@@ -1414,7 +1553,7 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
 
     const bool isDisplayLabelGroup = detail.detailType == QContactDisplayLabel::Type && field.field == QContactDisplayLabel__FieldLabelGroup;
     QString sortExpression(QStringLiteral("%1.%2")
-            .arg(detail.joinToSort ? detail.table : QStringLiteral("Contacts"))
+            .arg(joinToSort ? detail.table : QStringLiteral("Contacts"))
             .arg(isDisplayLabelGroup ? QStringLiteral("DisplayLabelGroupSortOrder") : field.column));
     bool sortBlanks = true;
     bool collate = true;
@@ -1472,7 +1611,7 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
 
     result.append((order.direction() == Qt::AscendingOrder) ? QLatin1String(" ASC") : QLatin1String(" DESC"));
 
-    if (detail.joinToSort) {
+    if (joinToSort ) {
         QString join = QString(QLatin1String(
                 "LEFT JOIN %1 ON Contacts.contactId = %1.contactId"))
                 .arg(QLatin1String(detail.table));
@@ -1481,7 +1620,7 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
             joins->append(join);
 
         return result;
-    } else if (!detail.table) {
+    } else if (!detail.table || detailType != QContactDetail::TypeUndefined) {
         return result;
     } else {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("UNSUPPORTED SORTING: no join and not primary table for ORDER BY in query with: %1, %2")
@@ -1491,7 +1630,14 @@ static QString buildOrderBy(const QContactSortOrder &order, QStringList *joins, 
     return QString();
 }
 
-static QString buildOrderBy(const QList<QContactSortOrder> &order, QString *join, bool *transientModifiedRequired, bool *globalPresenceRequired, bool useLocale)
+static QString buildOrderBy(
+        const QList<QContactSortOrder> &order,
+        QString *join,
+        bool *transientModifiedRequired,
+        bool *globalPresenceRequired,
+        bool useLocale,
+        QContactDetail::DetailType detailType = QContactDetail::TypeUndefined,
+        const QString &finalOrder = QStringLiteral("displayLabel"))
 {
     Q_ASSERT(join);
     Q_ASSERT(transientModifiedRequired);
@@ -1503,7 +1649,8 @@ static QString buildOrderBy(const QList<QContactSortOrder> &order, QString *join
     QStringList joins;
     QStringList fragments;
     foreach (const QContactSortOrder &sort, order) {
-        const QString fragment = buildOrderBy(sort, &joins, transientModifiedRequired, globalPresenceRequired, useLocale);
+        const QString fragment = buildOrderBy(
+                    sort, detailType, &joins, transientModifiedRequired, globalPresenceRequired, useLocale);
         if (!fragment.isEmpty()) {
             fragments.append(fragment);
         }
@@ -1511,7 +1658,7 @@ static QString buildOrderBy(const QList<QContactSortOrder> &order, QString *join
 
     *join = joins.join(QLatin1String(" "));
 
-    fragments.append(QLatin1String("displayLabel"));
+    fragments.append(finalOrder);
     return fragments.join(QLatin1String(", "));
 }
 
@@ -1838,7 +1985,7 @@ QContactManager::Error ContactReader::readContacts(
 
     bool whereFailed = false;
     QVariantList bindings;
-    QString where = buildWhere(filter, m_database, table, &bindings, &whereFailed, &transientModifiedRequired, &globalPresenceRequired);
+    QString where = buildContactWhere(filter, m_database, table, QContactDetail::TypeUndefined, &bindings, &whereFailed, &transientModifiedRequired, &globalPresenceRequired);
     if (whereFailed) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
         return QContactManager::UnspecifiedError;
@@ -2461,7 +2608,7 @@ QContactManager::Error ContactReader::readContactIds(
 
     bool failed = false;
     QVariantList bindings;
-    QString where = buildWhere(filter, m_database, tableName, &bindings, &failed, &transientModifiedRequired, &globalPresenceRequired);
+    QString where = buildContactWhere(filter, m_database, tableName, QContactDetail::TypeUndefined, &bindings, &failed, &transientModifiedRequired, &globalPresenceRequired);
     if (failed) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
         return QContactManager::UnspecifiedError;
@@ -2615,6 +2762,106 @@ QContactManager::Error ContactReader::readRelationships(
         relationships->append(makeRelationship(type, firstId, secondId));
     }
     query.finish();
+
+    return QContactManager::NoError;
+}
+
+QContactManager::Error ContactReader::readDetails(
+        QList<QContactDetail> *details,
+        QContactDetail::DetailType type,
+        QList<int> fields,
+        const QContactFilter &filter,
+        const QList<QContactSortOrder> &order,
+        const QContactFetchHint &fetchHint)
+{
+
+    const DetailInfo &info = detailInformation(type);
+    if (info.detailType == QContactDetail::TypeUndefined) {
+        return QContactManager::UnspecifiedError;
+    } else if (!info.appendUnique) {
+        return QContactManager::UnspecifiedError;
+    }
+
+    QMutexLocker locker(m_database.accessMutex());
+
+    QString join;
+    bool transientModifiedRequired = false;
+    bool globalPresenceRequired = false;
+    const QString orderBy = buildOrderBy(
+                order,
+                &join,
+                &transientModifiedRequired,
+                &globalPresenceRequired,
+                m_database.localized(),
+                type,
+                QString());
+
+    bool whereFailed = false;
+    QVariantList bindings;
+    QString where = buildDetailWhere(
+                filter,
+                m_database,
+                QLatin1String(info.table),
+                type,
+                &bindings,
+                &whereFailed,
+                &transientModifiedRequired,
+                &globalPresenceRequired);
+    if (whereFailed) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
+        return QContactManager::UnspecifiedError;
+    }
+
+    const int maximumCount = fetchHint.maxCountHint();
+
+    QStringList fieldNames;
+    for (int i = 0; i < info.fieldCount; ++i) {
+        if (fields.isEmpty() || fields.contains(info.fields[i].field)) {
+            fieldNames.append(QLatin1String(info.fields[i].column));
+        } else {
+            // Instead of making every column read for a detail optional for the columns we're not
+            // interested in we'll insert a null value.
+            fieldNames.append(QStringLiteral("NULL"));
+        }
+    }
+
+    const QString statement = QStringLiteral(
+                    "SELECT %1, MAX(detailId) AS maxId"
+                    " FROM %2"
+                    "%3"        // WHERE
+                    " GROUP BY %1"
+                    "%4"        // ORDER BY
+                    "%5").arg(  // LIMIT
+                fieldNames.join(QLatin1String(", ")),
+                QLatin1String(info.table),
+                !where.isEmpty() ? QLatin1String(" WHERE ") + where : QString(),
+                !orderBy.isEmpty() ? QLatin1String(" ORDER BY ") + orderBy : QStringLiteral(" ORDER BY maxId DESC"), // If there's no sort order prioritize the most recent entries.
+                maximumCount > 0 ? QStringLiteral(" LIMIT %1").arg(maximumCount): QString());
+
+    QSqlQuery query(m_database);
+    query.setForwardOnly(true);
+    if (!query.prepare(statement)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare a unique details query: %1\n%2")
+                .arg(query.lastError().text())
+                .arg(statement));
+        return QContactManager::UnspecifiedError;
+    }
+
+    for (int i = 0; i < bindings.count(); ++i) {
+        query.bindValue(i, bindings.at(i));
+    }
+
+    if (!ContactsDatabase::execute(query)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query unique details\n%1\nQuery:\n%2")
+                .arg(query.lastError().text())
+                .arg(statement));
+        return QContactManager::UnspecifiedError;
+    }
+
+
+    while (query.next()) {
+        info.appendUnique(details, query);
+    }
 
     return QContactManager::NoError;
 }

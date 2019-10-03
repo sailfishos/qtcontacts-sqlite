@@ -7,6 +7,10 @@ OTHER_FILES = \
     extensions/QContactDeactivated \
     extensions/qcontactdeactivated.h \
     extensions/qcontactdeactivated_impl.h \
+    extensions/QContactDetailFetchRequest \
+    extensions/qcontactdetailfetchrequest.h \
+    extensions/qcontactdetailfetchrequest_p.h \
+    extensions/qcontactdetailfetchrequest_impl.h \
     extensions/qcontactincidental_impl.h \
     extensions/QContactIncidental \
     extensions/qcontactincidental.h \

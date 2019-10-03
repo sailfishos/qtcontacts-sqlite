@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (c) 2013 - 2019 Jolla Ltd.
+ * Copyright (c) 2019 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -82,6 +83,14 @@ public:
             const QString &type,
             const QContactId &first,
             const QContactId &second);
+
+    QContactManager::Error readDetails(
+            QList<QContactDetail> *details,
+            QContactDetail::DetailType type,
+            QList<int> fields,
+            const QContactFilter &filter,
+            const QList<QContactSortOrder> &order,
+            const QContactFetchHint &hint);
 
     bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values);
 
