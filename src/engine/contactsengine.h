@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (c) 2013 - 2019 Jolla Ltd.
+ * Copyright (c) 2019 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -129,9 +130,13 @@ public:
             QContactManager::Error *error) override;
 
     void requestDestroyed(QContactAbstractRequest* req) override;
+    void requestDestroyed(QObject* request) override;
     bool startRequest(QContactAbstractRequest* req) override;
+    bool startRequest(QContactDetailFetchRequest* request) override;
     bool cancelRequest(QContactAbstractRequest* req) override;
+    bool cancelRequest(QObject* request) override;
     bool waitForRequestFinished(QContactAbstractRequest* req, int msecs) override;
+    bool waitForRequestFinished(QObject* req, int msecs) override;
 
     bool isRelationshipTypeSupported(const QString &relationshipType, QContactType::TypeValues contactType) const override;
     QList<QContactType::TypeValues> supportedContactTypes() const override;
