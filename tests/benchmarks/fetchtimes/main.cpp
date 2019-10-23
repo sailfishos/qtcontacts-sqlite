@@ -44,6 +44,7 @@
 #include <QContactPresence>
 #include <QContactNickname>
 #include <QContactOnlineAccount>
+#include <QContactOrganization>
 #include <QContactSyncTarget>
 #include <QContactDetailFilter>
 #include <QContactFetchHint>
@@ -53,6 +54,8 @@
 #include <QtDebug>
 
 #include "../../../src/extensions/qtcontacts-extensions.h"
+#include "../../../src/extensions/qcontactsearchfilterrequest.h"
+#include "../../../src/extensions/qcontactsearchfilterrequest_impl.h"
 
 QTCONTACTS_USE_NAMESPACE
 
@@ -183,6 +186,26 @@ static QStringList generateHobbiesList()
     return retn;
 }
 
+static QStringList generateOrganizationsList()
+{
+    QStringList retn;
+
+    const QStringList first { "ACME", "ExampleCo", "TestCo", "Testy", "Testa" };
+    const QStringList second { "Widget", "Thing", "Gadget", "Stuff", "Kibble" };
+    const QStringList third { "Corp", "Company", "Ltd", "Pty", "Megacorp" };
+
+    retn.reserve(first.size() * second.size() * third.size());
+    for (const QString &f : first) {
+        for (const QString &s : second) {
+            for (const QString &t : third) {
+                retn.append(QStringLiteral("%1 %2 %3").arg(f, s, t));
+            }
+        }
+    }
+
+    return retn;
+}
+
 QContact generateContact(const QString &syncTarget = QString(QLatin1String("local")), bool possiblyAggregate = false)
 {
     static const QStringList firstNames(generateFirstNamesList());
@@ -194,12 +217,14 @@ QContact generateContact(const QString &syncTarget = QString(QLatin1String("loca
     static const QStringList emailProviders(generateEmailProvidersList());
     static const QStringList avatars(generateAvatarsList());
     static const QStringList hobbies(generateHobbiesList());
+    static const QStringList organizations(generateOrganizationsList());
 
     // we randomly determine whether to generate various details
     // to ensure that we have heterogeneous contacts in the db.
     QContact retn;
-    int random = qrand();
-    bool preventAggregate = (syncTarget != QLatin1String("local") && !possiblyAggregate);
+    const int random = qrand();
+    const int random2 = qrand();
+    const bool preventAggregate = (syncTarget != QLatin1String("local") && !possiblyAggregate);
 
     // We always have a sync target.
     QContactSyncTarget synctarget;
@@ -259,12 +284,17 @@ QContact generateContact(const QString &syncTarget = QString(QLatin1String("loca
         h1.setHobby(hobbies.at(random % hobbies.size()));
         retn.saveDetail(&h1);
 
-        int newRandom = qrand();
-        if ((newRandom % 2) == 0) {
+        if ((random2 % 2) == 0) {
             QContactHobby h2;
-            h2.setHobby(hobbies.at(newRandom % hobbies.size()));
+            h2.setHobby(hobbies.at(random2 % hobbies.size()));
             retn.saveDetail(&h2);
         }
+    }
+
+    if ((random % 11) == 0) {
+        QContactOrganization o1;
+        o1.setName(organizations.at(random2 % organizations.size()));
+        retn.saveDetail(&o1);
     }
 
     return retn;
@@ -1156,6 +1186,78 @@ static qint64 asynchronousOperations(QContactManager &manager, bool quickMode)
     return totalTimeTimer.elapsed();
 }
 
+qint64 searchFilter(QContactManager &manager, bool quickMode)
+{
+    // Now we perform a simple create+searchFilter test, where contacts are saved in small chunks.
+    qDebug() << "--------";
+    qDebug() << "Starting save (chunks) / fetch (search filter) / delete (all) test...";
+    QList<QContact> testData, testData2;
+    const int chunkSize = quickMode ? 25 : 50;
+    const int prefillCount = quickMode ? 250 : 1000;
+    for (int i = 0; i < prefillCount/2; ++i) {
+        testData.append(generateContact(QString::fromLatin1("searchFilter"), true));
+        testData2.append(generateContact(QString::fromLatin1("searchFilter2"), true));
+    }
+
+    QList<QList<QContact> > chunks, chunks2;
+    for (int i = 0; i < testData.size(); i += chunkSize) {
+        QList<QContact> chunk, chunk2;
+        for (int j = 0; j < chunkSize && ((i+j) < testData.size()); ++j) {
+            chunk.append(testData[i+j]);
+            chunk2.append(testData2[i+j]);
+        }
+        chunks.append(chunk);
+        chunks2.append(chunk2);
+    }
+
+    qDebug() << "    storing" << prefillCount << "contacts... this will take a while...";
+    QElapsedTimer syncTimer;
+    syncTimer.start();
+    for (int i = 0; i < chunks.size(); ++i) {
+        manager.saveContacts(&chunks[i]);
+    }
+    for (int i = 0; i < chunks2.size(); ++i) {
+        manager.saveContacts(&chunks2[i]);
+    }
+    qint64 saveTime = syncTimer.elapsed();
+    qDebug() << "    stored" << (testData.size()+testData2.size()) << "contacts in" << saveTime << "milliseconds";
+
+    qDebug() << "    retrieving aggregate contacts with search filter";
+    syncTimer.start();
+    QContactSearchFilterRequest r;
+    r.setManager(&manager);
+    r.setSearchFilters(QContactSearchFilterRequest::defaultSearchFilters());
+    r.setSearchFilterValue(QStringLiteral("C"));
+    r.start();
+    r.waitForFinished();
+    QList<QContact> searchFiltered = r.contacts();
+    qint64 fetchTime = syncTimer.elapsed();
+    qDebug() << "    retrieved" << searchFiltered.size() << "contacts in" << fetchTime << "milliseconds";
+
+    QList<QContactId> deleteIds;
+    for (const QList<QContact> &chunk : chunks) {
+        for (const QContact &c : chunk) {
+            deleteIds.append(c.id());
+        }
+    }
+    for (const QList<QContact> &chunk2 : chunks2) {
+        for (const QContact &c : chunk2) {
+            deleteIds.append(c.id());
+        }
+    }
+
+    syncTimer.start();
+    manager.removeContacts(deleteIds);
+    qint64 deleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
+
+    if (searchFiltered.size() == 0) {
+        qWarning() << "Zero aggregate contacts found.  Are you sure you're running with privileged permissions?";
+    }
+
+    return saveTime + fetchTime + deleteTime;
+}
+
 qint64 simpleFilterAndSort(QContactManager &manager, bool quickMode)
 {
     // Now we perform a simple create+filter+sort test, where contacts are saved in small chunks.
@@ -1249,6 +1351,7 @@ int main(int argc, char  *argv[])
         qDebug() << "If --quick is specified, the benchmark will complete more quickly (but results will have higher variance)";
         qDebug() << "Available functions:";
         qDebug() << "    simpleFilterAndSort";
+        qDebug() << "    searchFilter";
         qDebug() << "    asynchronousOperations";
         qDebug() << "    synchronousOperations";
         qDebug() << "    smallBatchWithExistingData";
@@ -1286,6 +1389,7 @@ int main(int argc, char  *argv[])
     qint64 elapsedTimeTotal = 0;
     qsrand(stable ? 42 : QDateTime::currentDateTime().time().second());
     elapsedTimeTotal += (runAll || functionArgs.contains("simpleFilterAndSort")) ? simpleFilterAndSort(manager, quickMode) : 0;
+    elapsedTimeTotal += (runAll || functionArgs.contains("searchFilter")) ? searchFilter(manager, quickMode) : 0;
     elapsedTimeTotal += (runAll || functionArgs.contains("asynchronousOperations")) ? asynchronousOperations(manager, quickMode) : 0;
     elapsedTimeTotal += (runAll || functionArgs.contains("synchronousOperations")) ? synchronousOperations(manager, quickMode) : 0;
     elapsedTimeTotal += (runAll || functionArgs.contains("smallBatchWithExistingData")) ? smallBatchWithExistingData(manager, quickMode) : 0;

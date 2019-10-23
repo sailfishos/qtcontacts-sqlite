@@ -17,6 +17,10 @@ OTHER_FILES = \
     extensions/qcontactoriginmetadata_impl.h \
     extensions/QContactOriginMetadata \
     extensions/qcontactoriginmetadata.h \
+    extensions/QContactSearchFilterRequest \
+    extensions/qcontactsearchfilterrequest.h \
+    extensions/qcontactsearchfilterrequest_p.h \
+    extensions/qcontactsearchfilterrequest_impl.h \
     extensions/qcontactstatusflags_impl.h \
     extensions/QContactStatusFlags \
     extensions/qcontactstatusflags.h \
