@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <mattthew.vogt@jollamobile.com>
+ * Copyright (c) 2013 - 2019 Jolla Ltd.
+ * Copyright (c) 2019 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -33,6 +34,10 @@
 #define CONTACTMANAGERENGINE_H
 
 #include <QContactManagerEngine>
+
+QT_BEGIN_NAMESPACE_CONTACTS
+class QContactDetailFetchRequest;
+QT_END_NAMESPACE_CONTACTS
 
 QTCONTACTS_USE_NAMESPACE
 
@@ -94,6 +99,11 @@ public:
     virtual bool removeOOB(const QString &scope) = 0;
 
     virtual QStringList displayLabelGroups() = 0;
+
+    virtual void requestDestroyed(QObject* request) = 0;
+    virtual bool startRequest(QContactDetailFetchRequest* request) = 0;
+    virtual bool cancelRequest(QObject* request) = 0;
+    virtual bool waitForRequestFinished(QObject* req, int msecs) = 0;
 
 Q_SIGNALS:
     void contactsPresenceChanged(const QList<QContactId> &contactsIds);

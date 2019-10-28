@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (c) 2013 - 2019 Jolla Ltd.
+ * Copyright (c) 2019 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -39,6 +40,7 @@
 
 #include "qtcontacts-extensions.h"
 #include "qtcontacts-extensions_impl.h"
+#include "qcontactdetailfetchrequest_p.h"
 #include "displaylabelgroupgenerator.h"
 
 #include <QCoreApplication>
@@ -97,7 +99,7 @@ public:
     {
     }
 
-    virtual QContactAbstractRequest *request() = 0;
+    virtual QObject *request() = 0;
     virtual void clear() = 0;
 
     virtual void execute(ContactReader *reader, WriterProxy &writer) = 0;
@@ -122,7 +124,7 @@ public:
     {
     }
 
-    QContactAbstractRequest *request()
+    QObject *request()
     {
         return m_request;
     }
@@ -499,6 +501,62 @@ private:
     QList<QContactRelationship> m_relationships;
 };
 
+class DetailFetchJob : public TemplateJob<QContactDetailFetchRequest>
+{
+public:
+    DetailFetchJob(QContactDetailFetchRequest *request, QContactDetailFetchRequestPrivate *d)
+        : TemplateJob(request)
+        , m_filter(d->filter)
+        , m_fetchHint(d->hint)
+        , m_sorting(d->sorting)
+        , m_fields(d->fields)
+        , m_type(d->type)
+    {
+    }
+
+    void execute(ContactReader *reader, WriterProxy &) override
+    {
+        m_error = reader->readDetails(
+                &m_details,
+                m_type,
+                m_fields,
+                m_filter,
+                m_sorting,
+                m_fetchHint);
+    }
+
+    void updateState(QContactAbstractRequest::State state) override
+    {
+        if (m_request) {
+            QContactDetailFetchRequestPrivate * const d = QContactDetailFetchRequestPrivate::get(m_request);
+
+            d->details = m_details;
+            d->error = m_error;
+            d->state = state;
+
+            if (state == QContactAbstractRequest::FinishedState) {
+                emit (m_request->*(d->resultsAvailable))();
+            }
+            emit (m_request->*(d->stateChanged))(state);
+        }
+    }
+
+    QString description() const override
+    {
+        QString s(QLatin1String("Detail Fetch"));
+        return s;
+    }
+
+private:
+    const QContactFilter m_filter;
+    const QContactFetchHint m_fetchHint;
+    const QList<QContactSortOrder> m_sorting;
+    const QList<int> m_fields;
+    QList<QContactDetail> m_details;
+    const QContactDetail::DetailType m_type;
+
+};
+
 class JobThread : public QThread
 {
     struct MutexUnlocker {
@@ -563,7 +621,7 @@ public:
         m_wait.wakeOne();
     }
 
-    bool requestDestroyed(QContactAbstractRequest *request)
+    bool requestDestroyed(QObject *request)
     {
         QMutexLocker locker(&m_mutex);
         for (QList<Job*>::iterator it = m_pendingJobs.begin(); it != m_pendingJobs.end(); it++) {
@@ -593,11 +651,10 @@ public:
                 m_cancelledJobs.erase(it);
                 return false;
             }
-        }
-        return false;
+        } return false;
     }
 
-    bool cancelRequest(QContactAbstractRequest *request)
+    bool cancelRequest(QObject *request)
     {
         QMutexLocker locker(&m_mutex);
         for (QList<Job*>::iterator it = m_pendingJobs.begin(); it != m_pendingJobs.end(); it++) {
@@ -610,7 +667,7 @@ public:
         return false;
     }
 
-    bool waitForFinished(QContactAbstractRequest *request, const int msecs)
+    bool waitForFinished(QObject *request, const int msecs)
     {
         long timeout = msecs <= 0
                 ? INT32_MAX
@@ -1106,9 +1163,15 @@ bool ContactsEngine::removeRelationships(
 
 void ContactsEngine::requestDestroyed(QContactAbstractRequest* req)
 {
+    requestDestroyed(static_cast<QObject *>(req));
+}
+
+void ContactsEngine::requestDestroyed(QObject* req)
+{
     if (m_jobThread)
         m_jobThread->requestDestroyed(req);
 }
+
 
 bool ContactsEngine::startRequest(QContactAbstractRequest* request)
 {
@@ -1149,7 +1212,22 @@ bool ContactsEngine::startRequest(QContactAbstractRequest* request)
     return true;
 }
 
+bool ContactsEngine::startRequest(QContactDetailFetchRequest* request)
+{
+    Job *job = new DetailFetchJob(request, QContactDetailFetchRequestPrivate::get(request));
+
+    job->updateState(QContactAbstractRequest::ActiveState);
+    m_jobThread->enqueue(job);
+
+    return true;
+}
+
 bool ContactsEngine::cancelRequest(QContactAbstractRequest* req)
+{
+    return cancelRequest(static_cast<QObject *>(req));
+}
+
+bool ContactsEngine::cancelRequest(QObject* req)
 {
     if (m_jobThread)
         return m_jobThread->cancelRequest(req);
@@ -1158,6 +1236,11 @@ bool ContactsEngine::cancelRequest(QContactAbstractRequest* req)
 }
 
 bool ContactsEngine::waitForRequestFinished(QContactAbstractRequest* req, int msecs)
+{
+    return waitForRequestFinished(static_cast<QObject *>(req), msecs);
+}
+
+bool ContactsEngine::waitForRequestFinished(QObject* req, int msecs)
 {
     if (m_jobThread)
         return m_jobThread->waitForFinished(req, msecs);
