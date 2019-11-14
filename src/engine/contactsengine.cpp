@@ -1442,6 +1442,12 @@ QString ContactsEngine::synthesizedDisplayLabel(const QContact &contact, QContac
         }
     }
 
+    foreach (const QContactOrganization& organization, contact.details<QContactOrganization>()) {
+        if (!organization.name().isEmpty()) {
+            return organization.name();
+        }
+    }
+
     foreach (const QContactOnlineAccount& account, contact.details<QContactOnlineAccount>()) {
         if (!account.accountUri().isEmpty()) {
             return account.accountUri();

@@ -1308,6 +1308,10 @@ static const char *upgradeVersion18[] = {
     "PRAGMA user_version=19",
     0 // NULL-terminated
 };
+static const char *upgradeVersion19[] = {
+    "PRAGMA user_version=20",
+    0 // NULL-terminated
+};
 
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
@@ -1826,9 +1830,10 @@ static UpgradeOperation upgradeVersions[] = {
     { updateStorageTypes,           upgradeVersion16 },
     { addDisplayLabelGroup,         upgradeVersion17 },
     { forceRegenDisplayLabelGroups, upgradeVersion18 },
+    { forceRegenDisplayLabelGroups, upgradeVersion19 },
 };
 
-static const int currentSchemaVersion = 19;
+static const int currentSchemaVersion = 20;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
