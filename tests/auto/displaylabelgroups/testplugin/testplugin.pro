@@ -8,5 +8,5 @@ TARGET          = $$qtLibraryTarget(testdlgg)
 PLUGIN_TYPE     = contacts_dlgg
 DESTDIR         = $${PLUGIN_TYPE}
 PKGCONFIG      += Qt5Contacts
-target.path     = /usr/lib/qtcontacts-sqlite-qt5/
+target.path     = $$[QT_INSTALL_LIBS]/qtcontacts-sqlite-qt5/
 INSTALLS       += target
