@@ -2770,7 +2770,7 @@ static QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> initiali
     QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> generators;
     QByteArray pluginsPathEnv = qgetenv("QTCONTACTS_SQLITE_PLUGIN_PATH");
     const QString pluginsPath = pluginsPathEnv.isEmpty() ?
-        QStringLiteral("/usr/lib/qtcontacts-sqlite-qt5/") :
+        CONTACTS_DATABASE_PATH :
         QString::fromUtf8(pluginsPathEnv);
     QDir pluginDir(pluginsPath);
     const QStringList pluginNames = pluginDir.entryList();

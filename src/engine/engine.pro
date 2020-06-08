@@ -19,6 +19,12 @@ packagesExist(mlite5) {
     warning("mlite not available. Display label groups will be generated from last name.")
 }
 
+# This should be passed on qmake command line
+isEmpty(PKGCONFIG_LIB) {
+    PKGCONFIG_LIB = lib
+    message("PKGCONFIG_LIB is unset, assuming $$PKGCONFIG_LIB")
+}
+
 # we hardcode this for Qt4 as there's no GenericDataLocation offered by QDesktopServices
 DEFINES += 'QTCONTACTS_SQLITE_PRIVILEGED_DIR=\'\"privileged\"\''
 DEFINES += 'QTCONTACTS_SQLITE_DATABASE_DIR=\'\"Contacts/qtcontacts-sqlite\"\''
@@ -70,7 +76,7 @@ headers.files = ../extensions/*
 headers.depends = ../extensions/*
 INSTALLS += headers
 
-pkgconfig.path = $${PREFIX}/lib/pkgconfig
+pkgconfig.path = $${PREFIX}/$${PKGCONFIG_LIB}/pkgconfig
 pkgconfig.files = ../$${PACKAGENAME}.pc
 INSTALLS += pkgconfig
 

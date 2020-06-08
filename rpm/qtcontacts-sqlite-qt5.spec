@@ -2,9 +2,8 @@ Name: qtcontacts-sqlite-qt5
 Version: 0.2.36
 Release: 0
 Summary: SQLite-based plugin for QtPIM Contacts
-Group: System/Plugins
 License: BSD
-URL: https://git.merproject.org/mer-core/qtcontacts-sqlite
+URL: https://git.sailfishos.org/mer-core/qtcontacts-sqlite
 Source0: %{name}-%{version}.tar.gz
 BuildRequires: pkgconfig(Qt5Core)
 BuildRequires: pkgconfig(Qt5Sql)
@@ -22,7 +21,6 @@ Requires: qt5-plugin-sqldriver-sqlite
 
 %package tests
 Summary:    Unit tests for qtcontacts-sqlite-qt5
-Group:      System/Libraries
 BuildRequires:  pkgconfig(Qt5Test)
 Requires:   %{name} = %{version}-%{release}
 
@@ -36,7 +34,6 @@ This package contains unit tests for the qtcontacts-sqlite-qt5 library.
 
 %package extensions
 Summary:    QtContacts extension headers for qtcontacts-sqlite-qt5
-Group:      Development/Libraries
 Requires:   %{name} = %{version}-%{release}
 
 %description extensions
@@ -52,7 +49,7 @@ This package contains extension headers for the qtcontacts-sqlite-qt5 library.
 %setup -q -n %{name}-%{version}
 
 %build
-%qmake5 "VERSION=%{version}"
+%qmake5 "VERSION=%{version}" "PKGCONFIG_LIB=%{_lib}"
 make %{?_smp_mflags}
 
 %install
