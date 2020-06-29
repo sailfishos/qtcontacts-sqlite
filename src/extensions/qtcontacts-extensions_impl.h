@@ -40,9 +40,14 @@ namespace {
 
 QString normalize(const QString &input, int flags, int maxCharacters)
 {
-    // Allow '[' and ']' even though RFC3966 doesn't
-    static const QString allowedSeparators(QString::fromLatin1(" -()[]"));
-    static const QString dtmfChars(QString::fromLatin1("pP,.wWxX#*"));
+    // Allow '[' and ']' even though RFC3966 doesn't.
+    // Also, even though RFC3966 explicitly disallows dialstring characters
+    // such as DTMF pause etc, support those as per RFC2806 in order
+    // to enable ITU-T V.250 style dialstring sequences.
+    // Finally, convert ',' and ';' to 'p' and 'w' respectively for
+    // consistency with defacto industry standards.
+    static const QString allowedSeparators(QString::fromLatin1(" .-()[]"));
+    static const QString dtmfChars(QString::fromLatin1("pPwWxX,;#*"));
     static const QString sipScheme(QString::fromLatin1("sips:"));
     static const QString hashControl(QString::fromLatin1("#31#"));
     static const QString starControl(QString::fromLatin1("*31#"));
@@ -122,9 +127,15 @@ QString normalize(const QString &input, int flags, int maxCharacters)
                     firstDtmfIndex = subset.length();
                 }
 
-                // Accept 'x' and 'X', but convert them to 'p' in the normalized form
                 if ((*it).toLower() == QChar::fromLatin1('x')) {
+                    // Accept 'x' and 'X', but convert them to 'p' in the normalized form
                     subset.append(QChar::fromLatin1('p'));
+                } else if (*it == QChar::fromLatin1(',')) {
+                    // Accept ',' but convert to 'p' in the normalized form
+                    subset.append(QChar::fromLatin1('p'));
+                } else if (*it == QChar::fromLatin1(';')) {
+                    // Accept ';' but convert to 'w' in the normalized form
+                    subset.append(QChar::fromLatin1('w'));
                 } else {
                     subset.append(*it);
                 }
