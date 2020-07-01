@@ -1818,9 +1818,7 @@ void tst_QContactManagerFiltering::relationshipFiltering()
     QContactRelationshipFilter crf;
     crf.setRelatedContactRole(static_cast<QContactRelationship::Role>(relatedContactRole));
     crf.setRelationshipType(relationshipType);
-    QContact rc;
-    rc.setId(relatedContactId);
-    crf.setRelatedContact(rc);
+    crf.setRelatedContactId(relatedContactId);
 
     // 4. Grab the filtering results
     QList<QContactId> contacts;

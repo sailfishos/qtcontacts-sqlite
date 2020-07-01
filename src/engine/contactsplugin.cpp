@@ -30,7 +30,6 @@
  */
 
 #include "contactsengine.h"
-#include "contactid_p.h"
 #include <QContactManagerEngineFactory>
 
 #include <QtDebug>
@@ -48,8 +47,6 @@ public:
     QContactManagerEngine *engine(
             const QMap<QString, QString> &parameters, QContactManager::Error* error);
     QString managerName() const;
-    QContactEngineId *createContactEngineId(
-            const QMap<QString, QString> &parameters, const QString &engineIdString) const;
 };
 
 
@@ -75,13 +72,6 @@ QContactManagerEngine *ContactsFactory::engine(
 QString ContactsFactory::managerName() const
 {
     return QString::fromLatin1("org.nemomobile.contacts.sqlite");
-}
-
-QContactEngineId *ContactsFactory::createContactEngineId(
-        const QMap<QString, QString> &parameters, const QString &engineIdString) const
-{
-    Q_UNUSED(parameters)
-    return new ContactId(engineIdString);
 }
 
 #include "contactsplugin.moc"

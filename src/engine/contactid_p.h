@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <chris.adams@jollamobile.com>
+ * Copyright (C) 2013 - 2014 Jolla Ltd.
+ * Copyright (C) 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -34,51 +35,45 @@
 
 #include <QtGlobal>
 #include <QContactId>
+#include <QContactCollectionId>
 #include <QContact>
-
-#include <QContactEngineId>
+#include <QContactCollection>
 
 QTCONTACTS_USE_NAMESPACE
 
-class ContactId : public QContactEngineId
-{
-public:
-    static QContactId apiId(const QContact &contact);
-    static QContactId apiId(quint32 databaseId);
+namespace ContactId {
+    QContactId apiId(const QContact &contact);
+    QContactId apiId(quint32 databaseId, const QString &manager_uri);
 
-    static quint32 databaseId(const QContact &contact);
-    static quint32 databaseId(const QContactId &apiId);
+    quint32 databaseId(const QContact &contact);
+    quint32 databaseId(const QContactId &apiId);
 
-    static const QContactId &contactId(const QContactId &apiId);
+    bool isValid(const QContact &contact);
+    bool isValid(const QContactId &apiId);
+    bool isValid(quint32 dbId);
 
-    static bool isValid(const QContact &contact);
-    static bool isValid(const QContactId &apiId);
-    static bool isValid(quint32 dbId);
+    QString toString(const QContactId &apiId);
+    QString toString(const QContact &c);
 
-    static QString toString(const QContactId &apiId);
-    static QString toString(const QContact &c);
+    QContactId fromString(const QString &id);
+} // namespace ContactId
 
-    static QContactId fromString(const QString &id);
+namespace ContactCollectionId {
+    QContactCollectionId apiId(const QContactCollection &collection);
+    QContactCollectionId apiId(quint32 databaseId, const QString &manager_uri);
 
-    ContactId(quint32 databaseId);
-    ContactId(const QString &s);
+    quint32 databaseId(const QContactCollection &collection);
+    quint32 databaseId(const QContactCollectionId &apiId);
 
-    // implementing QContactEngineId:
-    bool isEqualTo(const QContactEngineId *other) const;
-    bool isLessThan(const QContactEngineId *other) const;
-    QString managerUri() const;
-    QContactEngineId* clone() const;
-    QString toString() const;
+    bool isValid(const QContactCollection &collection);
+    bool isValid(const QContactCollectionId &apiId);
+    bool isValid(quint32 dbId);
 
-#ifndef QT_NO_DEBUG_STREAM
-    QDebug& debugStreamOut(QDebug &dbg) const;
-#endif
+    QString toString(const QContactCollectionId &apiId);
+    QString toString(const QContactCollection &c);
 
-    uint hash() const;
-
-private:
-    quint32 m_databaseId;
-};
+    QContactCollectionId fromString(const QString &id);
+} // namespace ContactId
 
 #endif // QTCONTACTSSQLITE_CONTACTIDIMPL
 

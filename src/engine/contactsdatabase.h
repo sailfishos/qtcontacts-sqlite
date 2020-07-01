@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (C) 2013 - 2019 Jolla Ltd.
+ * Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -56,7 +57,14 @@ class ContactsDatabase
 {
 public:
     enum Identity {
+        InvalidContactId = 0,
         SelfContactId
+    };
+
+    enum CollectionIdentity {
+        InvalidAddressbookCollectionId = 0,
+        AggregateAddressbookCollectionId,
+        LocalAddressbookCollectionId
     };
 
     class ProcessMutex

@@ -886,7 +886,7 @@ QContact TwoWayContactSyncAdapterPrivate::applyRemoteDeltaToPrev(const QContact 
         if (addition.type() == QContactDetail::TypeUndefined) {
             qWarning() << Q_FUNC_INFO << "invalid detail addition at index" << i << ": FIXME!";
         } else {
-            newRemote.saveDetail(&addition);
+            newRemote.saveDetail(&addition, QContact::IgnoreAccessConstraints);
             QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("adding detail:");
         }
         QTCONTACTS_SQLITE_TWCSA_DEBUG_DETAIL(addition);
@@ -897,7 +897,7 @@ QContact TwoWayContactSyncAdapterPrivate::applyRemoteDeltaToPrev(const QContact 
         if (modification.type() == QContactDetail::TypeUndefined) {
             qWarning() << Q_FUNC_INFO << "invalid detail modification at index" << i << ": FIXME!";
         } else {
-            newRemote.saveDetail(&modification);
+            newRemote.saveDetail(&modification, QContact::IgnoreAccessConstraints);
             QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG("modifying detail:");
         }
         QTCONTACTS_SQLITE_TWCSA_DEBUG_DETAIL(modification);

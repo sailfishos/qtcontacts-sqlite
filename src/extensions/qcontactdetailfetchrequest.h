@@ -85,8 +85,6 @@ Q_SIGNALS:
 
 private:
     QScopedPointer<QContactDetailFetchRequestPrivate> d_ptr;
-
-
 };
 
 QT_END_NAMESPACE_CONTACTS

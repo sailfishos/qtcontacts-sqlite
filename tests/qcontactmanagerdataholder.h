@@ -76,7 +76,7 @@ public:
 
         foreach(const QString& mgr, managerNames) {
             // Only test the qtcontacts-sqlite engine
-            if (mgr != QLatin1String("org.nemomobile.contacts.sqlite"))
+            if (mgr != QLatin1String("qtcontacts:org.nemomobile.contacts.sqlite"))
                 continue;
 
             QMap<QString, QString> params;

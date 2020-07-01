@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <matthew.vogt@jollamobile.com>
+ * Copyright (C) 2013 - 2014 Jolla Ltd.
+ * Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -84,6 +85,10 @@ static const QContactDetail::DetailType QContactDetail__TypeDeactivated = static
 
 // Incidental is an internal property of a contact relating to the contact's inception
 static const QContactDetail::DetailType QContactDetail__TypeIncidental = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 4);
+
+static const QString COLLECTION_EXTENDEDMETADATA_KEY_AGGREGABLE = QString::fromLatin1("Aggregable");
+static const QString COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID = QString::fromLatin1("AccountId");
+static const QString COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH = QString::fromLatin1("RemotePath");
 
 QT_END_NAMESPACE_CONTACTS
 

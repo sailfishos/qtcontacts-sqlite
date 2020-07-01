@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013 - 2019 Jolla Ltd.
- * Copyright (c) 2019 Open Mobile Platform LLC.
+ * Copyright (c) 2019 - 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -47,7 +47,7 @@ QTCONTACTS_USE_NAMESPACE
 class ContactReader
 {
 public:
-    ContactReader(ContactsDatabase &database);
+    ContactReader(ContactsDatabase &database, const QString &managerUri);
     virtual ~ContactReader();
 
     QContactManager::Error readContacts(
@@ -92,6 +92,14 @@ public:
             const QList<QContactSortOrder> &order,
             const QContactFetchHint &hint);
 
+    QContactManager::Error getCollectionIdentity(
+            ContactsDatabase::CollectionIdentity identity,
+            QContactCollectionId *collectionId);
+
+    QContactManager::Error readCollections(
+            const QString &table,
+            QList<QContactCollection> *collections);
+
     bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values);
 
     bool fetchOOBKeys(const QString &scope, QStringList *keys);
@@ -108,9 +116,11 @@ protected:
 
     virtual void contactsAvailable(const QList<QContact> &contacts);
     virtual void contactIdsAvailable(const QList<QContactId> &contactIds);
+    virtual void collectionsAvailable(const QList<QContactCollection> &collections);
 
 private:
     ContactsDatabase &m_database;
+    QString m_managerUri;
 };
 
 #endif

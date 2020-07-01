@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2013-2019 Jolla Ltd.
- * Copyright (c) 2019 Open Mobile Platform LLC.
+ * Copyright (c) 2013 - 2019 Jolla Ltd.
+ * Copyright (c) 2019 - 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -64,9 +64,21 @@ static const char *setupJournal =
 static const char *setupSynchronous =
         "\n PRAGMA synchronous = FULL;";
 
+static const char *createCollectionsTable =
+        "\n CREATE TABLE Collections ("
+        "\n collectionId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n name TEXT,"
+        "\n description TEXT,"
+        "\n color TEXT,"
+        "\n secondaryColor TEXT,"
+        "\n image TEXT,"
+        "\n accountId INTEGER,"
+        "\n remotePath TEXT)";
+
 static const char *createContactsTable =
         "\n CREATE TABLE Contacts ("
         "\n contactId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n collectionId INTEGER REFERENCES Collections (collectionId),"
         "\n displayLabel TEXT,"
         "\n displayLabelGroup TEXT,"
         "\n displayLabelGroupSortOrder INTEGER,"
@@ -78,7 +90,7 @@ static const char *createContactsTable =
         "\n prefix TEXT,"
         "\n suffix TEXT,"
         "\n customLabel TEXT,"
-        "\n syncTarget TEXT NOT NULL,"
+        "\n syncTarget TEXT,"
         "\n created DATETIME,"
         "\n modified DATETIME,"
         "\n gender TEXT,"               // Contains an INTEGER represented as TEXT
@@ -88,7 +100,7 @@ static const char *createContactsTable =
         "\n hasOnlineAccount BOOL DEFAULT 0,"
         "\n isOnline BOOL DEFAULT 0,"
         "\n isDeactivated BOOL DEFAULT 0,"
-        "\n isIncidental BOOL DEFAULT 0,"
+        "\n isIncidental BOOL DEFAULT 0," // XXXXXXXXXXX TODO: no longer required.  could change to isDirty/ChangedSinceSync ?
         "\n type INTEGER DEFAULT 0);"; // QContactType::TypeContact
 
 static const char *createAddressesTable =
@@ -348,7 +360,12 @@ static const char *createRelationshipsTable =
 static const char *createDeletedContactsTable =
         "\n CREATE TABLE DeletedContacts ("
         "\n contactId INTEGER PRIMARY KEY,"
-        "\n syncTarget TEXT,"
+        "\n collectionId INTEGER NOT NULL,"
+        "\n deleted DATETIME);";
+
+static const char *createDeletedCollectionsTable =
+        "\n CREATE TABLE DeletedCollections ("
+        "\n collectionId INTEGER PRIMARY KEY,"
         "\n deleted DATETIME);";
 
 static const char *createOOBTable =
@@ -367,7 +384,7 @@ static const char *createRemoveTrigger =
         "\n BEFORE DELETE"
         "\n ON Contacts"
         "\n BEGIN"
-        "\n  INSERT INTO DeletedContacts (contactId, syncTarget, deleted) VALUES (old.contactId, old.syncTarget, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));"
+        "\n  INSERT INTO DeletedContacts (contactId, collectionId, deleted) VALUES (old.contactId, old.collectionId, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));"
         "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
         "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
         "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
@@ -397,6 +414,7 @@ static const char *createRemoveTrigger =
 static const char *createLocalSelfContact =
         "\n INSERT INTO Contacts ("
         "\n contactId,"
+        "\n collectionId,"
         "\n displayLabel,"
         "\n firstName,"
         "\n lowerFirstName,"
@@ -413,6 +431,7 @@ static const char *createLocalSelfContact =
         "\n isFavorite)"
         "\n VALUES ("
         "\n 1,"
+        "\n 2,"
         "\n '',"
         "\n '',"
         "\n '',"
@@ -430,6 +449,7 @@ static const char *createLocalSelfContact =
 static const char *createAggregateSelfContact =
         "\n INSERT INTO Contacts ("
         "\n contactId,"
+        "\n collectionId,"
         "\n displayLabel,"
         "\n firstName,"
         "\n lowerFirstName,"
@@ -446,6 +466,7 @@ static const char *createAggregateSelfContact =
         "\n isFavorite)"
         "\n VALUES ("
         "\n 2,"
+        "\n 1,"
         "\n '',"
         "\n '',"
         "\n '',"
@@ -466,6 +487,7 @@ static const char *createSelfContactRelationship =
 static const char *createSelfContact =
         "\n INSERT INTO Contacts ("
         "\n contactId,"
+        "\n collectionId,"
         "\n displayLabel,"
         "\n firstName,"
         "\n lowerFirstName,"
@@ -482,6 +504,7 @@ static const char *createSelfContact =
         "\n isFavorite)"
         "\n VALUES ("
         "\n 2,"
+        "\n 2,"
         "\n '',"
         "\n '',"
         "\n '',"
@@ -496,6 +519,48 @@ static const char *createSelfContact =
         "\n '',"
         "\n '',"
         "\n 0);";
+
+static const char *createAggregateAddressbookCollection =
+        "\n INSERT INTO Collections("
+        "\n collectionId,"
+        "\n name,"
+        "\n description,"
+        "\n color,"
+        "\n secondaryColor,"
+        "\n image,"
+        "\n accountId,"
+        "\n remotePath)"
+        "\n VALUES ("
+        "\n 1,"
+        "\n 'aggregate',"
+        "\n 'Aggregate contacts whose data is merged from constituent (facet) contacts',"
+        "\n 'blue',"
+        "\n 'lightsteelblue',"
+        "\n '',"
+        "\n 0,"
+        "\n '')";
+static const char *createLocalAddressbookCollection =
+        "\n INSERT INTO Collections("
+        "\n collectionId,"
+        "\n name,"
+        "\n description,"
+        "\n color,"
+        "\n secondaryColor,"
+        "\n image,"
+        "\n accountId,"
+        "\n remotePath)"
+        "\n VALUES ("
+        "\n 2,"
+        "\n 'local',"
+        "\n 'Device-storage addressbook',"
+        "\n 'red',"
+        "\n 'pink',"
+        "\n '',"
+        "\n 0,"
+        "\n '')";
+
+static const char *createContactsCollectionIdIndex =
+        "\n CREATE INDEX ContactsCollectionIdIndex ON Contacts(collectionId);";
 
 static const char *createContactsSyncTargetIndex =
         "\n CREATE INDEX ContactsSyncTargetIndex ON Contacts(syncTarget);";
@@ -598,6 +663,7 @@ static const char *createAnalyzeData3 =
 
 static const char *createStatements[] =
 {
+    createCollectionsTable,
     createContactsTable,
     createAddressesTable,
     createAnniversariesTable,
@@ -646,9 +712,11 @@ static const char *createStatements[] =
     createIdentitiesTable,
     createRelationshipsTable,
     createDeletedContactsTable,
+    createDeletedCollectionsTable,
     createOOBTable,
     createDbSettingsTable,
     createRemoveTrigger,
+    createContactsCollectionIdIndex,
     createContactsSyncTargetIndex,
     createContactsFirstNameIndex,
     createContactsLastNameIndex,
@@ -1312,6 +1380,170 @@ static const char *upgradeVersion19[] = {
     "PRAGMA user_version=20",
     0 // NULL-terminated
 };
+static const char *upgradeVersion20[] = {
+    // create the collections table and the built-in collections.
+    createCollectionsTable,
+    createDeletedCollectionsTable,
+    createAggregateAddressbookCollection,
+    createLocalAddressbookCollection,
+    // we need to recreate the contacts table
+    // but avoid deleting all detail data
+    // so we drop the trigger and re-create it later.
+    "DROP TRIGGER RemoveContactDetails",
+    // also recreate the deleted contacts table with new schema
+    // sync plugins need to re-sync anyway...
+    "DROP TABLE DeletedContacts",
+    createDeletedContactsTable,
+    // drop a bunch of indexes which we will need to recreate
+    "DROP INDEX createAddressesDetailsContactIdIndex",
+    "DROP INDEX createAnniversariesDetailsContactIdIndex",
+    "DROP INDEX createAvatarsDetailsContactIdIndex",
+    "DROP INDEX createBirthdaysDetailsContactIdIndex",
+    "DROP INDEX createEmailAddressesDetailsContactIdIndex",
+    "DROP INDEX createGlobalPresencesDetailsContactIdIndex",
+    "DROP INDEX createGuidsDetailsContactIdIndex",
+    "DROP INDEX createHobbiesDetailsContactIdIndex",
+    "DROP INDEX createNicknamesDetailsContactIdIndex",
+    "DROP INDEX createNotesDetailsContactIdIndex",
+    "DROP INDEX createOnlineAccountsDetailsContactIdIndex",
+    "DROP INDEX createOrganizationsDetailsContactIdIndex",
+    "DROP INDEX createPhoneNumbersDetailsContactIdIndex",
+    "DROP INDEX createPresencesDetailsContactIdIndex",
+    "DROP INDEX createRingtonesDetailsContactIdIndex",
+    "DROP INDEX createTagsDetailsContactIdIndex",
+    "DROP INDEX createUrlsDetailsContactIdIndex",
+    "DROP INDEX createTpMetadataDetailsContactIdIndex",
+    "DROP INDEX createExtendedDetailsContactIdIndex",
+    "DROP INDEX PhoneNumbersIndex",
+    "DROP INDEX EmailAddressesIndex",
+    "DROP INDEX OnlineAccountsIndex",
+    "DROP INDEX NicknamesIndex",
+    "DROP INDEX TpMetadataTelepathyIdIndex",
+    "DROP INDEX TpMetadataAccountIdIndex",
+    // cannot alter a table to add a foreign key
+    // instead, rename the existing table and recreate it with the foreign key.
+    // we only keep "local" and "aggregate" contacts.
+    "ALTER TABLE Contacts RENAME TO OldContacts",
+    createContactsTable,
+    "INSERT INTO Contacts ("
+            "contactId, "
+            "collectionId, "
+            "displayLabel, "
+            "displayLabelGroup, "
+            "displayLabelGroupSortOrder, "
+            "firstName, "
+            "lowerFirstName, "
+            "lastName, "
+            "lowerLastName, "
+            "middleName, "
+            "prefix, "
+            "suffix, "
+            "customLabel, "
+            "syncTarget, "
+            "created, "
+            "modified, "
+            "gender, "
+            "isFavorite, "
+            "hasPhoneNumber, "
+            "hasEmailAddress, "
+            "hasOnlineAccount, "
+            "isOnline, "
+            "isDeactivated, "
+            "isIncidental, "
+            "type "
+        ") "
+        "SELECT "
+            "OC.contactId, "
+            "CASE "
+                "WHEN OC.syncTarget LIKE '%aggregate%' THEN 1 " // AggregateAddressbookCollectionId
+                "ELSE 2 " // LocalAddressbookCollectionId
+                "END, "
+            "OC.displayLabel, "
+            "OC.displayLabelGroup, "
+            "OC.displayLabelGroupSortOrder, "
+            "OC.firstName, "
+            "OC.lowerFirstName, "
+            "OC.lastName, "
+            "OC.lowerLastName, "
+            "OC.middleName, "
+            "OC.prefix, "
+            "OC.suffix, "
+            "OC.customLabel, "
+            "NULL, " // nullify synctarget, from this version on this field will store the remote contact UID.
+            "OC.created, "
+            "OC.modified, "
+            "OC.gender, "
+            "OC.isFavorite, "
+            "OC.hasPhoneNumber, "
+            "OC.hasEmailAddress, "
+            "OC.hasOnlineAccount, "
+            "OC.isOnline, "
+            "OC.isDeactivated, "
+            "OC.isIncidental, "
+            "OC.type "
+        "FROM OldContacts AS OC "
+        "WHERE OC.syncTarget IN ('aggregate', 'local', 'was_local')",
+    "DROP TABLE OldContacts",
+    // Now delete any details of contacts we didn't keep (i.e. not local or aggregate)
+    "DELETE FROM Addresses WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Anniversaries WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Avatars WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Birthdays WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM EmailAddresses WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Families WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM GeoLocations WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM GlobalPresences WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Guids WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Hobbies WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Nicknames WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Notes WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM OnlineAccounts WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Organizations WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM PhoneNumbers WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Presences WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Ringtones WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Tags WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Urls WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM OriginMetadata WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM ExtendedDetails WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Details WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Identities WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Relationships WHERE firstId NOT IN (SELECT contactId FROM Contacts) OR secondId NOT IN (SELECT contactId FROM Contacts)",
+    // XXXXXXXXXXX TODO: re-generate the aggregates...
+    //...
+    // rebuild the indexes we dropped
+    createDetailsRemoveIndex,
+    createAddressesDetailsContactIdIndex,
+    createAnniversariesDetailsContactIdIndex,
+    createAvatarsDetailsContactIdIndex,
+    createBirthdaysDetailsContactIdIndex,
+    createEmailAddressesDetailsContactIdIndex,
+    createGlobalPresencesDetailsContactIdIndex,
+    createGuidsDetailsContactIdIndex,
+    createHobbiesDetailsContactIdIndex,
+    createNicknamesDetailsContactIdIndex,
+    createNotesDetailsContactIdIndex,
+    createOnlineAccountsDetailsContactIdIndex,
+    createOrganizationsDetailsContactIdIndex,
+    createPhoneNumbersDetailsContactIdIndex,
+    createPresencesDetailsContactIdIndex,
+    createRingtonesDetailsContactIdIndex,
+    createTagsDetailsContactIdIndex,
+    createUrlsDetailsContactIdIndex,
+    createOriginMetadataDetailsContactIdIndex,
+    createExtendedDetailsContactIdIndex,
+    createPhoneNumbersIndex,
+    createEmailAddressesIndex,
+    createOnlineAccountsIndex,
+    createNicknamesIndex,
+    createOriginMetadataIdIndex,
+    createOriginMetadataGroupIdIndex,
+    // create the new index and recreate the remove trigger.
+    createContactsCollectionIdIndex,
+    createRemoveTrigger,
+    "PRAGMA user_version=21",
+    0 // NULL-terminated
+};
 
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
@@ -1831,9 +2063,10 @@ static UpgradeOperation upgradeVersions[] = {
     { addDisplayLabelGroup,         upgradeVersion17 },
     { forceRegenDisplayLabelGroups, upgradeVersion18 },
     { forceRegenDisplayLabelGroups, upgradeVersion19 },
+    { 0,                            upgradeVersion20 },
 };
 
-static const int currentSchemaVersion = 20;
+static const int currentSchemaVersion = 21;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
@@ -2204,6 +2437,32 @@ static bool executeCreationStatements(QSqlDatabase &database)
     return true;
 }
 
+static bool executeBuiltInCollectionsStatements(QSqlDatabase &database, const bool aggregating)
+{
+    const char *createStatements[] = {
+        createLocalAddressbookCollection,
+        0
+    };
+    const char *aggregatingCreateStatements[] = {
+        createAggregateAddressbookCollection,
+        createLocalAddressbookCollection,
+        0
+    };
+
+    const char **statement = (aggregating ? aggregatingCreateStatements : createStatements);
+    for ( ; *statement != 0; ++statement) {
+        QSqlQuery query(database);
+        if (!query.exec(QString::fromLatin1(*statement))) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Create built-in collection query failed: %1\n%2")
+                    .arg(query.lastError().text())
+                    .arg(*statement));
+            return false;
+        }
+    }
+
+    return true;
+}
+
 static bool executeSelfContactStatements(QSqlDatabase &database, const bool aggregating)
 {
     const char *createStatements[] = {
@@ -2221,7 +2480,7 @@ static bool executeSelfContactStatements(QSqlDatabase &database, const bool aggr
     for ( ; *statement != 0; ++statement) {
         QSqlQuery query(database);
         if (!query.exec(QString::fromLatin1(*statement))) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Database creation failed: %1\n%2")
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Create self contact query failed: %1\n%2")
                     .arg(query.lastError().text())
                     .arg(*statement));
             return false;
@@ -2240,6 +2499,9 @@ static bool prepareDatabase(QSqlDatabase &database, ContactsDatabase *cdb, const
         return false;
 
     bool success = executeCreationStatements(database);
+    if (success) {
+        success = executeBuiltInCollectionsStatements(database, aggregating);
+    }
     if (success) {
         success = executeSelfContactStatements(database, aggregating);
     }
@@ -3699,6 +3961,5 @@ int ContactsDatabase::displayLabelGroupSortValue(const QString &group) const
 }
 
 #include "../extensions/qcontactdeactivated_impl.h"
-#include "../extensions/qcontactincidental_impl.h"
 #include "../extensions/qcontactoriginmetadata_impl.h"
 #include "../extensions/qcontactstatusflags_impl.h"
