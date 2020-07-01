@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (C) 2013 - 2019 Jolla Ltd.
+ * Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -99,15 +100,25 @@ public:
             QMap<int, QContactManager::Error> *errorMap,
             bool withinTransaction);
 
+    QContactManager::Error save(
+            QList<QContactCollection> *collections,
+            QMap<int, QContactManager::Error> *errorMap,
+            bool withinTransaction,
+            bool withinSyncUpdate);
+    QContactManager::Error remove(
+            const QList<QContactCollectionId> &collectionIds,
+            QMap<int, QContactManager::Error> *errorMap,
+            bool withinTransaction);
+
     QList<QContactDetail> transientDetails(quint32 contactId) const;
     bool storeTransientDetails(quint32 contactId, const QList<QContactDetail> &details);
     void removeTransientDetails(quint32 contactId);
 
-    QContactManager::Error fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
+    QContactManager::Error fetchSyncContacts(const QContactCollectionId &collectionId, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
                                              QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
                                              QDateTime *maxTimestamp);
 
-    QContactManager::Error updateSyncContacts(const QString &syncTarget,
+    QContactManager::Error updateSyncContacts(const QContactCollectionId &collectionId,
                                               QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
                                               QList<QPair<QContact, QContact> > *remoteChanges);
 
@@ -128,31 +139,33 @@ private:
 
     QContactManager::Error removeContacts(const QVariantList &ids);
 
+    QContactManager::Error saveCollection(QContactCollection *collection);
+    QContactManager::Error removeCollection(const QContactCollectionId &collectionId);
+
     QContactManager::Error setAggregate(QContact *contact, quint32 contactId, bool update, const DetailList &definitionMask, bool withinTransaction);
-    QContactManager::Error calculateDelta(QContact *contact, const ContactWriter::DetailList &definitionMask,
-                                          QList<QContactDetail> *addDelta, QList<QContactDetail> *removeDelta, QList<QContact> *writeList);
+
     QContactManager::Error updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction, quint32 *aggregateContactId = 0);
-    QContactManager::Error updateLocalAndAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction);
+
     QContactManager::Error regenerateAggregates(const QList<quint32> &aggregateIds, const DetailList &definitionMask, bool withinTransaction);
     QContactManager::Error removeChildlessAggregates(QList<QContactId> *realRemoveIds);
     QContactManager::Error aggregateOrphanedContacts(bool withinTransaction);
-    QContactManager::Error recordAffectedSyncTargets(const QVariantList &ids);
 
-    QContactManager::Error syncFetch(const QString &syncTarget, const QDateTime &lastSync, const QSet<quint32> &exportedIds,
+    QContactManager::Error syncFetch(const QContactCollectionId &collectionId, const QDateTime &lastSync, const QSet<quint32> &exportedIds,
                                      QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
                                      QDateTime *maxTimestamp);
 
-    QContactManager::Error syncUpdate(const QString &syncTarget,
+    QContactManager::Error syncUpdate(const QContactCollectionId &collectionId,
                                       QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
                                       QList<QPair<QContact, QContact> > *remoteChanges);
 
     ContactsDatabase::Query bindContactDetails(const QContact &contact, const DetailList &definitionMask = DetailList(), quint32 contactId = 0);
+    ContactsDatabase::Query bindCollectionDetails(const QContactCollection &collection);
 
     template <typename T> bool writeDetails(
             quint32 contactId,
             QContact *contact,
             const DetailList &definitionMask,
-            const QString &syncTarget,
+            const QContactCollectionId &collectionId,
             bool syncable,
             bool wasLocal,
             QContactManager::Error *error);
@@ -172,14 +185,19 @@ private:
     ContactNotifier *m_notifier;
     ContactReader *m_reader;
 
+    QString m_managerUri;
+
     bool m_displayLabelGroupsChanged;
     QSet<QContactId> m_addedIds;
     QSet<QContactId> m_removedIds;
     QSet<QContactId> m_changedIds;
     QSet<QContactId> m_presenceChangedIds;
-    QSet<QString> m_changedSyncTargets;
     QSet<quint32> m_changedLocalIds;
-    QSet<QString> m_suppressedSyncTargets;
+    QSet<QContactCollectionId> m_suppressedCollectionIds;
+    QSet<QContactCollectionId> m_changedSyncCollectionIds;
+    QSet<QContactCollectionId> m_addedCollectionIds;
+    QSet<QContactCollectionId> m_removedCollectionIds;
+    QSet<QContactCollectionId> m_changedCollectionIds;
 };
 
 

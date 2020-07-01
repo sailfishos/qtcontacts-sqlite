@@ -30,7 +30,7 @@ This package contains unit tests for the qtcontacts-sqlite-qt5 library.
 %files tests
 %defattr(-,root,root,-)
 /opt/tests/qtcontacts-sqlite-qt5/*
-%{_libdir}/qtcontacts-sqlite-qt5/libtestdlgg.so
+#%{_libdir}/qtcontacts-sqlite-qt5/libtestdlgg.so
 
 %package extensions
 Summary:    QtContacts extension headers for qtcontacts-sqlite-qt5

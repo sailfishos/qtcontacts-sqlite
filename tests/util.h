@@ -1,6 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2012 Digia Plc and/or its subsidiary(-ies).
+** Copyright (C) 2020 Open Mobile Platform LLC.
 ** Contact: http://www.qt-project.org/legal
 **
 ** This file is part of the Qt Mobility Components.
@@ -100,8 +101,11 @@ void registerIdType()
     qRegisterMetaType<QList<QContactId> >("QList<QContactId>");
 }
 
+const char *collectionsAddedSignal = SIGNAL(collectionsAdded(QList<QContactCollectionId>));
+const char *collectionsChangedSignal = SIGNAL(collectionsChanged(QList<QContactCollectionId>));
+const char *collectionsRemovedSignal = SIGNAL(collectionsRemoved(QList<QContactCollectionId>));
 const char *contactsAddedSignal = SIGNAL(contactsAdded(QList<QContactId>));
-const char *contactsChangedSignal = SIGNAL(contactsChanged(QList<QContactId>));
+const char *contactsChangedSignal = SIGNAL(contactsChanged(QList<QContactId>, QList<QContactDetail::DetailType>));
 const char *contactsPresenceChangedSignal = SIGNAL(contactsPresenceChanged(QList<QContactId>));
 const char *contactsRemovedSignal = SIGNAL(contactsRemoved(QList<QContactId>));
 const char *relationshipsAddedSignal = SIGNAL(relationshipsAdded(QList<QContactId>));
@@ -225,20 +229,17 @@ void setFilterType(QContactRelationshipFilter &filter, T type)
     filter.setRelationshipType(relationshipString(type));
 }
 
-void setFilterContact(QContactRelationshipFilter &filter, const QContact &contact)
+void setFilterContactId(QContactRelationshipFilter &filter, const QContactId &contactId)
 {
-    filter.setRelatedContact(contact);
+    filter.setRelatedContactId(contactId);
 }
 
 QContactRelationship makeRelationship(const QContactId &firstId, const QContactId &secondId)
 {
     QContactRelationship relationship;
 
-    QContact first, second;
-    first.setId(firstId);
-    second.setId(secondId);
-    relationship.setFirst(first);
-    relationship.setSecond(second);
+    relationship.setFirst(firstId);
+    relationship.setSecond(secondId);
 
     return relationship;
 }

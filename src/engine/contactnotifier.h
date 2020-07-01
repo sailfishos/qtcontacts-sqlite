@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (C) 2013 Jolla Ltd.
+ * Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -47,10 +48,13 @@ class ContactNotifier
 public:
     ContactNotifier(bool nonprivileged);
 
+    void collectionsAdded(const QList<QContactCollectionId> &collectionIds);
+    void collectionsChanged(const QList<QContactCollectionId> &collectionIds);
+    void collectionsRemoved(const QList<QContactCollectionId> &collectionIds);
     void contactsAdded(const QList<QContactId> &contactIds);
     void contactsChanged(const QList<QContactId> &contactIds);
     void contactsPresenceChanged(const QList<QContactId> &contactIds);
-    void syncContactsChanged(const QStringList &syncTargets);
+    void syncContactsChanged(const QList<QContactCollectionId> &collectionIds);
     void contactsRemoved(const QList<QContactId> &contactIds);
     void selfContactIdChanged(QContactId oldId, QContactId newId);
     void relationshipsAdded(const QSet<QContactId> &contactIds);

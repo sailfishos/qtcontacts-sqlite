@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (C) 2013 - 2019 Jolla Ltd.
+ * Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -30,6 +31,7 @@
  */
 
 #include <QContactManager>
+#include <QContactCollection>
 #include <QContactFetchRequest>
 #include <QContactRemoveRequest>
 #include <QContactSaveRequest>
@@ -44,8 +46,8 @@
 #include <QContactPresence>
 #include <QContactNickname>
 #include <QContactOnlineAccount>
-#include <QContactSyncTarget>
 #include <QContactDetailFilter>
+#include <QContactCollectionFilter>
 #include <QContactFetchHint>
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -183,7 +185,7 @@ static QStringList generateHobbiesList()
     return retn;
 }
 
-QContact generateContact(const QString &syncTarget = QString(QLatin1String("local")), bool possiblyAggregate = false)
+QContact generateContact(const QContactCollectionId &collectionId = QContactCollectionId(), bool possiblyAggregate = false)
 {
     static const QStringList firstNames(generateFirstNamesList());
     static const QStringList middleNames(generateMiddleNamesList());
@@ -198,13 +200,9 @@ QContact generateContact(const QString &syncTarget = QString(QLatin1String("loca
     // we randomly determine whether to generate various details
     // to ensure that we have heterogeneous contacts in the db.
     QContact retn;
+    retn.setCollectionId(collectionId);
     int random = qrand();
-    bool preventAggregate = (syncTarget != QLatin1String("local") && !possiblyAggregate);
-
-    // We always have a sync target.
-    QContactSyncTarget synctarget;
-    synctarget.setSyncTarget(syncTarget);
-    retn.saveDetail(&synctarget);
+    bool preventAggregate = (!collectionId.isNull() && !possiblyAggregate);
 
     // We always have a name.  Select an overlapping name if the sync target
     // is something other than "local" and possiblyAggregate is true.
@@ -239,7 +237,7 @@ QContact generateContact(const QString &syncTarget = QString(QLatin1String("loca
     if ((random % 2) == 0) {
         QContactEmailAddress em;
         em.setEmailAddress(QString(QLatin1String("%1%2%3%4"))
-                .arg(preventAggregate ? QString(QString::number(random % 500000) + syncTarget) : QString())
+                .arg(preventAggregate ? QString(QString::number(random % 500000) + QString::fromLatin1(collectionId.localId())) : QString())
                 .arg(name.firstName()).arg(name.lastName())
                 .arg(emailProviders.at(random % emailProviders.size())));
         if (random % 9) em.setContexts(QContactDetail::ContextWork);
@@ -286,12 +284,25 @@ static qint64 aggregatedPresenceUpdate(QContactManager &manager, bool quickMode)
     qDebug() << "--------";
     qDebug() << "Performing scaling aggregated batch (connectivity change) presence update tests:";
 
+    // create test collections for this benchmark.
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("aggregatedPresenceUpdate"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/aggregatedPresenceUpdate");
+    manager.saveCollection(&testAddressbook);
+
+    QContactCollection testAddressbook2;
+    testAddressbook2.setMetaData(QContactCollection::KeyName, QStringLiteral("aggregatedPresenceUpdate2"));
+    testAddressbook2.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 6);
+    testAddressbook2.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/aggregatedPresenceUpdate2");
+    manager.saveCollection(&testAddressbook2);
+
     // prefill the database
     const int prefillCount = quickMode ? 250 : 500;
     QList<QContact> prefillData;
     prefillData.reserve(prefillCount);
     for (int i = 0; i < prefillCount; ++i) {
-        prefillData.append(generateContact(QStringLiteral("aggregatedPresenceUpdate")));
+        prefillData.append(generateContact(testAddressbook.id()));
     }
     qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
     manager.saveContacts(&prefillData);
@@ -304,9 +315,9 @@ static qint64 aggregatedPresenceUpdate(QContactManager &manager, bool quickMode)
     QList<QContact> morePrefillData;
     for (int i = 0; i < prefillCount; ++i) {
         if (i % 2 == 0) {
-            morePrefillData.append(generateContact("aggregatedPresenceUpdate2", false)); // false = don't aggregate.
+            morePrefillData.append(generateContact(testAddressbook2.id(), false)); // false = don't aggregate.
         } else {
-            morePrefillData.append(generateContact("aggregatedPresenceUpdate2", true)); // false = don't aggregate.
+            morePrefillData.append(generateContact(testAddressbook2.id(), true)); // false = don't aggregate.
         }
     }
     manager.saveContacts(&morePrefillData);
@@ -392,8 +403,15 @@ static qint64 aggregatedPresenceUpdate(QContactManager &manager, bool quickMode)
     manager.removeContacts(deleteIds);
     qint64 deleteTime = syncTimer.elapsed();
     qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
-
     elapsedTimeTotal += deleteTime;
+
+    syncTimer.start();
+    manager.removeCollection(testAddressbook.id());
+    manager.removeCollection(testAddressbook2.id());
+    qint64 colDeleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted 2 addressbooks in" << colDeleteTime << "milliseconds";
+    // note: we omit this collection deletion time from the benchmark.
+
     return elapsedTimeTotal;
 }
 
@@ -408,12 +426,25 @@ static qint64 nonAggregatedPresenceUpdate(QContactManager &manager, bool quickMo
     qDebug() << "--------";
     qDebug() << "Performing scaling non-aggregated batch (connectivity change) presence update tests:";
 
+    // create test collections for this benchmark.
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("nonAggregatedPresenceUpdate"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/nonAggregatedPresenceUpdate");
+    manager.saveCollection(&testAddressbook);
+
+    QContactCollection testAddressbook2;
+    testAddressbook2.setMetaData(QContactCollection::KeyName, QStringLiteral("nonAggregatedPresenceUpdate2"));
+    testAddressbook2.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 6);
+    testAddressbook2.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/nonAggregatedPresenceUpdate2");
+    manager.saveCollection(&testAddressbook2);
+
     // prefill the database
     const int prefillCount = quickMode ? 250 : 500;
     QList<QContact> prefillData;
     prefillData.reserve(prefillCount);
     for (int i = 0; i < prefillCount; ++i) {
-        prefillData.append(generateContact(QStringLiteral("nonAggregatedPresenceUpdate")));
+        prefillData.append(generateContact(testAddressbook.id()));
     }
     qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
     manager.saveContacts(&prefillData);
@@ -425,7 +456,7 @@ static qint64 nonAggregatedPresenceUpdate(QContactManager &manager, bool quickMo
     qDebug() << "    generating non-overlapping / non-aggregated prefill data, please wait...";
     QList<QContact> morePrefillData;
     for (int i = 0; i < prefillCount; ++i) {
-        morePrefillData.append(generateContact("nonAggregatedPresenceUpdate2", false)); // false = don't aggregate.
+        morePrefillData.append(generateContact(testAddressbook2.id(), false)); // false = don't aggregate.
     }
     manager.saveContacts(&morePrefillData);
     for (const QContact &c : morePrefillData) {
@@ -467,8 +498,15 @@ static qint64 nonAggregatedPresenceUpdate(QContactManager &manager, bool quickMo
     manager.removeContacts(deleteIds);
     qint64 deleteTime = syncTimer.elapsed();
     qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
-
     elapsedTimeTotal += deleteTime;
+
+    syncTimer.start();
+    manager.removeCollection(testAddressbook.id());
+    manager.removeCollection(testAddressbook2.id());
+    qint64 colDeleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted 2 addressbooks in" << colDeleteTime << "milliseconds";
+    // note: we omit this collection deletion time from the benchmark.
+
     return elapsedTimeTotal;
 }
 
@@ -483,12 +521,19 @@ static qint64 scalingPresenceUpdate(QContactManager &manager, bool quickMode)
     qDebug() << "--------";
     qDebug() << "Performing scaling entire batch (connectivity change) presence update tests:";
 
+    // create test collections for this benchmark.
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("scalingPresenceUpdate"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/scalingPresenceUpdate");
+    manager.saveCollection(&testAddressbook);
+
     // prefill the database
     const int prefillCount = quickMode ? 250 : 500;
     QList<QContact> prefillData;
     prefillData.reserve(prefillCount);
     for (int i = 0; i < prefillCount; ++i) {
-        prefillData.append(generateContact(QStringLiteral("scalingPresenceUpdate")));
+        prefillData.append(generateContact(testAddressbook.id()));
     }
     qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
     manager.saveContacts(&prefillData);
@@ -532,8 +577,14 @@ static qint64 scalingPresenceUpdate(QContactManager &manager, bool quickMode)
     manager.removeContacts(deleteIds);
     qint64 deleteTime = syncTimer.elapsed();
     qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
-
     elapsedTimeTotal += deleteTime;
+
+    syncTimer.start();
+    manager.removeCollection(testAddressbook.id());
+    qint64 colDeleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted 1 addressbooks in" << colDeleteTime << "milliseconds";
+    // note: we omit this collection deletion time from the benchmark.
+
     return elapsedTimeTotal;
 }
 
@@ -548,12 +599,19 @@ static qint64 entireBatchPresenceUpdate(QContactManager &manager, bool quickMode
     qDebug() << "--------";
     qDebug() << "Performing entire batch (connectivity change) presence update tests:";
 
+    // create test collections for this benchmark.
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("entireBatchPresenceUpdate"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/entireBatchPresenceUpdate");
+    manager.saveCollection(&testAddressbook);
+
     // prefill the database
     const int prefillCount = quickMode ? 100 : 250;
     QList<QContact> prefillData;
     prefillData.reserve(prefillCount);
     for (int i = 0; i < prefillCount; ++i) {
-        prefillData.append(generateContact(QStringLiteral("entireBatchPresenceUpdate")));
+        prefillData.append(generateContact(testAddressbook.id()));
     }
     qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
     manager.saveContacts(&prefillData);
@@ -596,8 +654,14 @@ static qint64 entireBatchPresenceUpdate(QContactManager &manager, bool quickMode
     manager.removeContacts(deleteIds);
     qint64 deleteTime = syncTimer.elapsed();
     qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
-
     elapsedTimeTotal += deleteTime;
+
+    syncTimer.start();
+    manager.removeCollection(testAddressbook.id());
+    qint64 colDeleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted 1 addressbooks in" << colDeleteTime << "milliseconds";
+    // note: we omit this collection deletion time from the benchmark.
+
     return elapsedTimeTotal;
 }
 
@@ -611,12 +675,19 @@ static qint64 smallBatchPresenceUpdate(QContactManager &manager, bool quickMode)
     qDebug() << "--------";
     qDebug() << "Performing small batch presence update tests:";
 
+    // create test collections for this benchmark.
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("smallBatchPresenceUpdate"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/smallBatchPresenceUpdate");
+    manager.saveCollection(&testAddressbook);
+
     // prefill the database
     const int prefillCount = quickMode ? 100 : 250;
     QList<QContact> prefillData;
     prefillData.reserve(prefillCount);
     for (int i = 0; i < prefillCount; ++i) {
-        prefillData.append(generateContact(QStringLiteral("smallBatchPresenceUpdate")));
+        prefillData.append(generateContact(testAddressbook.id()));
     }
     qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
     manager.saveContacts(&prefillData);
@@ -665,8 +736,14 @@ static qint64 smallBatchPresenceUpdate(QContactManager &manager, bool quickMode)
     manager.removeContacts(deleteIds);
     qint64 deleteTime = syncTimer.elapsed();
     qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
-
     elapsedTimeTotal += deleteTime;
+
+    syncTimer.start();
+    manager.removeCollection(testAddressbook.id());
+    qint64 colDeleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted 1 addressbooks in" << colDeleteTime << "milliseconds";
+    // note: we omit this collection deletion time from the benchmark.
+
     return elapsedTimeTotal;
 }
 
@@ -680,12 +757,25 @@ static qint64 aggregationOperations(QContactManager &manager, bool quickMode)
     qDebug() << "--------";
     qDebug() << "Performing aggregation tests";
 
+    // create test collections for this benchmark.
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("aggregationOperations"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/aggregationOperations");
+    manager.saveCollection(&testAddressbook);
+
+    QContactCollection testAddressbook2;
+    testAddressbook2.setMetaData(QContactCollection::KeyName, QStringLiteral("aggregationOperations2"));
+    testAddressbook2.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 6);
+    testAddressbook2.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/aggregationOperations2");
+    manager.saveCollection(&testAddressbook2);
+
     // prefill the database
     const int prefillCount = quickMode ? 100 : 250;
     QList<QContact> prefillData;
     prefillData.reserve(prefillCount);
     for (int i = 0; i < prefillCount; ++i) {
-        prefillData.append(generateContact(QStringLiteral("aggregationOperations")));
+        prefillData.append(generateContact(testAddressbook.id()));
     }
     qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
     manager.saveContacts(&prefillData);
@@ -700,12 +790,10 @@ static qint64 aggregationOperations(QContactManager &manager, bool quickMode)
     for (int i = 0; i < aggregateCount; ++i) {
         QContact existingContact = prefillData.at(prefillData.size() - 1 - i);
         QContact contactToAggregate;
-        QContactSyncTarget newSyncTarget;
-        newSyncTarget.setSyncTarget(QString(QLatin1String("aggregationOperations")));
+        contactToAggregate.setCollectionId(testAddressbook.id());
         QContactName aggName = existingContact.detail<QContactName>(); // ensures it'll get aggregated
         QContactOnlineAccount newOnlineAcct; // new data, which should get promoted up etc.
         newOnlineAcct.setAccountUri(QString(QLatin1String("aggregationOperations%1@fetchtimes.benchmark")).arg(i));
-        contactToAggregate.saveDetail(&newSyncTarget);
         contactToAggregate.saveDetail(&aggName);
         contactToAggregate.saveDetail(&newOnlineAcct);
         contactsToAggregate.append(contactToAggregate);
@@ -728,12 +816,10 @@ static qint64 aggregationOperations(QContactManager &manager, bool quickMode)
     for (int i = low; i < high; ++i) {
         QContact existingContact = prefillData.at(prefillData.size() - 1 - i);
         QContact contactToAggregate;
-        QContactSyncTarget newSyncTarget;
-        newSyncTarget.setSyncTarget(QString(QLatin1String("aggregationOperations2")));
+        contactToAggregate.setCollectionId(testAddressbook2.id());
         QContactName aggName = existingContact.detail<QContactName>(); // ensures it'll get aggregated
         QContactOnlineAccount newOnlineAcct; // new data, which should get promoted up etc.
         newOnlineAcct.setAccountUri(QString(QLatin1String("aggregationOperations%1@fetchtimes.benchmark")).arg(i));
-        contactToAggregate.saveDetail(&newSyncTarget);
         contactToAggregate.saveDetail(&aggName);
         contactToAggregate.saveDetail(&newOnlineAcct);
         contactsToAggregate.append(contactToAggregate);
@@ -754,8 +840,15 @@ static qint64 aggregationOperations(QContactManager &manager, bool quickMode)
     manager.removeContacts(deleteIds);
     qint64 deleteTime = syncTimer.elapsed();
     qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
-
     elapsedTimeTotal += deleteTime;
+
+    syncTimer.start();
+    manager.removeCollection(testAddressbook.id());
+    manager.removeCollection(testAddressbook2.id());
+    qint64 colDeleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted 2 addressbooks in" << colDeleteTime << "milliseconds";
+    // note: we omit this collection deletion time from the benchmark.
+
     return elapsedTimeTotal;
 }
 
@@ -768,6 +861,14 @@ static qint64 smallBatchWithExistingData(QContactManager &manager, bool quickMod
     // batches, but occur after the database has already been prefilled with some data.
     qDebug() << "--------";
     qDebug() << "Performing test of small batch updates with large existing data set";
+
+    // create test collections for this benchmark.
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("smallBatchWithExistingData"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/smallBatchWithExistingData");
+    manager.saveCollection(&testAddressbook);
+
     QList<int> smallerNbrContacts;
     if (quickMode) {
         smallerNbrContacts << 20;
@@ -782,7 +883,7 @@ static qint64 smallBatchWithExistingData(QContactManager &manager, bool quickMod
         newTestData.reserve(howMany);
 
         for (int j = 0; j < howMany; ++j) {
-            newTestData.append(generateContact(QStringLiteral("smallBatchWithExistingData")));
+            newTestData.append(generateContact(testAddressbook.id()));
         }
 
         smallerTestData.append(newTestData);
@@ -793,7 +894,7 @@ static qint64 smallBatchWithExistingData(QContactManager &manager, bool quickMod
     QList<QContact> prefillData;
     prefillData.reserve(prefillCount);
     for (int i = 0; i < prefillCount; ++i) {
-        prefillData.append(generateContact(QStringLiteral("smallBatchWithExistingData")));
+        prefillData.append(generateContact(testAddressbook.id()));
     }
     qDebug() << "    prefilling database with" << prefillData.size() << "contacts... this will take a while...";
     manager.saveContacts(&prefillData);
@@ -876,6 +977,12 @@ static qint64 smallBatchWithExistingData(QContactManager &manager, bool quickMod
     elapsedTimeTotal += deleteTime;
     qDebug() << "    removing prefill data took" << deleteTime << "milliseconds";
 
+    syncTimer.start();
+    manager.removeCollection(testAddressbook.id());
+    qint64 colDeleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted 1 addressbooks in" << colDeleteTime << "milliseconds";
+    // note: we omit this collection deletion time from the benchmark.
+
     return elapsedTimeTotal;
 }
 
@@ -884,6 +991,14 @@ static qint64 synchronousOperations(QContactManager &manager, bool quickMode)
     // Time some synchronous operations.  First, generate the test data.
     QElapsedTimer syncTimer;
     qint64 elapsedTimeTotal = 0;
+
+    // create test collections for this benchmark.
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("synchronousOperations"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/synchronousOperations");
+    manager.saveCollection(&testAddressbook);
+
     QList<int> nbrContacts;
     if (quickMode) {
         nbrContacts << 100;
@@ -902,7 +1017,7 @@ static qint64 synchronousOperations(QContactManager &manager, bool quickMode)
 
         for (int j = 0; j < howMany; ++j) {
             // Use testing sync target, so 'local' won't be modified into 'was_local' via aggregation
-            newTestData.append(generateContact(QString::fromLatin1("synchronousOperations")));
+            newTestData.append(generateContact(testAddressbook.id()));
         }
 
         testData.append(newTestData);
@@ -920,9 +1035,8 @@ static qint64 synchronousOperations(QContactManager &manager, bool quickMode)
         qDebug() << "    saving took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
 
-        QContactDetailFilter testingFilter;
-        testingFilter.setDetailType(QContactSyncTarget::Type, QContactSyncTarget::FieldSyncTarget);
-        testingFilter.setValue(QString::fromLatin1("synchronousOperations"));
+        QContactCollectionFilter testingFilter;
+        testingFilter.setCollectionId(testAddressbook.id());
 
         QContactFetchHint fh;
         syncTimer.start();
@@ -997,9 +1111,8 @@ static qint64 synchronousOperations(QContactManager &manager, bool quickMode)
         elapsedTimeTotal += ste;
 
         // Read the same set, but filter everything out using syncTarget
-        QContactDetailFilter aggregateFilter;
-        aggregateFilter.setDetailType(QContactSyncTarget::Type, QContactSyncTarget::FieldSyncTarget);
-        aggregateFilter.setValue(QString::fromLatin1("aggregate"));
+        QContactCollectionFilter aggregateFilter;
+        aggregateFilter.setCollectionId(QContactCollectionId(manager.managerUri(), QByteArrayLiteral("col-1"))); // aggregate collection id.
 
         syncTimer.start();
         readContacts = manager.contacts(idFilter & aggregateFilter, QList<QContactSortOrder>(), fh);
@@ -1032,6 +1145,12 @@ static qint64 synchronousOperations(QContactManager &manager, bool quickMode)
         qDebug() << "    removing test data took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
     }
+
+    syncTimer.start();
+    manager.removeCollection(testAddressbook.id());
+    qint64 colDeleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted 1 addressbooks in" << colDeleteTime << "milliseconds";
+    // note: we omit this collection deletion time from the benchmark.
 
     return elapsedTimeTotal;
 }
@@ -1117,9 +1236,17 @@ static qint64 asynchronousOperations(QContactManager &manager, bool quickMode)
 
     qDebug() << "--------";
     qDebug() << "Performing asynchronous save of" << numberContacts << "contacts";
+
+    // create test collections for this benchmark.
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("asynchronousOperations"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/asynchronousOperations");
+    manager.saveCollection(&testAddressbook);
+
     QList<QContact> testData;
     for (int i = 0; i < numberContacts; ++i) {
-        testData.append(generateContact(QStringLiteral("asynchronousOperations")));
+        testData.append(generateContact(testAddressbook.id()));
     }
     QElapsedTimer storeTimer;
     storeTimer.start();
@@ -1153,6 +1280,11 @@ static qint64 asynchronousOperations(QContactManager &manager, bool quickMode)
     qint64 deleteTime = deleteTimer.elapsed();
     qDebug() << "    asynchronous remove request took" << deleteTime << "milliseconds";
 
+    deleteTimer.start();
+    manager.removeCollection(testAddressbook.id());
+    qint64 colDeleteTime = deleteTimer.elapsed();
+    qDebug() << "    deleted 1 addressbooks in" << colDeleteTime << "milliseconds";
+
     return totalTimeTimer.elapsed();
 }
 
@@ -1160,13 +1292,27 @@ qint64 simpleFilterAndSort(QContactManager &manager, bool quickMode)
 {
     // Now we perform a simple create+filter+sort test, where contacts are saved in small chunks.
     qDebug() << "--------";
+
+    // create test collections for this benchmark.
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("simpleFilterAndSort"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/simpleFilterAndSort");
+    manager.saveCollection(&testAddressbook);
+
+    QContactCollection testAddressbook2;
+    testAddressbook2.setMetaData(QContactCollection::KeyName, QStringLiteral("simpleFilterAndSort2"));
+    testAddressbook2.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 6);
+    testAddressbook2.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/simpleFilterAndSort2");
+    manager.saveCollection(&testAddressbook2);
+
     qDebug() << "Starting save (chunks) / fetch (filter + sort) / delete (all) test...";
     QList<QContact> testData, testData2;
     const int chunkSize = quickMode ? 25 : 50;
     const int prefillCount = quickMode ? 250 : 1000;
     for (int i = 0; i < prefillCount/2; ++i) {
-        testData.append(generateContact(QString::fromLatin1("simpleFilterAndSort"), true));
-        testData2.append(generateContact(QString::fromLatin1("simpleFilterAndSort2"), true));
+        testData.append(generateContact(testAddressbook.id(), true));
+        testData2.append(generateContact(testAddressbook2.id(), true));
     }
 
     QList<QList<QContact> > chunks, chunks2;
@@ -1187,9 +1333,8 @@ qint64 simpleFilterAndSort(QContactManager &manager, bool quickMode)
     sort.setDetailType(QContactDisplayLabel::Type, QContactDisplayLabel__FieldLabelGroup);
     QContactDetailFilter phoneFilter;
     phoneFilter.setDetailType(QContactPhoneNumber::Type); // existence filter, don't care about value.
-    QContactDetailFilter syncTargetFilter;
-    syncTargetFilter.setDetailType(QContactSyncTarget::Type, QContactSyncTarget::FieldSyncTarget);
-    syncTargetFilter.setValue(QStringLiteral("aggregate"));
+    QContactCollectionFilter aggregateFilter;
+    aggregateFilter.setCollectionId(QContactCollectionId(manager.managerUri(), QByteArrayLiteral("col-1"))); // aggregate collection id.
 
     qDebug() << "    storing" << prefillCount << "contacts... this will take a while...";
     QElapsedTimer syncTimer;
@@ -1205,7 +1350,7 @@ qint64 simpleFilterAndSort(QContactManager &manager, bool quickMode)
 
     qDebug() << "    retrieving aggregate contacts with filter, sort order, and fetch hint applied";
     syncTimer.start();
-    QList<QContact> filteredSorted = manager.contacts(syncTargetFilter & phoneFilter, sort, listDisplayFetchHint);
+    QList<QContact> filteredSorted = manager.contacts(aggregateFilter & phoneFilter, sort, listDisplayFetchHint);
     qint64 fetchTime = syncTimer.elapsed();
     qDebug() << "    retrieved" << filteredSorted.size() << "contacts in" << fetchTime << "milliseconds";
 
@@ -1229,6 +1374,13 @@ qint64 simpleFilterAndSort(QContactManager &manager, bool quickMode)
     if (filteredSorted.size() == 0) {
         qWarning() << "Zero aggregate contacts found.  Are you sure you're running with privileged permissions?";
     }
+
+    syncTimer.start();
+    manager.removeCollection(testAddressbook.id());
+    manager.removeCollection(testAddressbook2.id());
+    qint64 colDeleteTime = syncTimer.elapsed();
+    qDebug() << "    deleted 2 addressbooks in" << colDeleteTime << "milliseconds";
+    // note: we omit this collection deletion time from the benchmark.
 
     return saveTime + fetchTime + deleteTime;
 }
