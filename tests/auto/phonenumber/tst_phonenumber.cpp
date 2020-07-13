@@ -192,9 +192,9 @@ void tst_PhoneNumber::normalization_data()
         << true;
 
     QTest::newRow("invalid punctuation")
-        << "12_34,567,|890"
-        << "1234567890"
-        << "1234567890"
+        << "12_34.567.|890"
+        << "1234.567.890"
+        << "1234.567.890"
         << "1234567890"
         << "1234567890"
         << false;
@@ -325,6 +325,22 @@ void tst_PhoneNumber::normalization_data()
         << "1234567890"
         << "1234567890w1p2p3#4*5"
         << "1234567890w1p2p3#4*5"
+        << true;
+
+    QTest::newRow("DTMF 11")
+        << "1234567890,1"
+        << "1234567890p1"       // ',' is converted to 'p'
+        << "1234567890"
+        << "1234567890p1"
+        << "1234567890p1"
+        << true;
+
+    QTest::newRow("DTMF 12")
+        << "1234567890;1"
+        << "1234567890w1"       // ';' is converted to 'w'
+        << "1234567890"
+        << "1234567890w1"
+        << "1234567890w1"
         << true;
 
     QTest::newRow("invalid DTMF 1")
