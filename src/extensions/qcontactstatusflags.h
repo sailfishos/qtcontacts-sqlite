@@ -52,7 +52,10 @@ public:
         HasEmailAddress = (1 << 1),
         HasOnlineAccount = (1 << 2),
         IsOnline = (1 << 3),
-        IsDeactivated = (1 << 4)
+        IsDeactivated = (1 << 4),
+        IsAdded = (1 << 5),
+        IsModified = (1 << 6),
+        IsDeleted = (1 << 7)
     };
     Q_DECLARE_FLAGS(Flags, Flag)
 

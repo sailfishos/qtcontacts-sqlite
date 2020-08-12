@@ -202,7 +202,7 @@ public:
     void execute(ContactReader *, WriterProxy &writer) override
     {
         m_errorMap.clear();
-        m_error = writer->remove(m_contactIds, &m_errorMap, false);
+        m_error = writer->remove(m_contactIds, &m_errorMap, false, false);
     }
 
     void updateState(QContactAbstractRequest::State state) override
@@ -451,7 +451,7 @@ public:
     void execute(ContactReader *, WriterProxy &writer) override
     {
         m_errorMap.clear();
-        m_error = writer->remove(m_collectionIds, &m_errorMap, false);
+        m_error = writer->remove(m_collectionIds, &m_errorMap, false, false);
     }
 
     void updateState(QContactAbstractRequest::State state) override
@@ -1092,10 +1092,10 @@ QContactManager::Error ContactsEngine::open()
                 m_notifier->connect("collectionsAdded", "au", this, SLOT(_q_collectionsAdded(QVector<quint32>)));
                 m_notifier->connect("collectionsChanged", "au", this, SLOT(_q_collectionsChanged(QVector<quint32>)));
                 m_notifier->connect("collectionsRemoved", "au", this, SLOT(_q_collectionsRemoved(QVector<quint32>)));
+                m_notifier->connect("collectionContactsChanged", "au", this, SLOT(_q_collectionContactsChanged(QVector<quint32>)));
                 m_notifier->connect("contactsAdded", "au", this, SLOT(_q_contactsAdded(QVector<quint32>)));
                 m_notifier->connect("contactsChanged", "au", this, SLOT(_q_contactsChanged(QVector<quint32>)));
                 m_notifier->connect("contactsPresenceChanged", "au", this, SLOT(_q_contactsPresenceChanged(QVector<quint32>)));
-                m_notifier->connect("syncContactsChanged", "au", this, SLOT(_q_syncContactsChanged(QVector<quint32>)));
                 m_notifier->connect("contactsRemoved", "au", this, SLOT(_q_contactsRemoved(QVector<quint32>)));
                 m_notifier->connect("selfContactIdChanged", "uu", this, SLOT(_q_selfContactIdChanged(quint32,quint32)));
                 m_notifier->connect("relationshipsAdded", "au", this, SLOT(_q_relationshipsAdded(QVector<quint32>)));
@@ -1261,7 +1261,7 @@ bool ContactsEngine::removeContacts(
             QMap<int, QContactManager::Error> *errorMap,
             QContactManager::Error* error)
 {
-    QContactManager::Error err = writer()->remove(contactIds, errorMap, false);
+    QContactManager::Error err = writer()->remove(contactIds, errorMap, false, false);
     if (error)
         *error = err;
     return err == QContactManager::NoError;
@@ -1412,7 +1412,7 @@ bool ContactsEngine::removeCollections(
         QMap<int, QContactManager::Error> *errorMap,
         QContactManager::Error *error)
 {
-    QContactManager::Error err = writer()->remove(collectionIds, errorMap, false);
+    QContactManager::Error err = writer()->remove(collectionIds, errorMap, false, false);
 
     if (error)
         *error = err;
@@ -1534,38 +1534,82 @@ QList<QContactType::TypeValues> ContactsEngine::supportedContactTypes() const
     return QList<QContactType::TypeValues>() << QContactType::TypeContact;
 }
 
-void ContactsEngine::regenerateDisplayLabel(QContact &contact)
+void ContactsEngine::regenerateDisplayLabel(QContact &contact, bool *emitDisplayLabelGroupChange)
 {
     QContactManager::Error displayLabelError = QContactManager::NoError;
     const QString label = synthesizedDisplayLabel(contact, &displayLabelError);
     if (displayLabelError != QContactManager::NoError) {
         QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Unable to regenerate displayLabel for contact: %1").arg(ContactId::toString(contact)));
-        return;
     }
 
     QContact tempContact(contact);
-    setContactDisplayLabel(&tempContact, label, QString());
-    const QString group = m_database ? m_database->determineDisplayLabelGroup(tempContact) : QString();
-    setContactDisplayLabel(&contact, label, group);
+    setContactDisplayLabel(&tempContact, label, QString(), -1);
+    const QString group = m_database ? m_database->determineDisplayLabelGroup(tempContact, emitDisplayLabelGroupChange) : QString();
+    const int sortOrder = m_database ? m_database->displayLabelGroupSortValue(group) : -1;
+    setContactDisplayLabel(&contact, label, group, sortOrder);
 }
 
-bool ContactsEngine::fetchSyncContacts(const QContactCollectionId &collectionId, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
-                                       QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
-                                       QDateTime *maxTimestamp, QContactManager::Error *error)
+bool ContactsEngine::clearChangeFlags(const QList<QContactId> &contactIds, QContactManager::Error *error)
 {
-    Q_ASSERT(maxTimestamp);
     Q_ASSERT(error);
-
-    *error = writer()->fetchSyncContacts(collectionId, lastSync, exportedIds, syncContacts, addedContacts, deletedContactIds, maxTimestamp);
+    *error = writer()->clearChangeFlags(contactIds, false);
     return (*error == QContactManager::NoError);
 }
 
-bool ContactsEngine::storeSyncContacts(const QContactCollectionId &collectionId, ConflictResolutionPolicy conflictPolicy,
-                                       QList<QPair<QContact, QContact> > *remoteChanges, QContactManager::Error *error)
+bool ContactsEngine::clearChangeFlags(const QContactCollectionId &collectionId, QContactManager::Error *error)
 {
     Q_ASSERT(error);
+    *error = writer()->clearChangeFlags(collectionId, false);
+    return (*error == QContactManager::NoError);
+}
 
-    *error = writer()->updateSyncContacts(collectionId, conflictPolicy, remoteChanges);
+bool ContactsEngine::fetchCollectionChanges(int accountId,
+                                            const QString &applicationName,
+                                            QList<QContactCollection> *addedCollections,
+                                            QList<QContactCollection> *modifiedCollections,
+                                            QList<QContactCollection> *deletedCollections,
+                                            QList<QContactCollection> *unmodifiedCollections,
+                                            QContactManager::Error *error)
+{
+    Q_ASSERT(error);
+    *error = writer()->fetchCollectionChanges(accountId,
+                                              applicationName,
+                                              addedCollections,
+                                              modifiedCollections,
+                                              deletedCollections,
+                                              unmodifiedCollections);
+    return (*error == QContactManager::NoError);
+}
+
+bool ContactsEngine::fetchContactChanges(const QContactCollectionId &collectionId,
+                                         QList<QContact> *addedContacts,
+                                         QList<QContact> *modifiedContacts,
+                                         QList<QContact> *deletedContacts,
+                                         QList<QContact> *unmodifiedContacts,
+                                         QContactManager::Error *error)
+{
+    Q_ASSERT(error);
+    *error = writer()->fetchContactChanges(collectionId,
+                                           addedContacts,
+                                           modifiedContacts,
+                                           deletedContacts,
+                                           unmodifiedContacts);
+    return (*error == QContactManager::NoError);
+}
+
+bool ContactsEngine::storeChanges(QHash<QContactCollection*, QList<QContact> * /* added contacts */> *addedCollections,
+                                  QHash<QContactCollection*, QList<QContact> * /* added/modified/deleted contacts */> *modifiedCollections,
+                                  const QList<QContactCollectionId> &deletedCollections,
+                                  ConflictResolutionPolicy conflictResolutionPolicy,
+                                  bool clearChangeFlags,
+                                  QContactManager::Error *error)
+{
+    Q_ASSERT(error);
+    *error = writer()->storeChanges(addedCollections,
+                                    modifiedCollections,
+                                    deletedCollections,
+                                    conflictResolutionPolicy,
+                                    clearChangeFlags);
     return (*error == QContactManager::NoError);
 }
 
@@ -1627,7 +1671,7 @@ QStringList ContactsEngine::displayLabelGroups()
     return database().displayLabelGroups();
 }
 
-bool ContactsEngine::setContactDisplayLabel(QContact *contact, const QString &label, const QString &group)
+bool ContactsEngine::setContactDisplayLabel(QContact *contact, const QString &label, const QString &group, int sortOrder)
 {
     QContactDisplayLabel detail(contact->detail<QContactDisplayLabel>());
     bool needSave = false;
@@ -1639,9 +1683,13 @@ bool ContactsEngine::setContactDisplayLabel(QContact *contact, const QString &la
         detail.setValue(QContactDisplayLabel__FieldLabelGroup, group);
         needSave = true;
     }
+    if (sortOrder >= 0) {
+        detail.setValue(QContactDisplayLabel__FieldLabelGroupSortOrder, sortOrder);
+        needSave = true;
+    }
 
     if (needSave) {
-        return contact->saveDetail(&detail);
+        return contact->saveDetail(&detail, QContact::IgnoreAccessConstraints);
     }
 
     return true;
@@ -1776,9 +1824,9 @@ void ContactsEngine::_q_contactsPresenceChanged(const QVector<quint32> &contactI
     }
 }
 
-void ContactsEngine::_q_syncContactsChanged(const QVector<quint32> &collectionIds)
+void ContactsEngine::_q_collectionContactsChanged(const QVector<quint32> &collectionIds)
 {
-    emit syncContactsChanged(collectionIdList(collectionIds, m_managerUri));
+    emit collectionContactsChanged(collectionIdList(collectionIds, m_managerUri));
 }
 
 void ContactsEngine::_q_displayLabelGroupsChanged()

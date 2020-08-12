@@ -3,10 +3,10 @@ TEMPLATE = subdirs
 SUBDIRS = \
     qcontactmanager \
     aggregation \
-#    qcontactmanagerfiltering \
-#    phonenumber \
-#    memorytable \
-#    database \
-#    displaylabelgroups \
-#    detailfetchrequest
+    qcontactmanagerfiltering \
+    phonenumber \
+    memorytable \
+    database \
+    displaylabelgroups \
+    detailfetchrequest
 

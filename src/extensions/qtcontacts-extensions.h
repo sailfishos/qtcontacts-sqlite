@@ -47,16 +47,25 @@
 
 QT_BEGIN_NAMESPACE_CONTACTS
 
-// In QContactDetail, we support the provenance and modifiable properties
+// In QContactDetail, we support some extra fields
 static const int QContactDetail__FieldProvenance = (QContactDetail::FieldLinkedDetailUris+1);
 static const int QContactDetail__FieldModifiable = (QContactDetail::FieldLinkedDetailUris+2);
 static const int QContactDetail__FieldNonexportable = (QContactDetail::FieldLinkedDetailUris+3);
+static const int QContactDetail__FieldChangeFlags = (QContactDetail::FieldLinkedDetailUris+4);
+static const int QContactDetail__FieldUnhandledChangeFlags = (QContactDetail::FieldLinkedDetailUris+5);
+static const int QContactDetail__FieldDatabaseId = (QContactDetail::FieldLinkedDetailUris+6);
+
+// The following change types can be reported for a detail when fetched via the synchronization plugin fetch API.
+static const int QContactDetail__ChangeFlag_IsAdded    = 1 << 0;
+static const int QContactDetail__ChangeFlag_IsModified = 1 << 1;
+static const int QContactDetail__ChangeFlag_IsDeleted  = 1 << 2;
 
 // In QContactName, we support the customLabel property
 static const int QContactName__FieldCustomLabel = (QContactName::FieldSuffix+1);
 
 // In QContactDisplayLabel, we support the labelGroup property
 static const int QContactDisplayLabel__FieldLabelGroup = (QContactDisplayLabel::FieldLabel+1);
+static const int QContactDisplayLabel__FieldLabelGroupSortOrder = (QContactDisplayLabel::FieldLabel+2);
 
 // In QContactOnlineAccount we support the following properties:
 //   AccountPath - identifying path value for the account
@@ -83,10 +92,11 @@ static const QContactDetail::DetailType QContactDetail__TypeStatusFlags = static
 // We support the QContactDeactivated detail type
 static const QContactDetail::DetailType QContactDetail__TypeDeactivated = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 3);
 
-// Incidental is an internal property of a contact relating to the contact's inception
-static const QContactDetail::DetailType QContactDetail__TypeIncidental = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 4);
+// We support the QContactUndelete detail type
+static const QContactDetail::DetailType QContactDetail__TypeUndelete = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 4);
 
 static const QString COLLECTION_EXTENDEDMETADATA_KEY_AGGREGABLE = QString::fromLatin1("Aggregable");
+static const QString COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME = QString::fromLatin1("ApplicationName");
 static const QString COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID = QString::fromLatin1("AccountId");
 static const QString COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH = QString::fromLatin1("RemotePath");
 

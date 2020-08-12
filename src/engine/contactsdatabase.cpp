@@ -67,40 +67,39 @@ static const char *setupSynchronous =
 static const char *createCollectionsTable =
         "\n CREATE TABLE Collections ("
         "\n collectionId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n aggregable BOOL DEFAULT 1,"
         "\n name TEXT,"
         "\n description TEXT,"
         "\n color TEXT,"
         "\n secondaryColor TEXT,"
         "\n image TEXT,"
+        "\n applicationName TEXT,"
         "\n accountId INTEGER,"
-        "\n remotePath TEXT)";
+        "\n remotePath TEXT,"
+        "\n changeFlags INTEGER DEFAULT 0,"
+        "\n recordUnhandledChangeFlags BOOL DEFAULT 0)";
+
+static const char *createCollectionsMetadataTable =
+        "\n CREATE TABLE CollectionsMetadata ("
+        "\n collectionId INTEGER REFERENCES Collections (collectionId),"
+        "\n key TEXT,"
+        "\n value BLOB,"
+        "\n PRIMARY KEY (collectionId, key))";
 
 static const char *createContactsTable =
         "\n CREATE TABLE Contacts ("
         "\n contactId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
         "\n collectionId INTEGER REFERENCES Collections (collectionId),"
-        "\n displayLabel TEXT,"
-        "\n displayLabelGroup TEXT,"
-        "\n displayLabelGroupSortOrder INTEGER,"
-        "\n firstName TEXT,"
-        "\n lowerFirstName TEXT,"
-        "\n lastName TEXT,"
-        "\n lowerLastName TEXT,"
-        "\n middleName TEXT,"
-        "\n prefix TEXT,"
-        "\n suffix TEXT,"
-        "\n customLabel TEXT,"
-        "\n syncTarget TEXT,"
         "\n created DATETIME,"
         "\n modified DATETIME,"
-        "\n gender TEXT,"               // Contains an INTEGER represented as TEXT
-        "\n isFavorite BOOL,"
+        "\n deleted DATETIME,"
         "\n hasPhoneNumber BOOL DEFAULT 0,"
         "\n hasEmailAddress BOOL DEFAULT 0,"
         "\n hasOnlineAccount BOOL DEFAULT 0,"
         "\n isOnline BOOL DEFAULT 0,"
         "\n isDeactivated BOOL DEFAULT 0,"
-        "\n isIncidental BOOL DEFAULT 0," // XXXXXXXXXXX TODO: no longer required.  could change to isDirty/ChangedSinceSync ?
+        "\n changeFlags INTEGER DEFAULT 0,"
+        "\n unhandledChangeFlags INTEGER DEFAULT 0,"
         "\n type INTEGER DEFAULT 0);"; // QContactType::TypeContact
 
 static const char *createAddressesTable =
@@ -139,6 +138,14 @@ static const char *createBirthdaysTable =
         "\n birthday DATETIME,"
         "\n calendarId TEXT);";
 
+static const char *createDisplayLabelsTable =
+        "\n CREATE TABLE DisplayLabels ("
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
+        "\n contactId INTEGER KEY UNIQUE," // only one display label detail per contact
+        "\n displayLabel TEXT,"
+        "\n displayLabelGroup TEXT,"
+        "\n displayLabelGroupSortOrder INTEGER)";
+
 static const char *createEmailAddressesTable =
         "\n CREATE TABLE EmailAddresses ("
         "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
@@ -152,6 +159,18 @@ static const char *createFamiliesTable =
         "\n contactId INTEGER KEY,"
         "\n spouse TEXT,"
         "\n children TEXT);";
+
+static const char *createFavoritesTable =
+        "\n CREATE TABLE Favorites ("
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
+        "\n contactId INTEGER KEY UNIQUE," // only one favorite detail per contact
+        "\n isFavorite BOOL)";
+
+static const char *createGendersTable =
+        "\n CREATE TABLE Genders ("
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
+        "\n contactId INTEGER KEY UNIQUE," // only one gender detail per contact
+        "\n gender TEXT)"; // Contains an INTEGER represented as TEXT
 
 static const char *createGeoLocationsTable =
         "\n CREATE TABLE GeoLocations ("
@@ -189,6 +208,19 @@ static const char *createHobbiesTable =
         "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n hobby TEXT);";
+
+static const char *createNamesTable =
+        "\n CREATE TABLE Names ("
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
+        "\n contactId INTEGER KEY UNIQUE," // only one name detail per contact
+        "\n firstName TEXT,"
+        "\n lowerFirstName TEXT,"
+        "\n lastName TEXT,"
+        "\n lowerLastName TEXT,"
+        "\n middleName TEXT,"
+        "\n prefix TEXT,"
+        "\n suffix TEXT,"
+        "\n customLabel TEXT)";
 
 static const char *createNicknamesTable =
         "\n CREATE TABLE Nicknames ("
@@ -258,6 +290,12 @@ static const char *createRingtonesTable =
         "\n videoRingtone TEXT,"
         "\n vibrationRingtone TEXT);";
 
+static const char *createSyncTargetsTable =
+        "\n CREATE TABLE SyncTargets ("
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
+        "\n contactId INTEGER KEY UNIQUE," // only one sync target detail per contact
+        "\n syncTarget TEXT)";
+
 static const char *createTagsTable =
         "\n CREATE TABLE Tags ("
         "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
@@ -297,10 +335,15 @@ static const char *createDetailsTable =
         "\n accessConstraints INTEGER,"
         "\n provenance TEXT,"
         "\n modifiable BOOL,"
-        "\n nonexportable BOOL);";
+        "\n nonexportable BOOL,"
+        "\n changeFlags INTEGER DEFAULT 0,"
+        "\n unhandledChangeFlags INTEGER DEFAULT 0);";
 
 static const char *createDetailsRemoveIndex =
         "\n CREATE INDEX DetailsRemoveIndex ON Details(contactId, detail);";
+
+static const char *createDetailsChangeFlagsIndex =
+        "\n CREATE INDEX DetailsChangeFlagsIndex ON Details(changeFlags);";
 
 static const char *createAddressesDetailsContactIdIndex =
         "\n CREATE INDEX AddressesDetailsContactIdIndex ON Addresses(contactId);";
@@ -310,10 +353,16 @@ static const char *createAvatarsDetailsContactIdIndex =
         "\n CREATE INDEX AvatarsDetailsContactIdIndex ON Avatars(contactId);";
 static const char *createBirthdaysDetailsContactIdIndex =
         "\n CREATE INDEX BirthdaysDetailsContactIdIndex ON Birthdays(contactId);";
+static const char *createDisplayLabelsDetailsContactIdIndex =
+        "\n CREATE INDEX DisplayLabelsDetailsContactIdIndex ON DisplayLabels(contactId);";
 static const char *createEmailAddressesDetailsContactIdIndex =
         "\n CREATE INDEX EmailAddressesDetailsContactIdIndex ON EmailAddresses(contactId);";
 static const char *createFamiliesDetailsContactIdIndex =
         "\n CREATE INDEX FamiliesDetailsContactIdIndex ON Families(contactId);";
+static const char *createFavoritesDetailsContactIdIndex =
+        "\n CREATE INDEX FavoritesDetailsContactIdIndex ON Favorites(contactId);";
+static const char *createGendersDetailsContactIdIndex =
+        "\n CREATE INDEX GendersDetailsContactIdIndex ON Genders(contactId);";
 static const char *createGeoLocationsDetailsContactIdIndex =
         "\n CREATE INDEX GeoLocationsDetailsContactIdIndex ON GeoLocations(contactId);";
 static const char *createGlobalPresencesDetailsContactIdIndex =
@@ -322,6 +371,8 @@ static const char *createGuidsDetailsContactIdIndex =
         "\n CREATE INDEX GuidsDetailsContactIdIndex ON Guids(contactId);";
 static const char *createHobbiesDetailsContactIdIndex =
         "\n CREATE INDEX HobbiesDetailsContactIdIndex ON Hobbies(contactId);";
+static const char *createNamesDetailsContactIdIndex =
+        "\n CREATE INDEX NamesDetailsContactIdIndex ON Names(contactId);";
 static const char *createNicknamesDetailsContactIdIndex =
         "\n CREATE INDEX NicknamesDetailsContactIdIndex ON Nicknames(contactId);";
 static const char *createNotesDetailsContactIdIndex =
@@ -336,6 +387,8 @@ static const char *createPresencesDetailsContactIdIndex =
         "\n CREATE INDEX PresencesDetailsContactIdIndex ON Presences(contactId);";
 static const char *createRingtonesDetailsContactIdIndex =
         "\n CREATE INDEX RingtonesDetailsContactIdIndex ON Ringtones(contactId);";
+static const char *createSyncTargetsDetailsContactIdIndex =
+        "\n CREATE INDEX SyncTargetsDetailsContactIdIndex ON SyncTargets(contactId);";
 static const char *createTagsDetailsContactIdIndex =
         "\n CREATE INDEX TagsDetailsContactIdIndex ON Tags(contactId);";
 static const char *createUrlsDetailsContactIdIndex =
@@ -363,11 +416,6 @@ static const char *createDeletedContactsTable =
         "\n collectionId INTEGER NOT NULL,"
         "\n deleted DATETIME);";
 
-static const char *createDeletedCollectionsTable =
-        "\n CREATE TABLE DeletedCollections ("
-        "\n collectionId INTEGER PRIMARY KEY,"
-        "\n deleted DATETIME);";
-
 static const char *createOOBTable =
         "\n CREATE TABLE OOB ("
         "\n name TEXT PRIMARY KEY,"
@@ -379,12 +427,109 @@ static const char *createDbSettingsTable =
         "\n name TEXT PRIMARY KEY,"
         "\n value TEXT );";
 
-static const char *createRemoveTrigger =
+// as at b8084fa7
+static const char *createRemoveTrigger_0 =
         "\n CREATE TRIGGER RemoveContactDetails"
         "\n BEFORE DELETE"
         "\n ON Contacts"
         "\n BEGIN"
-        "\n  INSERT INTO DeletedContacts (contactId, collectionId, deleted) VALUES (old.contactId, old.collectionId, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));"
+        "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Birthdays WHERE contactId = old.contactId;"
+        "\n  DELETE FROM EmailAddresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM GlobalPresences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Guids WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Hobbies WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Nicknames WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Notes WHERE contactId = old.contactId;"
+        "\n  DELETE FROM OnlineAccounts WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Organizations WHERE contactId = old.contactId;"
+        "\n  DELETE FROM PhoneNumbers WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Presences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Ringtones WHERE contactId = old.contactId;"
+        "\n  DELETE FROM SyncTargets WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Tags WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Urls WHERE contactId = old.contactId;"
+        "\n  DELETE FROM TpMetadata WHERE contactId = old.contactId;"
+        "\n  DELETE FROM ExtendedDetails WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Details WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Identities WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
+        "\n END;";
+
+// as at 2c818a05
+static const char *createRemoveTrigger_1 = createRemoveTrigger_0;
+
+// as at a18a1884
+static const char *createRemoveTrigger_2 =
+        "\n CREATE TRIGGER RemoveContactDetails"
+        "\n BEFORE DELETE"
+        "\n ON Contacts"
+        "\n BEGIN"
+        "\n  INSERT INTO DeletedContacts (contactId, syncTarget, deleted) VALUES (old.contactId, old.syncTarget, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));"
+        "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Birthdays WHERE contactId = old.contactId;"
+        "\n  DELETE FROM EmailAddresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM GlobalPresences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Guids WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Hobbies WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Nicknames WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Notes WHERE contactId = old.contactId;"
+        "\n  DELETE FROM OnlineAccounts WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Organizations WHERE contactId = old.contactId;"
+        "\n  DELETE FROM PhoneNumbers WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Presences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Ringtones WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Tags WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Urls WHERE contactId = old.contactId;"
+        "\n  DELETE FROM TpMetadata WHERE contactId = old.contactId;"
+        "\n  DELETE FROM ExtendedDetails WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Details WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Identities WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
+        "\n END;";
+
+// as at 78256437
+static const char *createRemoveTrigger_11 =
+        "\n CREATE TRIGGER RemoveContactDetails"
+        "\n BEFORE DELETE"
+        "\n ON Contacts"
+        "\n BEGIN"
+        "\n  INSERT INTO DeletedContacts (contactId, syncTarget, deleted) VALUES (old.contactId, old.syncTarget, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));"
+        "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Birthdays WHERE contactId = old.contactId;"
+        "\n  DELETE FROM EmailAddresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM GlobalPresences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Guids WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Hobbies WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Nicknames WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Notes WHERE contactId = old.contactId;"
+        "\n  DELETE FROM OnlineAccounts WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Organizations WHERE contactId = old.contactId;"
+        "\n  DELETE FROM PhoneNumbers WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Presences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Ringtones WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Tags WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Urls WHERE contactId = old.contactId;"
+        "\n  DELETE FROM OriginMetadata WHERE contactId = old.contactId;"
+        "\n  DELETE FROM ExtendedDetails WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Details WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Identities WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
+        "\n END;";
+
+// as at 8e0fb5e5
+static const char *createRemoveTrigger_12 =
+        "\n CREATE TRIGGER RemoveContactDetails"
+        "\n BEFORE DELETE"
+        "\n ON Contacts"
+        "\n BEGIN"
+        "\n  INSERT INTO DeletedContacts (contactId, syncTarget, deleted) VALUES (old.contactId, old.syncTarget, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));"
         "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
         "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
         "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
@@ -411,118 +556,109 @@ static const char *createRemoveTrigger =
         "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
         "\n END;";
 
+static const char *createRemoveTrigger_21 =
+        "\n CREATE TRIGGER RemoveContactDetails"
+        "\n BEFORE DELETE"
+        "\n ON Contacts"
+        "\n BEGIN"
+        "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Birthdays WHERE contactId = old.contactId;"
+        "\n  DELETE FROM DisplayLabels WHERE contactId = old.contactId;"
+        "\n  DELETE FROM EmailAddresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Families WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Favorites WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Genders WHERE contactId = old.contactId;"
+        "\n  DELETE FROM GeoLocations WHERE contactId = old.contactId;"
+        "\n  DELETE FROM GlobalPresences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Guids WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Hobbies WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Names WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Nicknames WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Notes WHERE contactId = old.contactId;"
+        "\n  DELETE FROM OnlineAccounts WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Organizations WHERE contactId = old.contactId;"
+        "\n  DELETE FROM PhoneNumbers WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Presences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Ringtones WHERE contactId = old.contactId;"
+        "\n  DELETE FROM SyncTargets WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Tags WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Urls WHERE contactId = old.contactId;"
+        "\n  DELETE FROM OriginMetadata WHERE contactId = old.contactId;"
+        "\n  DELETE FROM ExtendedDetails WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Details WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Identities WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
+        "\n END;";
+
+static const char *createRemoveTrigger = createRemoveTrigger_21;
+
+// better if we had used foreign key constraints with cascade delete...
+static const char *createRemoveDetailsTrigger_21 =
+        "\n CREATE TRIGGER CascadeRemoveSpecificDetails"
+        "\n BEFORE DELETE"
+        "\n ON Details"
+        "\n BEGIN"
+        "\n  DELETE FROM Addresses WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Anniversaries WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Avatars WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Birthdays WHERE detailId = old.detailId;"
+        "\n  DELETE FROM DisplayLabels WHERE detailId = old.detailId;"
+        "\n  DELETE FROM EmailAddresses WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Families WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Favorites WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Genders WHERE detailId = old.detailId;"
+        "\n  DELETE FROM GeoLocations WHERE detailId = old.detailId;"
+        "\n  DELETE FROM GlobalPresences WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Guids WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Hobbies WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Names WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Nicknames WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Notes WHERE detailId = old.detailId;"
+        "\n  DELETE FROM OnlineAccounts WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Organizations WHERE detailId = old.detailId;"
+        "\n  DELETE FROM PhoneNumbers WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Presences WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Ringtones WHERE detailId = old.detailId;"
+        "\n  DELETE FROM SyncTargets WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Tags WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Urls WHERE detailId = old.detailId;"
+        "\n  DELETE FROM OriginMetadata WHERE detailId = old.detailId;"
+        "\n  DELETE FROM ExtendedDetails WHERE detailId = old.detailId;"
+        "\n END;";
+
+static const char *createRemoveDetailsTrigger = createRemoveDetailsTrigger_21;
+
 static const char *createLocalSelfContact =
         "\n INSERT INTO Contacts ("
         "\n contactId,"
-        "\n collectionId,"
-        "\n displayLabel,"
-        "\n firstName,"
-        "\n lowerFirstName,"
-        "\n lastName,"
-        "\n lowerLastName,"
-        "\n middleName,"
-        "\n prefix,"
-        "\n suffix,"
-        "\n customLabel,"
-        "\n syncTarget,"
-        "\n created,"
-        "\n modified,"
-        "\n gender,"
-        "\n isFavorite)"
+        "\n collectionId)"
         "\n VALUES ("
         "\n 1,"
-        "\n 2,"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n 'local',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n 0);";
+        "\n 2);";
 static const char *createAggregateSelfContact =
         "\n INSERT INTO Contacts ("
         "\n contactId,"
-        "\n collectionId,"
-        "\n displayLabel,"
-        "\n firstName,"
-        "\n lowerFirstName,"
-        "\n lastName,"
-        "\n lowerLastName,"
-        "\n middleName,"
-        "\n prefix,"
-        "\n suffix,"
-        "\n customLabel,"
-        "\n syncTarget,"
-        "\n created,"
-        "\n modified,"
-        "\n gender,"
-        "\n isFavorite)"
+        "\n collectionId)"
         "\n VALUES ("
         "\n 2,"
-        "\n 1,"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n 'aggregate',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n 0);";
+        "\n 1);";
 static const char *createSelfContactRelationship =
         "\n INSERT INTO Relationships (firstId, secondId, type) VALUES (2, 1, 'Aggregates');";
 
 static const char *createSelfContact =
         "\n INSERT INTO Contacts ("
         "\n contactId,"
-        "\n collectionId,"
-        "\n displayLabel,"
-        "\n firstName,"
-        "\n lowerFirstName,"
-        "\n lastName,"
-        "\n lowerLastName,"
-        "\n middleName,"
-        "\n prefix,"
-        "\n suffix,"
-        "\n customLabel,"
-        "\n syncTarget,"
-        "\n created,"
-        "\n modified,"
-        "\n gender,"
-        "\n isFavorite)"
+        "\n collectionId)"
         "\n VALUES ("
         "\n 2,"
-        "\n 2,"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n 'local',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n 0);";
+        "\n 2);";
 
 static const char *createAggregateAddressbookCollection =
         "\n INSERT INTO Collections("
         "\n collectionId,"
+        "\n aggregable,"
         "\n name,"
         "\n description,"
         "\n color,"
@@ -532,6 +668,7 @@ static const char *createAggregateAddressbookCollection =
         "\n remotePath)"
         "\n VALUES ("
         "\n 1,"
+        "\n 0,"
         "\n 'aggregate',"
         "\n 'Aggregate contacts whose data is merged from constituent (facet) contacts',"
         "\n 'blue',"
@@ -542,6 +679,7 @@ static const char *createAggregateAddressbookCollection =
 static const char *createLocalAddressbookCollection =
         "\n INSERT INTO Collections("
         "\n collectionId,"
+        "\n aggregable,"
         "\n name,"
         "\n description,"
         "\n color,"
@@ -551,6 +689,7 @@ static const char *createLocalAddressbookCollection =
         "\n remotePath)"
         "\n VALUES ("
         "\n 2,"
+        "\n 1,"
         "\n 'local',"
         "\n 'Device-storage addressbook',"
         "\n 'red',"
@@ -562,14 +701,17 @@ static const char *createLocalAddressbookCollection =
 static const char *createContactsCollectionIdIndex =
         "\n CREATE INDEX ContactsCollectionIdIndex ON Contacts(collectionId);";
 
-static const char *createContactsSyncTargetIndex =
-        "\n CREATE INDEX ContactsSyncTargetIndex ON Contacts(syncTarget);";
+static const char *createCollectionsChangeFlagsIndex =
+        "\n CREATE INDEX CollectionsChangeFlagsIndex ON Collections(changeFlags);";
 
-static const char *createContactsFirstNameIndex =
-        "\n CREATE INDEX ContactsFirstNameIndex ON Contacts(lowerFirstName);";
+static const char *createContactsChangeFlagsIndex =
+        "\n CREATE INDEX ContactsChangeFlagsIndex ON Contacts(changeFlags);";
 
-static const char *createContactsLastNameIndex =
-        "\n CREATE INDEX ContactsLastNameIndex ON Contacts(lowerLastName);";
+static const char *createFirstNameIndex =
+        "\n CREATE INDEX FirstNameIndex ON Names(lowerFirstName);";
+
+static const char *createLastNameIndex =
+        "\n CREATE INDEX LastNameIndex ON Names(lowerLastName);";
 
 static const char *createContactsModifiedIndex =
         "\n CREATE INDEX ContactsModifiedIndex ON Contacts(modified);";
@@ -582,9 +724,6 @@ static const char *createRelationshipsFirstIdIndex =
 
 static const char *createRelationshipsSecondIdIndex =
         "\n CREATE INDEX RelationshipsSecondIdIndex ON Relationships(secondId);";
-
-static const char *createDeletedContactsDeletedIndex =
-        "\n CREATE INDEX DeletedContactsDeletedIndex ON DeletedContacts(deleted);";
 
 static const char *createPhoneNumbersIndex =
         "\n CREATE INDEX PhoneNumbersIndex ON PhoneNumbers(normalizedNumber);";
@@ -643,9 +782,6 @@ static const char *createAnalyzeData3 =
         "\n   ('GlobalPresences','GlobalPresencesDetailsContactIdIndex','500 1'),"
         "\n   ('Contacts','ContactsTypeIndex','5000 5000'),"
         "\n   ('Contacts','ContactsModifiedIndex','5000 3'),"
-        "\n   ('Contacts','ContactsLastNameIndex','5000 7'),"
-        "\n   ('Contacts','ContactsFirstNameIndex','5000 6'),"
-        "\n   ('Contacts','ContactsSyncTargetIndex','5000 500'),"
         "\n   ('Birthdays','BirthdaysDetailsContactIdIndex','500 1'),"
         "\n   ('PhoneNumbers','PhoneNumbersIndex','4500 7'),"
         "\n   ('PhoneNumbers','PhoneNumbersDetailsContactIdIndex','4500 3'),"
@@ -654,7 +790,6 @@ static const char *createAnalyzeData3 =
         "\n   ('Relationships','RelationshipsFirstIdIndex','3000 2'),"
         "\n   ('Relationships','sqlite_autoindex_Relationships_1','3000 2 2 1'),"
         "\n   ('Avatars','AvatarsDetailsContactIdIndex','3000 3'),"
-        "\n   ('DeletedContacts','DeletedContactsDeletedIndex','6000 2'),"
         "\n   ('Organizations','OrganizationsDetailsContactIdIndex','500 2'),"
         "\n   ('EmailAddresses','EmailAddressesIndex','4000 5'),"
         "\n   ('EmailAddresses','EmailAddressesDetailsContactIdIndex','4000 2'),"
@@ -664,17 +799,22 @@ static const char *createAnalyzeData3 =
 static const char *createStatements[] =
 {
     createCollectionsTable,
+    createCollectionsMetadataTable,
     createContactsTable,
     createAddressesTable,
     createAnniversariesTable,
     createAvatarsTable,
     createBirthdaysTable,
+    createDisplayLabelsTable,
     createEmailAddressesTable,
     createFamiliesTable,
+    createFavoritesTable,
+    createGendersTable,
     createGeoLocationsTable,
     createGlobalPresencesTable,
     createGuidsTable,
     createHobbiesTable,
+    createNamesTable,
     createNicknamesTable,
     createNotesTable,
     createOnlineAccountsTable,
@@ -682,6 +822,7 @@ static const char *createStatements[] =
     createPhoneNumbersTable,
     createPresencesTable,
     createRingtonesTable,
+    createSyncTargetsTable,
     createTagsTable,
     createUrlsTable,
     createOriginMetadataTable,
@@ -692,12 +833,16 @@ static const char *createStatements[] =
     createAnniversariesDetailsContactIdIndex,
     createAvatarsDetailsContactIdIndex,
     createBirthdaysDetailsContactIdIndex,
+    createDisplayLabelsDetailsContactIdIndex,
     createEmailAddressesDetailsContactIdIndex,
     createFamiliesDetailsContactIdIndex,
+    createFavoritesDetailsContactIdIndex,
+    createGendersDetailsContactIdIndex,
     createGeoLocationsDetailsContactIdIndex,
     createGlobalPresencesDetailsContactIdIndex,
     createGuidsDetailsContactIdIndex,
     createHobbiesDetailsContactIdIndex,
+    createNamesDetailsContactIdIndex,
     createNicknamesDetailsContactIdIndex,
     createNotesDetailsContactIdIndex,
     createOnlineAccountsDetailsContactIdIndex,
@@ -705,24 +850,22 @@ static const char *createStatements[] =
     createPhoneNumbersDetailsContactIdIndex,
     createPresencesDetailsContactIdIndex,
     createRingtonesDetailsContactIdIndex,
+    createSyncTargetsDetailsContactIdIndex,
     createTagsDetailsContactIdIndex,
     createUrlsDetailsContactIdIndex,
     createOriginMetadataDetailsContactIdIndex,
     createExtendedDetailsContactIdIndex,
     createIdentitiesTable,
     createRelationshipsTable,
-    createDeletedContactsTable,
-    createDeletedCollectionsTable,
     createOOBTable,
     createDbSettingsTable,
     createRemoveTrigger,
     createContactsCollectionIdIndex,
-    createContactsSyncTargetIndex,
-    createContactsFirstNameIndex,
-    createContactsLastNameIndex,
+    createContactsChangeFlagsIndex,
+    createFirstNameIndex,
+    createLastNameIndex,
     createRelationshipsFirstIdIndex,
     createRelationshipsSecondIdIndex,
-    createDeletedContactsDeletedIndex,
     createPhoneNumbersIndex,
     createEmailAddressesIndex,
     createOnlineAccountsIndex,
@@ -744,9 +887,8 @@ static const char *upgradeVersion0[] = {
 };
 static const char *upgradeVersion1[] = {
     createDeletedContactsTable,
-    createDeletedContactsDeletedIndex,
     "DROP TRIGGER RemoveContactDetails",
-    createRemoveTrigger,
+    createRemoveTrigger_2,
     "PRAGMA user_version=2",
     0 // NULL-terminated
 };
@@ -1283,7 +1425,7 @@ static const char *upgradeVersion10[] = {
     createOriginMetadataIdIndex,
     createOriginMetadataGroupIdIndex,
     // Recreate the remove trigger
-    createRemoveTrigger,
+    createRemoveTrigger_11,
     // Finished
     "PRAGMA user_version=11",
     0 // NULL-terminated
@@ -1293,7 +1435,7 @@ static const char *upgradeVersion11[] = {
     createGeoLocationsTable,
     // Recreate the remove trigger to include these details
     "DROP TRIGGER RemoveContactDetails",
-    createRemoveTrigger,
+    createRemoveTrigger_12,
     "PRAGMA user_version=12",
     0 // NULL-terminated
 };
@@ -1383,7 +1525,7 @@ static const char *upgradeVersion19[] = {
 static const char *upgradeVersion20[] = {
     // create the collections table and the built-in collections.
     createCollectionsTable,
-    createDeletedCollectionsTable,
+    createCollectionsMetadataTable,
     createAggregateAddressbookCollection,
     createLocalAddressbookCollection,
     // we need to recreate the contacts table
@@ -1392,8 +1534,7 @@ static const char *upgradeVersion20[] = {
     "DROP TRIGGER RemoveContactDetails",
     // also recreate the deleted contacts table with new schema
     // sync plugins need to re-sync anyway...
-    "DROP TABLE DeletedContacts",
-    createDeletedContactsTable,
+    "DROP TABLE DeletedContacts", // this table is no longer used.
     // drop a bunch of indexes which we will need to recreate
     "DROP INDEX createAddressesDetailsContactIdIndex",
     "DROP INDEX createAnniversariesDetailsContactIdIndex",
@@ -1412,14 +1553,14 @@ static const char *upgradeVersion20[] = {
     "DROP INDEX createRingtonesDetailsContactIdIndex",
     "DROP INDEX createTagsDetailsContactIdIndex",
     "DROP INDEX createUrlsDetailsContactIdIndex",
-    "DROP INDEX createTpMetadataDetailsContactIdIndex",
+    "DROP INDEX createOriginMetadataDetailsContactIdIndex",
     "DROP INDEX createExtendedDetailsContactIdIndex",
-    "DROP INDEX PhoneNumbersIndex",
-    "DROP INDEX EmailAddressesIndex",
-    "DROP INDEX OnlineAccountsIndex",
-    "DROP INDEX NicknamesIndex",
-    "DROP INDEX TpMetadataTelepathyIdIndex",
-    "DROP INDEX TpMetadataAccountIdIndex",
+    "DROP INDEX createPhoneNumbersIndex",
+    "DROP INDEX createEmailAddressesIndex",
+    "DROP INDEX createOnlineAccountsIndex",
+    "DROP INDEX createNicknamesIndex",
+    "DROP INDEX createOriginMetadataIdIndex",
+    "DROP INDEX createOriginMetadataGroupIdIndex",
     // cannot alter a table to add a foreign key
     // instead, rename the existing table and recreate it with the foreign key.
     // we only keep "local" and "aggregate" contacts.
@@ -1428,28 +1569,16 @@ static const char *upgradeVersion20[] = {
     "INSERT INTO Contacts ("
             "contactId, "
             "collectionId, "
-            "displayLabel, "
-            "displayLabelGroup, "
-            "displayLabelGroupSortOrder, "
-            "firstName, "
-            "lowerFirstName, "
-            "lastName, "
-            "lowerLastName, "
-            "middleName, "
-            "prefix, "
-            "suffix, "
-            "customLabel, "
-            "syncTarget, "
             "created, "
             "modified, "
-            "gender, "
-            "isFavorite, "
+            "deleted, "
             "hasPhoneNumber, "
             "hasEmailAddress, "
             "hasOnlineAccount, "
             "isOnline, "
             "isDeactivated, "
-            "isIncidental, "
+            "changeFlags, "
+            "unhandledChangeFlags, "
             "type "
         ") "
         "SELECT "
@@ -1458,32 +1587,19 @@ static const char *upgradeVersion20[] = {
                 "WHEN OC.syncTarget LIKE '%aggregate%' THEN 1 " // AggregateAddressbookCollectionId
                 "ELSE 2 " // LocalAddressbookCollectionId
                 "END, "
-            "OC.displayLabel, "
-            "OC.displayLabelGroup, "
-            "OC.displayLabelGroupSortOrder, "
-            "OC.firstName, "
-            "OC.lowerFirstName, "
-            "OC.lastName, "
-            "OC.lowerLastName, "
-            "OC.middleName, "
-            "OC.prefix, "
-            "OC.suffix, "
-            "OC.customLabel, "
-            "NULL, " // nullify synctarget, from this version on this field will store the remote contact UID.
             "OC.created, "
             "OC.modified, "
-            "OC.gender, "
-            "OC.isFavorite, "
+            "NULL, " // not deleted if it exists currently in the old table.
             "OC.hasPhoneNumber, "
             "OC.hasEmailAddress, "
             "OC.hasOnlineAccount, "
             "OC.isOnline, "
             "OC.isDeactivated, "
-            "OC.isIncidental, "
+            "0, " // no changes recorded currently.
+            "0, " // no unhandled changes recorded currently.
             "OC.type "
         "FROM OldContacts AS OC "
         "WHERE OC.syncTarget IN ('aggregate', 'local', 'was_local')",
-    "DROP TABLE OldContacts",
     // Now delete any details of contacts we didn't keep (i.e. not local or aggregate)
     "DELETE FROM Addresses WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
     "DELETE FROM Anniversaries WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
@@ -1509,8 +1625,53 @@ static const char *upgradeVersion20[] = {
     "DELETE FROM Details WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
     "DELETE FROM Identities WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
     "DELETE FROM Relationships WHERE firstId NOT IN (SELECT contactId FROM Contacts) OR secondId NOT IN (SELECT contactId FROM Contacts)",
+    // add the changeFlags and unhandledChangeFlags columns to the Details table
+    "ALTER TABLE Details ADD COLUMN changeFlags INTEGER DEFAULT 0",
+    "ALTER TABLE Details ADD COLUMN unhandledChangeFlags INTEGER DEFAULT 0",
+    // create the unique-detail tables we added
+    createDisplayLabelsTable,
+    createFavoritesTable,
+    createGendersTable,
+    createNamesTable,
+    createSyncTargetsTable,
+    // and fill them with data from the old contacts table
+    // note: local contacts have no sync target field, so no need to set those.
+    "INSERT INTO Details (contactId, detail) SELECT ContactId, 'DisplayLabel' FROM OldContacts",
+    "INSERT INTO DisplayLabels (detailId, contactId, displayLabel, displayLabelGroup, displayLabelGroupSortOrder)"
+        " SELECT detailId, contactId, displayLabel, displayLabelGroup, displayLabelGroupSortOrder"
+        " FROM Details"
+        " INNER JOIN OldContacts ON OldContacts.contactId = Details.contactId"
+        " WHERE Details.detail = 'DisplayLabel'",
+    "INSERT INTO Details (contactId, detail) SELECT ContactId, 'Favorite' FROM OldContacts WHERE OldContacts.isFavorite NOT NULL",
+    "INSERT INTO Favorites (detailId, contactId, isFavorite)"
+        " SELECT detailId, contactId, isFavorite"
+        " FROM Details"
+        " INNER JOIN OldContacts ON OldContacts.contactId = Details.contactId"
+        " WHERE Details.detail = 'Favorite'",
+    "INSERT INTO Details (contactId, detail) SELECT ContactId, 'Gender' FROM OldContacts WHERE OldContacts.gender NOT NULL",
+    "INSERT INTO Genders (detailId, contactId, gender)"
+        " SELECT detailId, contactId, gender"
+        " FROM Details"
+        " INNER JOIN OldContacts ON OldContacts.contactId = Details.contactId"
+        " WHERE Details.detail = 'Gender'",
+    "INSERT INTO Details (contactId, detail)"
+        " SELECT ContactId, 'Name'"
+        " FROM OldContacts"
+        " WHERE firstName NOT NULL"
+        " OR lastName NOT NULL"
+        " OR middleName NOT NULL"
+        " OR prefix NOT NULL"
+        " OR suffix NOT NULL"
+        " OR customLabel NOT NULL",
+    "INSERT INTO Names (detailId, contactId, firstName, lowerFirstName, lastName, lowerLastName, middleName, prefix, suffix, customLabel)"
+        " SELECT detailId, contactId, firstName, lowerFirstName, lastName, lowerLastName, middleName, prefix, suffix, customLabel"
+        " FROM Details"
+        " INNER JOIN OldContacts ON OldContacts.contactId = Details.contactId"
+        " WHERE Details.detail = 'Name'",
+    // delete the old contacts table
+    "DROP TABLE OldContacts",
     // XXXXXXXXXXX TODO: re-generate the aggregates...
-    //...
+    // ...
     // rebuild the indexes we dropped
     createDetailsRemoveIndex,
     createAddressesDetailsContactIdIndex,
@@ -1518,6 +1679,8 @@ static const char *upgradeVersion20[] = {
     createAvatarsDetailsContactIdIndex,
     createBirthdaysDetailsContactIdIndex,
     createEmailAddressesDetailsContactIdIndex,
+    createFamiliesDetailsContactIdIndex,
+    createGeoLocationsDetailsContactIdIndex,
     createGlobalPresencesDetailsContactIdIndex,
     createGuidsDetailsContactIdIndex,
     createHobbiesDetailsContactIdIndex,
@@ -1538,9 +1701,19 @@ static const char *upgradeVersion20[] = {
     createNicknamesIndex,
     createOriginMetadataIdIndex,
     createOriginMetadataGroupIdIndex,
-    // create the new index and recreate the remove trigger.
+    // create the new indexes
+    createCollectionsChangeFlagsIndex,
     createContactsCollectionIdIndex,
-    createRemoveTrigger,
+    createContactsChangeFlagsIndex,
+    createDetailsChangeFlagsIndex,
+    // TODO: are these following indexes really required, since the contactId is unique for those?
+    createDisplayLabelsDetailsContactIdIndex,
+    createFavoritesDetailsContactIdIndex,
+    createGendersDetailsContactIdIndex,
+    createNamesDetailsContactIdIndex,
+    createSyncTargetsDetailsContactIdIndex,
+    // recreate the remove trigger.
+    createRemoveTrigger_21,
     "PRAGMA user_version=21",
     0 // NULL-terminated
 };
@@ -2233,7 +2406,11 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
     {
         QSqlQuery selectQuery(database);
         selectQuery.setForwardOnly(true);
-        const QString statement = QStringLiteral("SELECT contactId, firstName, lastName, displayLabel FROM Contacts");
+        const QString statement = QStringLiteral(
+                " SELECT c.contactId, n.firstName, n.lastName, d.displayLabel"
+                " FROM Contacts c"
+                  " LEFT JOIN Names n ON c.contactId = n.contactId"
+                  " LEFT JOIN DisplayLabels d ON c.contactId = d.contactId");
         if (!selectQuery.prepare(statement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare display label groups data selection query: %1\n%2")
                     .arg(selectQuery.lastError().text())
@@ -2278,7 +2455,7 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
             const QVariantList ids = contactIds.mid(i, qMin(displayLabelGroups.size() - i, 167));
 
             QSqlQuery updateQuery(database);
-            const QString statement = QStringLiteral("UPDATE Contacts SET displayLabelGroup = ?, displayLabelGroupSortOrder = ? WHERE contactId = ?");
+            const QString statement = QStringLiteral("UPDATE DisplayLabels SET displayLabelGroup = ?, displayLabelGroupSortOrder = ? WHERE contactId = ?");
             if (!updateQuery.prepare(statement)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare update display label groups query: %1\n%2")
                         .arg(updateQuery.lastError().text())
@@ -3095,7 +3272,7 @@ static qint32 displayLabelGroupSortValue(const QString &group, const QMap<QStrin
                 // 65 default display label groups, and thus the
                 // letter 'A' (whose unicode value is 65) would overlap.
                 int lastContiguousSortValue = -1;
-                for (int sortValue : knownDisplayLabelGroups) {
+                for (const int sortValue : knownDisplayLabelGroups) {
                     if (sortValue != (lastContiguousSortValue + 1)) {
                         break;
                     }
@@ -3924,7 +4101,9 @@ QStringList ContactsDatabase::displayLabelGroups() const
         QMutexLocker locker(accessMutex());
         QSqlQuery selectQuery(m_database);
         selectQuery.setForwardOnly(true);
-        const QString statement = QStringLiteral("SELECT DISTINCT DisplayLabelGroup FROM Contacts ORDER BY DisplayLabelGroupSortOrder ASC");
+        const QString statement = QStringLiteral(" SELECT DISTINCT DisplayLabelGroup"
+                                                 " FROM DisplayLabels"
+                                                 " ORDER BY DisplayLabelGroupSortOrder ASC");
         if (!selectQuery.prepare(statement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare distinct display label group selection query: %1\n%2")
                     .arg(selectQuery.lastError().text())
@@ -3950,6 +4129,7 @@ QStringList ContactsDatabase::displayLabelGroups() const
 
     groups.append("#");
     groups.append("?");
+
     return groups;
 }
 
@@ -3961,5 +4141,6 @@ int ContactsDatabase::displayLabelGroupSortValue(const QString &group) const
 }
 
 #include "../extensions/qcontactdeactivated_impl.h"
+#include "../extensions/qcontactundelete_impl.h"
 #include "../extensions/qcontactoriginmetadata_impl.h"
 #include "../extensions/qcontactstatusflags_impl.h"

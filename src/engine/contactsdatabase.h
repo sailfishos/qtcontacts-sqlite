@@ -67,6 +67,13 @@ public:
         LocalAddressbookCollectionId
     };
 
+    enum ChangeFlags {
+        NoChange = 0,
+        IsAdded = 1,
+        IsModified = 2,
+        IsDeleted = 4
+    };
+
     class ProcessMutex
     {
         Semaphore m_semaphore;

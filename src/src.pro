@@ -7,13 +7,13 @@ OTHER_FILES = \
     extensions/QContactDeactivated \
     extensions/qcontactdeactivated.h \
     extensions/qcontactdeactivated_impl.h \
+    extensions/QContactUndelete \
+    extensions/qcontactundelete.h \
+    extensions/qcontactundelete_impl.h \
     extensions/QContactDetailFetchRequest \
     extensions/qcontactdetailfetchrequest.h \
     extensions/qcontactdetailfetchrequest_p.h \
     extensions/qcontactdetailfetchrequest_impl.h \
-    extensions/qcontactincidental_impl.h \
-    extensions/QContactIncidental \
-    extensions/qcontactincidental.h \
     extensions/qcontactoriginmetadata_impl.h \
     extensions/QContactOriginMetadata \
     extensions/qcontactoriginmetadata.h \
@@ -25,5 +25,7 @@ OTHER_FILES = \
     extensions/qtcontacts-extensions_impl.h \
     extensions/twowaycontactsyncadapter.h \
     extensions/twowaycontactsyncadapter_impl.h \
+    extensions/contactdelta.h \
+    extensions/contactdelta_impl.h \
     extensions/displaylabelgroupgenerator.h
 

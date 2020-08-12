@@ -54,7 +54,9 @@
 #include <QDateTime>
 #include <QtDebug>
 
-#include "../../../src/extensions/qtcontacts-extensions.h"
+#include "qtcontacts-extensions.h"
+#include "qtcontacts-extensions_manager_impl.h"
+#include "contactmanagerengine.h"
 
 QTCONTACTS_USE_NAMESPACE
 
@@ -399,8 +401,11 @@ static qint64 aggregatedPresenceUpdate(QContactManager &manager, bool quickMode)
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
     elapsedTimeTotal += presenceElapsed;
 
+    QContactManager::Error purgeError = QContactManager::NoError;
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(manager);
     syncTimer.start();
     manager.removeContacts(deleteIds);
+    cme->clearChangeFlags(deleteIds, &purgeError);
     qint64 deleteTime = syncTimer.elapsed();
     qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
     elapsedTimeTotal += deleteTime;
@@ -408,6 +413,8 @@ static qint64 aggregatedPresenceUpdate(QContactManager &manager, bool quickMode)
     syncTimer.start();
     manager.removeCollection(testAddressbook.id());
     manager.removeCollection(testAddressbook2.id());
+    cme->clearChangeFlags(testAddressbook.id(), &purgeError);
+    cme->clearChangeFlags(testAddressbook2.id(), &purgeError);
     qint64 colDeleteTime = syncTimer.elapsed();
     qDebug() << "    deleted 2 addressbooks in" << colDeleteTime << "milliseconds";
     // note: we omit this collection deletion time from the benchmark.
@@ -494,8 +501,11 @@ static qint64 nonAggregatedPresenceUpdate(QContactManager &manager, bool quickMo
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
     elapsedTimeTotal += presenceElapsed;
 
+    QContactManager::Error purgeError = QContactManager::NoError;
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(manager);
     syncTimer.start();
     manager.removeContacts(deleteIds);
+    cme->clearChangeFlags(deleteIds, &purgeError);
     qint64 deleteTime = syncTimer.elapsed();
     qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
     elapsedTimeTotal += deleteTime;
@@ -503,6 +513,8 @@ static qint64 nonAggregatedPresenceUpdate(QContactManager &manager, bool quickMo
     syncTimer.start();
     manager.removeCollection(testAddressbook.id());
     manager.removeCollection(testAddressbook2.id());
+    cme->clearChangeFlags(testAddressbook.id(), &purgeError);
+    cme->clearChangeFlags(testAddressbook2.id(), &purgeError);
     qint64 colDeleteTime = syncTimer.elapsed();
     qDebug() << "    deleted 2 addressbooks in" << colDeleteTime << "milliseconds";
     // note: we omit this collection deletion time from the benchmark.
@@ -573,14 +585,18 @@ static qint64 scalingPresenceUpdate(QContactManager &manager, bool quickMode)
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
     elapsedTimeTotal += presenceElapsed;
 
+    QContactManager::Error purgeError = QContactManager::NoError;
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(manager);
     syncTimer.start();
     manager.removeContacts(deleteIds);
+    cme->clearChangeFlags(deleteIds, &purgeError);
     qint64 deleteTime = syncTimer.elapsed();
     qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
     elapsedTimeTotal += deleteTime;
 
     syncTimer.start();
     manager.removeCollection(testAddressbook.id());
+    cme->clearChangeFlags(testAddressbook.id(), &purgeError);
     qint64 colDeleteTime = syncTimer.elapsed();
     qDebug() << "    deleted 1 addressbooks in" << colDeleteTime << "milliseconds";
     // note: we omit this collection deletion time from the benchmark.
@@ -650,14 +666,18 @@ static qint64 entireBatchPresenceUpdate(QContactManager &manager, bool quickMode
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
     elapsedTimeTotal += presenceElapsed;
 
+    QContactManager::Error purgeError = QContactManager::NoError;
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(manager);
     syncTimer.start();
     manager.removeContacts(deleteIds);
+    cme->clearChangeFlags(deleteIds, &purgeError);
     qint64 deleteTime = syncTimer.elapsed();
     qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
     elapsedTimeTotal += deleteTime;
 
     syncTimer.start();
     manager.removeCollection(testAddressbook.id());
+    cme->clearChangeFlags(testAddressbook.id(), &purgeError);
     qint64 colDeleteTime = syncTimer.elapsed();
     qDebug() << "    deleted 1 addressbooks in" << colDeleteTime << "milliseconds";
     // note: we omit this collection deletion time from the benchmark.
@@ -732,14 +752,18 @@ static qint64 smallBatchPresenceUpdate(QContactManager &manager, bool quickMode)
              << "milliseconds (" << ((1.0 * presenceElapsed) / (1.0 * contactsToUpdate.size())) << " msec per updated contact )";
     elapsedTimeTotal += presenceElapsed;
 
+    QContactManager::Error purgeError = QContactManager::NoError;
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(manager);
     syncTimer.start();
     manager.removeContacts(deleteIds);
+    cme->clearChangeFlags(deleteIds, &purgeError);
     qint64 deleteTime = syncTimer.elapsed();
     qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
     elapsedTimeTotal += deleteTime;
 
     syncTimer.start();
     manager.removeCollection(testAddressbook.id());
+    cme->clearChangeFlags(testAddressbook.id(), &purgeError);
     qint64 colDeleteTime = syncTimer.elapsed();
     qDebug() << "    deleted 1 addressbooks in" << colDeleteTime << "milliseconds";
     // note: we omit this collection deletion time from the benchmark.
@@ -836,8 +860,11 @@ static qint64 aggregationOperations(QContactManager &manager, bool quickMode)
         deleteIds.append(c.id());
     }
 
+    QContactManager::Error purgeError = QContactManager::NoError;
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(manager);
     syncTimer.start();
     manager.removeContacts(deleteIds);
+    cme->clearChangeFlags(deleteIds, &purgeError);
     qint64 deleteTime = syncTimer.elapsed();
     qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
     elapsedTimeTotal += deleteTime;
@@ -845,6 +872,8 @@ static qint64 aggregationOperations(QContactManager &manager, bool quickMode)
     syncTimer.start();
     manager.removeCollection(testAddressbook.id());
     manager.removeCollection(testAddressbook2.id());
+    cme->clearChangeFlags(testAddressbook.id(), &purgeError);
+    cme->clearChangeFlags(testAddressbook2.id(), &purgeError);
     qint64 colDeleteTime = syncTimer.elapsed();
     qDebug() << "    deleted 2 addressbooks in" << colDeleteTime << "milliseconds";
     // note: we omit this collection deletion time from the benchmark.
@@ -959,8 +988,11 @@ static qint64 smallBatchWithExistingData(QContactManager &manager, bool quickMod
             idsToRemove.append(retrievalId(td.at(j)));
         }
 
+        QContactManager::Error purgeError = QContactManager::NoError;
+        QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(manager);
         syncTimer.start();
         manager.removeContacts(idsToRemove);
+        cme->clearChangeFlags(idsToRemove, &purgeError);
         ste = syncTimer.elapsed();
         qDebug() << "    removing test data took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
@@ -971,14 +1003,18 @@ static qint64 smallBatchWithExistingData(QContactManager &manager, bool quickMod
     for (const QContact &c : prefillData) {
         deleteIds.append(c.id());
     }
+    QContactManager::Error purgeError = QContactManager::NoError;
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(manager);
     syncTimer.start();
     manager.removeContacts(deleteIds);
+    cme->clearChangeFlags(deleteIds, &purgeError);
     qint64 deleteTime = syncTimer.elapsed();
     elapsedTimeTotal += deleteTime;
     qDebug() << "    removing prefill data took" << deleteTime << "milliseconds";
 
     syncTimer.start();
     manager.removeCollection(testAddressbook.id());
+    cme->clearChangeFlags(testAddressbook.id(), &purgeError);
     qint64 colDeleteTime = syncTimer.elapsed();
     qDebug() << "    deleted 1 addressbooks in" << colDeleteTime << "milliseconds";
     // note: we omit this collection deletion time from the benchmark.
@@ -1139,15 +1175,21 @@ static qint64 synchronousOperations(QContactManager &manager, bool quickMode)
             idsToRemove.append(retrievalId(td.at(j)));
         }
 
+        QContactManager::Error purgeError = QContactManager::NoError;
+        QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(manager);
         syncTimer.start();
         manager.removeContacts(idsToRemove);
+        cme->clearChangeFlags(idsToRemove, &purgeError);
         ste = syncTimer.elapsed();
         qDebug() << "    removing test data took" << ste << "milliseconds (" << ((1.0 * ste) / (1.0 * td.size())) << "msec per contact )";
         elapsedTimeTotal += ste;
     }
 
+    QContactManager::Error purgeError = QContactManager::NoError;
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(manager);
     syncTimer.start();
     manager.removeCollection(testAddressbook.id());
+    cme->clearChangeFlags(testAddressbook.id(), &purgeError);
     qint64 colDeleteTime = syncTimer.elapsed();
     qDebug() << "    deleted 1 addressbooks in" << colDeleteTime << "milliseconds";
     // note: we omit this collection deletion time from the benchmark.
@@ -1280,8 +1322,11 @@ static qint64 asynchronousOperations(QContactManager &manager, bool quickMode)
     qint64 deleteTime = deleteTimer.elapsed();
     qDebug() << "    asynchronous remove request took" << deleteTime << "milliseconds";
 
+    QContactManager::Error purgeError = QContactManager::NoError;
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(manager);
     deleteTimer.start();
     manager.removeCollection(testAddressbook.id());
+    cme->clearChangeFlags(testAddressbook.id(), &purgeError);
     qint64 colDeleteTime = deleteTimer.elapsed();
     qDebug() << "    deleted 1 addressbooks in" << colDeleteTime << "milliseconds";
 
@@ -1366,8 +1411,11 @@ qint64 simpleFilterAndSort(QContactManager &manager, bool quickMode)
         }
     }
 
+    QContactManager::Error purgeError = QContactManager::NoError;
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(manager);
     syncTimer.start();
     manager.removeContacts(deleteIds);
+    cme->clearChangeFlags(deleteIds, &purgeError);
     qint64 deleteTime = syncTimer.elapsed();
     qDebug() << "    deleted" << deleteIds.size() << "contacts in" << deleteTime << "milliseconds";
 
@@ -1378,6 +1426,8 @@ qint64 simpleFilterAndSort(QContactManager &manager, bool quickMode)
     syncTimer.start();
     manager.removeCollection(testAddressbook.id());
     manager.removeCollection(testAddressbook2.id());
+    cme->clearChangeFlags(testAddressbook.id(), &purgeError);
+    cme->clearChangeFlags(testAddressbook2.id(), &purgeError);
     qint64 colDeleteTime = syncTimer.elapsed();
     qDebug() << "    deleted 2 addressbooks in" << colDeleteTime << "milliseconds";
     // note: we omit this collection deletion time from the benchmark.

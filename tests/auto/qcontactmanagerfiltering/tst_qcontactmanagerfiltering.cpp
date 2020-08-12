@@ -262,6 +262,11 @@ void tst_QContactManagerFiltering::cleanupTestCase()
     foreach (QContactManager* manager, managers) {
         QList<QContactId> contactIds = contactsAddedToManagers.values(manager);
         manager->removeContacts(contactIds, 0);
+        if (manager->managerUri().contains(QLatin1String("org.nemomobile.contacts.sqlite"))) {
+            QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*manager);
+            QContactManager::Error err = QContactManager::NoError;
+            cme->clearChangeFlags(QContactCollectionId(manager->managerUri(), QByteArrayLiteral("col-2")), &err); // local addressbook
+        }
     }
     contactsAddedToManagers.clear();
 
@@ -627,12 +632,14 @@ void tst_QContactManagerFiltering::statusFlagsFiltering()
     QContactFilter filter(QContactStatusFlags::matchFlags(QContactStatusFlags::HasPhoneNumber | QContactStatusFlags::HasEmailAddress, QContactFilter::MatchContains));
     QSet<QContactId> phoneAndEmailIds = cm->contactIds(filter).toSet();
 
-    filter = QContactStatusFlags::matchFlags(QContactStatusFlags::HasPhoneNumber, QContactFilter::MatchExactly);
-    QSet<QContactId> phoneOnlyIds = cm->contactIds(filter).toSet();
+    // Doing MatchExactly on any status flag is likely to return no results, as the IsAdded or IsModified flag will generally
+    // be set whenever the contact is saved, in addition to any HasPhoneNumber/HasEmailAddress etc flag.
+    //filter = QContactStatusFlags::matchFlags(QContactStatusFlags::HasPhoneNumber, QContactFilter::MatchExactly);
+    //QSet<QContactId> phoneOnlyIds = cm->contactIds(filter).toSet();
 
     QList<QContactId> contacts = contactsAddedToManagers.values(cm);
     foreach (const QContact &contact, cm->contacts(contacts)) {
-        QContactId contactId(ContactId::apiId(contact));
+        QContactId contactId(contact.id());
 
         const bool hasPhoneNumber = !contact.details<QContactPhoneNumber>().isEmpty();
         const bool hasEmailAddress = !contact.details<QContactEmailAddress>().isEmpty();
@@ -651,7 +658,7 @@ void tst_QContactManagerFiltering::statusFlagsFiltering()
         QCOMPARE(deactivatedIds.contains(contactId), isDeactivated);
 
         QCOMPARE(phoneAndEmailIds.contains(contactId), (hasPhoneNumber && hasEmailAddress));
-        QCOMPARE(phoneOnlyIds.contains(contactId), (hasPhoneNumber && !hasEmailAddress && !hasOnlineAccount && !isOnline));
+        //QCOMPARE(phoneOnlyIds.contains(contactId), (hasPhoneNumber && !hasEmailAddress && !hasOnlineAccount && !isOnline));
     }
 }
 
@@ -691,8 +698,8 @@ void tst_QContactManagerFiltering::deactivation()
     QVERIFY(cm->saveContact(&bob));
     alice = cm->contact(alice.id());
     bob = cm->contact(bob.id());
-    transientContacts.insert(cm, ContactId::apiId(alice));
-    transientContacts.insert(cm, ContactId::apiId(bob));
+    transientContacts.insert(cm, alice.id());
+    transientContacts.insert(cm, bob.id());
 
     QList<QContactId> ids(cm->contactIds());
     QVERIFY(ids.contains(alice.id()));
@@ -1812,7 +1819,7 @@ void tst_QContactManagerFiltering::relationshipFiltering()
 
     // 3. Construct the filter
     QContactId relatedContactId;
-    relatedContactId = ContactId::contactId(ContactId::apiId(relatedContactLocalId));
+    relatedContactId = ContactId::apiId(relatedContactLocalId, cm->managerUri());
     Q_UNUSED(otherManagerUri)
 
     QContactRelationshipFilter crf;
@@ -1822,8 +1829,8 @@ void tst_QContactManagerFiltering::relationshipFiltering()
 
     // 4. Grab the filtering results
     QList<QContactId> contacts;
-    contacts.append(ContactId::apiId(contactA));
-    contacts.append(ContactId::apiId(contactB));
+    contacts.append(contactA.id());
+    contacts.append(contactB.id());
     QList<QContactId> ids = cm->contactIds(crf);
     QString output = convertIds(contacts, ids, 'a', 'k'); // don't include the convenience filtering contacts
 
@@ -2244,9 +2251,9 @@ void tst_QContactManagerFiltering::idListFiltering()
     QList<QContactId> ids;
 
     // 3 extra ids that (hopefully) won't exist
-    QContactId e = ContactId::apiId(0x54555657);
-    QContactId f = ContactId::apiId(0x96969696);
-    QContactId g = ContactId::apiId(0x44335566);
+    QContactId e = ContactId::apiId(0x54555657, cm->managerUri());
+    QContactId f = ContactId::apiId(0x96969696, cm->managerUri());
+    QContactId g = ContactId::apiId(0x44335566, cm->managerUri());
 
     /* Convert the input to a list of ids */
     foreach (const QChar &c, input) {
@@ -2507,7 +2514,7 @@ void tst_QContactManagerFiltering::allFiltering()
     QList<QContactId> contacts = contactsAddedToManagers.values(cm);
     QContactFilter f; // default = permissive
     QList<QContactId> ids = cm->contactIds(f);
-    QVERIFY(ids.count() == contacts.size());
+    QCOMPARE(ids.count(), contacts.size());
     QString output = convertIds(contacts, ids, 'a', 'k'); // don't include the convenience filtering contacts
     QString expected = convertIds(contacts, contacts, 'a', 'k'); // :)
     QCOMPARE_UNSORTED(output, expected);
@@ -3501,24 +3508,24 @@ QList<QContactId> tst_QContactManagerFiltering::prepareModel(QContactManager *cm
     // --------------------- end.
 
     /* Add our newly saved contacts to our internal list of added contacts */
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactR));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactQ));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactP));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactO));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactN));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactM));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactL));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactK));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactJ));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactI));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactH));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactG));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactF));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactE));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactD));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactC));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactB));
-    contactsAddedToManagers.insert(cm, ContactId::apiId(contactA));
+    contactsAddedToManagers.insert(cm, contactR.id());
+    contactsAddedToManagers.insert(cm, contactQ.id());
+    contactsAddedToManagers.insert(cm, contactP.id());
+    contactsAddedToManagers.insert(cm, contactO.id());
+    contactsAddedToManagers.insert(cm, contactN.id());
+    contactsAddedToManagers.insert(cm, contactM.id());
+    contactsAddedToManagers.insert(cm, contactL.id());
+    contactsAddedToManagers.insert(cm, contactK.id());
+    contactsAddedToManagers.insert(cm, contactJ.id());
+    contactsAddedToManagers.insert(cm, contactI.id());
+    contactsAddedToManagers.insert(cm, contactH.id());
+    contactsAddedToManagers.insert(cm, contactG.id());
+    contactsAddedToManagers.insert(cm, contactF.id());
+    contactsAddedToManagers.insert(cm, contactE.id());
+    contactsAddedToManagers.insert(cm, contactD.id());
+    contactsAddedToManagers.insert(cm, contactC.id());
+    contactsAddedToManagers.insert(cm, contactB.id());
+    contactsAddedToManagers.insert(cm, contactA.id());
 
     /* Reload the contacts to pick up any changes */
     contactA = cm->contact(retrievalId(contactA));
@@ -3542,41 +3549,41 @@ QList<QContactId> tst_QContactManagerFiltering::prepareModel(QContactManager *cm
 
     QList<QContactId> list;
     if (!contactA.isEmpty())
-        list << ContactId::apiId(contactA);
+        list << contactA.id();
     if (!contactB.isEmpty())
-        list << ContactId::apiId(contactB);
+        list << contactB.id();
     if (!contactC.isEmpty())
-        list << ContactId::apiId(contactC);
+        list << contactC.id();
     if (!contactD.isEmpty())
-        list << ContactId::apiId(contactD);
+        list << contactD.id();
     if (!contactE.isEmpty())
-        list << ContactId::apiId(contactE);
+        list << contactE.id();
     if (!contactF.isEmpty())
-        list << ContactId::apiId(contactF);
+        list << contactF.id();
     if (!contactG.isEmpty())
-        list << ContactId::apiId(contactG);
+        list << contactG.id();
     if (!contactH.isEmpty())
-        list << ContactId::apiId(contactH);
+        list << contactH.id();
     if (!contactI.isEmpty())
-        list << ContactId::apiId(contactI);
+        list << contactI.id();
     if (!contactJ.isEmpty())
-        list << ContactId::apiId(contactJ);
+        list << contactJ.id();
     if (!contactK.isEmpty())
-        list << ContactId::apiId(contactK);
+        list << contactK.id();
     if (!contactL.isEmpty())
-        list << ContactId::apiId(contactL);
+        list << contactL.id();
     if (!contactM.isEmpty())
-        list << ContactId::apiId(contactM);
+        list << contactM.id();
     if (!contactN.isEmpty())
-        list << ContactId::apiId(contactN);
+        list << contactN.id();
     if (!contactO.isEmpty())
-        list << ContactId::apiId(contactO);
+        list << contactO.id();
     if (!contactP.isEmpty())
-        list << ContactId::apiId(contactP);
+        list << contactP.id();
     if (!contactQ.isEmpty())
-        list << ContactId::apiId(contactQ);
+        list << contactQ.id();
     if (!contactR.isEmpty())
-        list << ContactId::apiId(contactR);
+        list << contactR.id();
 
     return list;
 }

@@ -154,10 +154,10 @@ void ContactNotifier::contactsPresenceChanged(const QList<QContactId> &contactId
 }
 
 // notify that synced contacts have changed in the given collections
-void ContactNotifier::syncContactsChanged(const QList<QContactCollectionId> &collectionIds)
+void ContactNotifier::collectionContactsChanged(const QList<QContactCollectionId> &collectionIds)
 {
     if (!collectionIds.isEmpty()) {
-        QDBusMessage message = createSignal("syncContactsChanged", m_nonprivileged);
+        QDBusMessage message = createSignal("collectionContactsChanged", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(collectionIds)));
         QDBusConnection::sessionBus().send(message);
     }
