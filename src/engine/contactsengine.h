@@ -141,6 +141,10 @@ public:
     void requestDestroyed(QObject* request) override;
     bool startRequest(QContactAbstractRequest* req) override;
     bool startRequest(QContactDetailFetchRequest* request) override;
+    bool startRequest(QContactCollectionChangesFetchRequest* request) override;
+    bool startRequest(QContactChangesFetchRequest* request) override;
+    bool startRequest(QContactChangesSaveRequest* request) override;
+    bool startRequest(QContactClearChangeFlagsRequest* request) override;
     bool cancelRequest(QContactAbstractRequest* req) override;
     bool cancelRequest(QObject* request) override;
     bool waitForRequestFinished(QContactAbstractRequest* req, int msecs) override;
