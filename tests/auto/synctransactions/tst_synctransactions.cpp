@@ -34,6 +34,7 @@
 #include <QtTest/QtTest>
 
 #include "../../util.h"
+#include "testsyncadaptor.h"
 
 #include "qcontactcollectionchangesfetchrequest.h"
 #include "qcontactcollectionchangesfetchrequest_impl.h"
@@ -85,6 +86,10 @@ private slots:
 
     void syncRequests();
 
+    void twcsa_nodelta();
+    void twcsa_delta();
+    void twcsa_oneway();
+
 private:
     void waitForSignalPropagation();
 
@@ -132,8 +137,8 @@ void tst_synctransactions::cleanupTestCase()
 
 void tst_synctransactions::cleanup()
 {
-    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
     QContactManager::Error err = QContactManager::NoError;
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
 
     waitForSignalPropagation();
     if (!m_createdIds.isEmpty()) {
@@ -1370,6 +1375,708 @@ void tst_synctransactions::syncRequests()
         QCOMPARE(deletedContactIds.size(), 0);
     }
 }
+
+bool haveExpectedContent(const QContact &c, const QString &phone, TestSyncAdaptor::PhoneModifiability modifiability, const QString &email)
+{
+    const QContactPhoneNumber &phn(c.detail<QContactPhoneNumber>());
+
+    TestSyncAdaptor::PhoneModifiability modif = TestSyncAdaptor::ImplicitlyModifiable;
+    if (phn.values().contains(QContactDetail__FieldModifiable)) {
+        modif = phn.value<bool>(QContactDetail__FieldModifiable)
+              ? TestSyncAdaptor::ExplicitlyModifiable
+              : TestSyncAdaptor::ExplicitlyNonModifiable;
+    }
+
+    return phn.number() == phone && modif == modifiability
+        && c.detail<QContactEmailAddress>().emailAddress() == email;
+}
+
+void tst_synctransactions::twcsa_nodelta()
+{
+    // construct a sync adaptor, and prefill its read-write collection with 3 contacts.
+    const int accountId = 3;
+    const QString applicationName = QStringLiteral("tst_synctransactions::twcsa_nodelta");
+    TestSyncAdaptor tsa(accountId, applicationName, *m_cm);
+    tsa.addRemoteContact("John", "One", "1111111", TestSyncAdaptor::ImplicitlyModifiable);
+    tsa.addRemoteContact("Luke", "Two", "2222222", TestSyncAdaptor::ExplicitlyModifiable);
+    tsa.addRemoteContact("Mark", "Three", "3333333", TestSyncAdaptor::ExplicitlyNonModifiable);
+
+    // perform the initial sync cycle.
+    QSignalSpy finishedSpy(&tsa, SIGNAL(finished()));
+    QSignalSpy failedSpy(&tsa, SIGNAL(failed()));
+    tsa.performTwoWaySync();
+    QTRY_COMPARE(failedSpy.count() + finishedSpy.count(), 1);
+    QTRY_COMPARE(finishedSpy.count(), 1);
+
+    // should have 8 more contacts than we had before:
+    // two built-in contacts from non-aggregable read-only collection,
+    // and then 3 constituent contacts from the read-write collection, plus 3 aggregates.
+    QContactCollectionFilter allCollections;
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
+    QContactId aliceId, bobId;
+    QContactId johnId, lukeId, markId;
+    QContactId aggJohnId, aggLukeId, aggMarkId;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        const bool isAggregate = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size() > 0;
+        const QString fname = c.detail<QContactName>().firstName();
+        if (!isAggregate && fname == QStringLiteral("Alice")) aliceId = c.id();
+        if (isAggregate && fname == QStringLiteral("Alice")) QCOMPARE(isAggregate, false); // force failure.
+        if (!isAggregate && fname == QStringLiteral("Bob")) bobId = c.id();
+        if (isAggregate && fname == QStringLiteral("Bob")) QCOMPARE(isAggregate, false); // force failure.
+        if (!isAggregate && fname == QStringLiteral("John")) johnId = c.id();
+        if (isAggregate && fname == QStringLiteral("John")) aggJohnId = c.id();
+        if (!isAggregate && fname == QStringLiteral("Luke")) lukeId = c.id();
+        if (isAggregate && fname == QStringLiteral("Luke")) aggLukeId = c.id();
+        if (!isAggregate && fname == QStringLiteral("Mark")) markId = c.id();
+        if (isAggregate && fname == QStringLiteral("Mark")) aggMarkId = c.id();
+    }
+    QCOMPARE(allContacts.size(), 8);
+    QVERIFY(aliceId != QContactId());
+    QVERIFY(bobId != QContactId());
+    QVERIFY(johnId != QContactId());
+    QVERIFY(lukeId != QContactId());
+    QVERIFY(markId != QContactId());
+    QVERIFY(aggJohnId != QContactId());
+    QVERIFY(aggLukeId != QContactId());
+    QVERIFY(aggMarkId != QContactId());
+
+    // ensure that the collections themselves have been downsynced
+    QContactCollection emptyCollection, readonlyCollection, readwriteCollection;
+    QString emptyCollectionCtag, readonlyCollectionCtag, readwriteCollectionCtag;
+    for (const QContactCollection &c : m_cm->collections()) {
+        const int collectionAccountId = c.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID).toInt();
+        const QString collectionAppName = c.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME).toString();
+        const QString collectionName = c.metaData(QContactCollection::KeyName).toString();
+        if (collectionAccountId == accountId && collectionAppName == applicationName) {
+            if (collectionName == QStringLiteral("Empty")) {
+                emptyCollection = c;
+                emptyCollectionCtag = c.extendedMetaData(QStringLiteral("ctag")).toString();
+            } else if (collectionName == QStringLiteral("ReadOnly")) {
+                readonlyCollection = c;
+                readonlyCollectionCtag = c.extendedMetaData(QStringLiteral("ctag")).toString();
+            } else {
+                QCOMPARE(collectionName, QStringLiteral("ReadWrite"));
+                readwriteCollection = c;
+                readwriteCollectionCtag = c.extendedMetaData(QStringLiteral("ctag")).toString();
+            }
+        }
+    }
+    QVERIFY(!emptyCollection.id().isNull());
+    QVERIFY(!readonlyCollection.id().isNull());
+    QVERIFY(!readwriteCollection.id().isNull());
+    QVERIFY(!emptyCollectionCtag.isEmpty());
+    QVERIFY(!readonlyCollectionCtag.isEmpty());
+    QVERIFY(!readwriteCollectionCtag.isEmpty());
+
+    // ensure that the downsynced contacts have the data we expect
+    // note that aggregate contact details are explicitly non-modifiable always.
+    QVERIFY(haveExpectedContent(m_cm->contact(aliceId), QStringLiteral("123123123"), TestSyncAdaptor::ExplicitlyNonModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(bobId), QString(), TestSyncAdaptor::ImplicitlyModifiable, QStringLiteral("bob@constructor.tld")));
+    QVERIFY(haveExpectedContent(m_cm->contact(johnId), QStringLiteral("1111111"), TestSyncAdaptor::ImplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(aggJohnId), QStringLiteral("1111111"), TestSyncAdaptor::ExplicitlyNonModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(lukeId), QStringLiteral("2222222"), TestSyncAdaptor::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(aggLukeId), QStringLiteral("2222222"), TestSyncAdaptor::ExplicitlyNonModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(markId), QStringLiteral("3333333"), TestSyncAdaptor::ExplicitlyNonModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(aggMarkId), QStringLiteral("3333333"), TestSyncAdaptor::ExplicitlyNonModifiable, QString()));
+
+    // and ensure they belong to the collections we expect
+    QCOMPARE(m_cm->contact(aliceId).collectionId(), readonlyCollection.id());
+    QCOMPARE(m_cm->contact(bobId).collectionId(), readonlyCollection.id());
+    QCOMPARE(m_cm->contact(johnId).collectionId(), readwriteCollection.id());
+    QCOMPARE(m_cm->contact(lukeId).collectionId(), readwriteCollection.id());
+    QCOMPARE(m_cm->contact(markId).collectionId(), readwriteCollection.id());
+    QCOMPARE(m_cm->contact(aggJohnId).collectionId(), QContactCollectionId(m_cm->managerUri(), aggregateAddressbookId()));
+    QCOMPARE(m_cm->contact(aggLukeId).collectionId(), QContactCollectionId(m_cm->managerUri(), aggregateAddressbookId()));
+    QCOMPARE(m_cm->contact(aggMarkId).collectionId(), QContactCollectionId(m_cm->managerUri(), aggregateAddressbookId()));
+
+    // simulate a local addition and local modification
+    QContact matthew;
+    QContactName mn;
+    mn.setFirstName(QStringLiteral("Matthew"));
+    mn.setLastName(QStringLiteral("Four"));
+    matthew.saveDetail(&mn);
+    QContactPhoneNumber mp;
+    mp.setNumber(QStringLiteral("4444444"));
+    matthew.saveDetail(&mn);
+    matthew.saveDetail(&mp);
+    matthew.setCollectionId(readwriteCollection.id());
+    QVERIFY(m_cm->saveContact(&matthew));
+    QContact mark = m_cm->contact(markId);
+    QContactEmailAddress me;
+    me.setEmailAddress(QStringLiteral("mark@three.tld"));
+    mark.saveDetail(&me);
+    QVERIFY(m_cm->saveContact(&mark));
+
+    // simulate a remote modification, and a remote deletion.
+    tsa.changeRemoteContactPhone(QStringLiteral("John"), QStringLiteral("One"), QStringLiteral("1111123"));
+    tsa.removeRemoteContact(QStringLiteral("Luke"), QStringLiteral("Two"));
+
+    // now perform another sync cycle
+    tsa.performTwoWaySync();
+    QTRY_COMPARE(failedSpy.count() + finishedSpy.count(), 2);
+    QTRY_COMPARE(finishedSpy.count(), 2);
+
+    // ensure that the local database now contains the appropriate information
+    allContacts = m_cm->contacts(allCollections);
+    QContactId matthewId, aggMatthewId;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        const bool isAggregate = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size() > 0;
+        const QString fname = c.detail<QContactName>().firstName();
+        if (!isAggregate && fname == QStringLiteral("Alice")) QCOMPARE(c.id(), aliceId);         // id should not have changed
+        else if (isAggregate && fname == QStringLiteral("Alice")) QCOMPARE(isAggregate, false);  // force failure.
+        else if (!isAggregate && fname == QStringLiteral("Bob")) QCOMPARE(c.id(), bobId);        // id should not have changed
+        else if (isAggregate && fname == QStringLiteral("Bob")) QCOMPARE(isAggregate, false);    // force failure.
+        else if (!isAggregate && fname == QStringLiteral("John")) QCOMPARE(c.id(), johnId);      // id should not have changed
+        else if (isAggregate && fname == QStringLiteral("John")) QCOMPARE(c.id(), aggJohnId);    // id should not have changed
+        else if (!isAggregate && fname == QStringLiteral("Mark")) QCOMPARE(c.id(), markId);      // id should not have changed
+        else if (isAggregate && fname == QStringLiteral("Mark")) QCOMPARE(c.id(), aggMarkId);    // id should not have changed
+        else if (!isAggregate && fname == QStringLiteral("Matthew")) matthewId = c.id();
+        else if (isAggregate && fname == QStringLiteral("Matthew")) aggMatthewId = c.id();
+        else QCOMPARE(fname, QStringLiteral("Alice")); // force failure, unknown/deleted contact seen.
+    }
+    QCOMPARE(allContacts.size(), 8);
+    QVERIFY(aggMarkId != QContactId());
+    QVERIFY(aggMatthewId != QContactId());
+    QCOMPARE(m_cm->contact(johnId).detail<QContactPhoneNumber>().number(), QStringLiteral("1111123"));
+    QCOMPARE(m_cm->contact(aggJohnId).detail<QContactPhoneNumber>().number(), QStringLiteral("1111123"));
+    QCOMPARE(m_cm->contact(johnId).details<QContactPhoneNumber>().size(), 1);
+    QCOMPARE(m_cm->contact(aggJohnId).details<QContactPhoneNumber>().size(), 1);
+
+    // check the collections are available and that the ctag of the readwrite collection has changed.
+    for (const QContactCollection &c : m_cm->collections()) {
+        const int collectionAccountId = c.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID).toInt();
+        const QString collectionAppName = c.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME).toString();
+        const QString collectionName = c.metaData(QContactCollection::KeyName).toString();
+        if (collectionAccountId == accountId && collectionAppName == applicationName) {
+            if (collectionName == QStringLiteral("Empty")) {
+                emptyCollection = c;
+                QCOMPARE(c.extendedMetaData(QStringLiteral("ctag")).toString(), emptyCollectionCtag);
+            } else if (collectionName == QStringLiteral("ReadOnly")) {
+                readonlyCollection = c;
+                QCOMPARE(c.extendedMetaData(QStringLiteral("ctag")).toString(), readonlyCollectionCtag);
+            } else {
+                QCOMPARE(collectionName, QStringLiteral("ReadWrite"));
+                readwriteCollection = c;
+                QVERIFY(c.extendedMetaData(QStringLiteral("ctag")).toString() != readwriteCollectionCtag);
+                readwriteCollectionCtag = c.extendedMetaData(QStringLiteral("ctag")).toString();
+            }
+        }
+    }
+
+    // and ensure that the remote database contains the appropriate information
+    QContact remoteMatthew = tsa.remoteContact(QStringLiteral("Matthew"), QStringLiteral("Four"));
+    QCOMPARE(remoteMatthew.detail<QContactPhoneNumber>().number(), matthew.detail<QContactPhoneNumber>().number());
+    QContact remoteMark = tsa.remoteContact(QStringLiteral("Mark"), QStringLiteral("Three"));
+    QCOMPARE(remoteMark.detail<QContactEmailAddress>().emailAddress(), mark.detail<QContactEmailAddress>().emailAddress());
+    QContact remoteJohn = tsa.remoteContact(QStringLiteral("John"), QStringLiteral("One"));
+    QCOMPARE(remoteJohn.detail<QContactPhoneNumber>().number(), QStringLiteral("1111123"));
+    QContact remoteLuke = tsa.remoteContact(QStringLiteral("Luke"), QStringLiteral("Two"));
+    QCOMPARE(remoteLuke.details<QContactName>().size(), 0); // contact was deleted from remote, shouldn't exist.
+
+    // delete the read-write collection locally
+    QVERIFY(m_cm->removeCollection(readwriteCollection.id()));
+
+    // now perform another sync cycle
+    tsa.performTwoWaySync();
+    QTRY_COMPARE(failedSpy.count() + finishedSpy.count(), 3);
+    QTRY_COMPARE(finishedSpy.count(), 3);
+
+    // ensure that the local database now contains the appropriate information
+    allContacts = m_cm->contacts(allCollections);
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        const bool isAggregate = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size() > 0;
+        const QString fname = c.detail<QContactName>().firstName();
+        if (!isAggregate && fname == QStringLiteral("Alice")) QCOMPARE(c.id(), aliceId);         // id should not have changed
+        else if (isAggregate && fname == QStringLiteral("Alice")) QCOMPARE(isAggregate, false);  // force failure.
+        else if (!isAggregate && fname == QStringLiteral("Bob")) QCOMPARE(c.id(), bobId);        // id should not have changed
+        else if (isAggregate && fname == QStringLiteral("Bob")) QCOMPARE(isAggregate, false);    // force failure.
+        else QVERIFY(fname == QStringLiteral("Alice") || fname == QStringLiteral("Bob"));        // force failure.
+    }
+    QCOMPARE(allContacts.size(), 2);
+
+    // the readwrite collection should no longer exist locally
+    for (const QContactCollection &c : m_cm->collections()) {
+        const int collectionAccountId = c.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID).toInt();
+        const QString collectionAppName = c.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME).toString();
+        const QString collectionName = c.metaData(QContactCollection::KeyName).toString();
+        if (collectionAccountId == accountId && collectionAppName == applicationName) {
+            if (collectionName == QStringLiteral("Empty")) {
+                emptyCollection = c;
+                QCOMPARE(c.extendedMetaData(QStringLiteral("ctag")).toString(), emptyCollectionCtag);
+            } else if (collectionName == QStringLiteral("ReadOnly")) {
+                readonlyCollection = c;
+                QCOMPARE(c.extendedMetaData(QStringLiteral("ctag")).toString(), readonlyCollectionCtag);
+            } else {
+                // force a failure, the other collection should have been deleted.
+                QVERIFY(collectionName == QStringLiteral("Empty") || collectionName == QStringLiteral("ReadOnly"));
+            }
+        }
+    }
+
+    // now perform another sync cycle without performing any changes either locally or remotely.
+    tsa.performTwoWaySync();
+    QTRY_COMPARE(failedSpy.count() + finishedSpy.count(), 4);
+    QTRY_COMPARE(finishedSpy.count(), 4);
+
+    // no changes should have occurred.
+    allContacts = m_cm->contacts(allCollections);
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        const bool isAggregate = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size() > 0;
+        const QString fname = c.detail<QContactName>().firstName();
+        if (!isAggregate && fname == QStringLiteral("Alice")) QCOMPARE(c.id(), aliceId);         // id should not have changed
+        else if (isAggregate && fname == QStringLiteral("Alice")) QCOMPARE(isAggregate, false);  // force failure.
+        else if (!isAggregate && fname == QStringLiteral("Bob")) QCOMPARE(c.id(), bobId);        // id should not have changed
+        else if (isAggregate && fname == QStringLiteral("Bob")) QCOMPARE(isAggregate, false);    // force failure.
+        else QVERIFY(fname == QStringLiteral("Alice") || fname == QStringLiteral("Bob"));        // force failure.
+    }
+    QCOMPARE(allContacts.size(), 2);
+
+    for (const QContactCollection &c : m_cm->collections()) {
+        const int collectionAccountId = c.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID).toInt();
+        const QString collectionAppName = c.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME).toString();
+        const QString collectionName = c.metaData(QContactCollection::KeyName).toString();
+        if (collectionAccountId == accountId && collectionAppName == applicationName) {
+            if (collectionName == QStringLiteral("Empty")) {
+                emptyCollection = c;
+                QCOMPARE(c.extendedMetaData(QStringLiteral("ctag")).toString(), emptyCollectionCtag);
+            } else if (collectionName == QStringLiteral("ReadOnly")) {
+                readonlyCollection = c;
+                QCOMPARE(c.extendedMetaData(QStringLiteral("ctag")).toString(), readonlyCollectionCtag);
+            } else {
+                // force a failure, the other collection should have been deleted.
+                QVERIFY(collectionName == QStringLiteral("Empty") || collectionName == QStringLiteral("ReadOnly"));
+            }
+        }
+    }
+}
+
+void tst_synctransactions::twcsa_delta()
+{
+    // TODO: a sync plugin which supports delta sync.
+}
+
+void tst_synctransactions::twcsa_oneway()
+{
+    // TODO: a sync plugin which only supports to-device sync.
+}
+
+
+
+/*
+
+void tst_Aggregation::TestSyncAdaptor()
+{
+    QContactDetailFilter allSyncTargets;
+    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QList<QContactId> originalIds = m_cm->contactIds(allSyncTargets);
+
+    // add some contacts remotely, and downsync them.  It should not result in an upsync.
+    QString accountId(QStringLiteral("1"));
+    TestSyncAdaptor tsa(accountId);
+    tsa.addRemoteContact(accountId, "John", "TsaOne", "1111111", TestSyncAdaptor::ImplicitlyModifiable);
+    tsa.addRemoteContact(accountId, "Bob", "TsaTwo", "2222222", TestSyncAdaptor::ExplicitlyModifiable);
+    tsa.addRemoteContact(accountId, "Mark", "TsaThree", "3333333", TestSyncAdaptor::ExplicitlyNonModifiable);
+
+    QSignalSpy finishedSpy(&tsa, SIGNAL(finished()));
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 1);
+
+    // should have 6 more contacts than we had before (aggregate+synctarget x 3)
+    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QContactId tsaOneStcId, tsaOneAggId, tsaTwoStcId, tsaTwoAggId, tsaThreeStcId, tsaThreeAggId;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        if (originalIds.contains(c.id())) {
+            allContacts.removeAt(i);
+        } else {
+            bool isAggregate = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size() > 0;
+            if (c.detail<QContactName>().firstName() == QStringLiteral("John")) {
+                if (isAggregate) {
+                    tsaOneAggId = c.id();
+                } else {
+                    tsaOneStcId = c.id();
+                }
+            } else if (c.detail<QContactName>().firstName() == QStringLiteral("Bob")) {
+                if (isAggregate) {
+                    tsaTwoAggId = c.id();
+                } else {
+                    tsaTwoStcId = c.id();
+                }
+            } else if (c.detail<QContactName>().firstName() == QStringLiteral("Mark")) {
+                if (isAggregate) {
+                    tsaThreeAggId = c.id();
+                } else {
+                    tsaThreeStcId = c.id();
+                }
+            }
+        }
+    }
+    QCOMPARE(allContacts.size(), 6);
+    QVERIFY(tsaOneStcId != QContactId());
+    QVERIFY(tsaOneAggId != QContactId());
+    QVERIFY(tsaTwoStcId != QContactId());
+    QVERIFY(tsaTwoAggId != QContactId());
+    QVERIFY(tsaThreeStcId != QContactId());
+    QVERIFY(tsaThreeAggId != QContactId());
+
+    // verify that the added IDs were reported
+    QSet<QContactId> reportedIds(tsa.modifiedIds(accountId));
+    QCOMPARE(reportedIds.size(), 3);
+    QVERIFY(reportedIds.contains(tsaOneStcId));
+    QVERIFY(reportedIds.contains(tsaTwoStcId));
+    QVERIFY(reportedIds.contains(tsaThreeStcId));
+
+    // and no upsync of local changes should be required (there shouldn't have been any local changes).
+    QVERIFY(!tsa.upsyncWasRequired(accountId));
+    QVERIFY(tsa.downsyncWasRequired(accountId));
+
+    // ensure that the downsynced contacts have the data we expect
+    // note that aggregate contacts don't have a modifiability flag, since by definition
+    // the modification would "actually" occur to some constituent contact detail,
+    // and thus are considered by the haveExpectedContent function to be ImplicitlyModifiable.
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), TestSyncAdaptor::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), TestSyncAdaptor::ImplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222222"), TestSyncAdaptor::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222222"), TestSyncAdaptor::ImplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), TestSyncAdaptor::ExplicitlyNonModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), TestSyncAdaptor::ImplicitlyModifiable, QString()));
+
+    // now modify tsaTwo's aggregate - should cause the creation of an incidental local.
+    // triggering update should then not require downsync but would require upsync.
+    QContact tsaTwoAggregate = m_cm->contact(tsaTwoAggId);
+    QContactEmailAddress tsaTwoEmail;
+    tsaTwoEmail.setEmailAddress("bob@tsatwo.com");
+    tsaTwoAggregate.saveDetail(&tsaTwoEmail); // new detail, will cause creation of incidental local.
+    m_cm->saveContact(&tsaTwoAggregate);
+    allContacts = m_cm->contacts(allSyncTargets);
+    QContactId tsaTwoLocalId;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        if (originalIds.contains(allContacts[i].id())) {
+            allContacts.removeAt(i);
+        } else if (allContacts[i].detail<QContactName>().firstName() == QStringLiteral("Bob")
+                && allContacts[i].id() != tsaTwoAggId
+                && allContacts[i].id() != tsaTwoStcId) {
+            tsaTwoLocalId = allContacts[i].id();
+        }
+    }
+    QCOMPARE(allContacts.size(), 7); // new incidental local.
+    QVERIFY(tsaTwoLocalId != QContactId());
+
+    // perform the sync.
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 2);
+
+    // downsync should not have been required, but upsync should have been.
+    QVERIFY(!tsa.downsyncWasRequired(accountId));
+    QVERIFY(tsa.upsyncWasRequired(accountId));
+
+    // ensure that the contacts have the data we expect
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), TestSyncAdaptor::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), TestSyncAdaptor::ImplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222222"), TestSyncAdaptor::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), TestSyncAdaptor::ImplicitlyModifiable, QStringLiteral("bob@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222222"), TestSyncAdaptor::ImplicitlyModifiable, QStringLiteral("bob@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), TestSyncAdaptor::ExplicitlyNonModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), TestSyncAdaptor::ImplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")),
+                                QStringLiteral("2222222"), TestSyncAdaptor::ExplicitlyModifiable, QStringLiteral("bob@tsatwo.com")));
+
+    // modify both locally and remotely.
+    // we modify the phone number locally (ie, the synctarget constituent)
+    // and the email address remotely (ie, the local constituent)
+    // and test to ensure that everything is resolved/updated correctly.
+    QContact tsaTwoStc = m_cm->contact(tsaTwoStcId);
+    QContactPhoneNumber tsaTwoStcPhn = tsaTwoStc.detail<QContactPhoneNumber>();
+    tsaTwoStcPhn.setNumber("2222229");
+    tsaTwoStc.saveDetail(&tsaTwoStcPhn);
+    QVERIFY(m_cm->saveContact(&tsaTwoStc));
+
+    tsa.changeRemoteContactEmail(accountId, "Bob", "TsaTwo", "bob2@tsatwo.com");
+
+    // perform the sync.
+    tsa.performTwoWaySync(accountId);
+
+    // ensure that the per-account separation is maintained properly for out of band data etc.
+    tsa.addRemoteContact(QStringLiteral("2"), QStringLiteral("Jerry"), QStringLiteral("TsaTwoTwo"), QStringLiteral("555"));
+    tsa.performTwoWaySync(QStringLiteral("2"));
+    QTRY_COMPARE(finishedSpy.count(), 4); // wait for both to finish
+    tsa.removeRemoteContact(QStringLiteral("2"), QStringLiteral("Jerry"), QStringLiteral("TsaTwoTwo"));
+    tsa.performTwoWaySync(QStringLiteral("2"));
+    QTRY_COMPARE(finishedSpy.count(), 5);
+
+    // downsync and upsync should have been required in the original sync for the "main" account.
+    QVERIFY(tsa.downsyncWasRequired(accountId));
+    QVERIFY(tsa.upsyncWasRequired(accountId));
+
+    // ensure that the contacts have the data we expect
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), TestSyncAdaptor::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), TestSyncAdaptor::ImplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222229"), TestSyncAdaptor::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), TestSyncAdaptor::ImplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222229"), TestSyncAdaptor::ImplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), TestSyncAdaptor::ExplicitlyNonModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), TestSyncAdaptor::ImplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")),
+                                QStringLiteral("2222229"), TestSyncAdaptor::ExplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
+
+    // remove a contact locally, ensure that the removal is upsynced.
+    QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Mark"), QStringLiteral("TsaThree")) != QContact());
+    QVERIFY(m_cm->removeContact(tsaThreeAggId));
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 6);
+    QVERIFY(tsa.downsyncWasRequired(accountId)); // the previously upsynced changes which were applied will be returned, hence will be downsynced; but discarded as nonsubstantial / already applied.
+    QVERIFY(tsa.upsyncWasRequired(accountId));
+
+    // ensure that the contacts have the data we expect
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), TestSyncAdaptor::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), TestSyncAdaptor::ImplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222229"), TestSyncAdaptor::ExplicitlyModifiable, QString()));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), TestSyncAdaptor::ImplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222229"), TestSyncAdaptor::ImplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")),
+                                QStringLiteral("2222229"), TestSyncAdaptor::ExplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
+    QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Mark"), QStringLiteral("TsaThree")) == QContact()); // deleted remotely.
+
+    // add a contact locally, ensure that the addition is upsynced.
+    QContact tsaFourLocal;
+    QContactName tsaFourName;
+    tsaFourName.setFirstName("Jennifer");
+    tsaFourName.setLastName("TsaFour");
+    QContactEmailAddress tsaFourEmail;
+    tsaFourEmail.setEmailAddress("jennifer@tsafour.com");
+    tsaFourLocal.saveDetail(&tsaFourName);
+    tsaFourLocal.saveDetail(&tsaFourEmail);
+    QVERIFY(m_cm->saveContact(&tsaFourLocal));
+    QContactId tsaFourLocalId = tsaFourLocal.id();
+    QContactId tsaFourAggId;
+    allContacts = m_cm->contacts(allSyncTargets);
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        if (originalIds.contains(allContacts[i].id())) {
+            allContacts.removeAt(i);
+        } else if (allContacts[i].detail<QContactName>().firstName() == QStringLiteral("Jennifer")
+                && allContacts[i].id() != tsaFourLocalId) {
+            tsaFourAggId = allContacts[i].id();
+        }
+    }
+    QVERIFY(tsaFourAggId != QContactId());
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 7);
+    QVERIFY(!tsa.downsyncWasRequired(accountId)); // there were no remote changes
+    QVERIFY(tsa.upsyncWasRequired(accountId));
+    QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Jennifer"), QStringLiteral("TsaFour")),
+                                QString(), TestSyncAdaptor::ImplicitlyModifiable, QStringLiteral("jennifer@tsafour.com")));
+
+    // remove some contacts remotely, ensure the removals are downsynced.
+    QTest::qWait(1);
+    tsa.removeRemoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo"));
+    QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")) == QContact());
+    tsa.removeRemoteContact(accountId, QStringLiteral("Jennifer"), QStringLiteral("TsaFour"));
+    QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Jennifer"), QStringLiteral("TsaFour")) == QContact());
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 8);
+    QVERIFY(tsa.downsyncWasRequired(accountId));
+    QVERIFY(!tsa.upsyncWasRequired(accountId));
+    QList<QContactId> allIds = m_cm->contactIds(allSyncTargets);
+    // the sync target constituents of two and four should be removed.
+    // the local constituents (and the aggregates) should remain.
+    QVERIFY(!allIds.contains(tsaTwoStcId));
+    // the local constituent of tsaTwo should remain even though it's incidental.
+    QVERIFY(allIds.contains(tsaTwoLocalId));
+    QVERIFY(allIds.contains(tsaTwoAggId));
+    // and the tsaFour contact was originally a pure-local addition, so shouldn't be removed.
+    // it may, after all, have been synced up to other sync sources.
+    // Note: we should NOT sync up either tsaTwo or tsaFour in subsequent syncs.
+    QVERIFY(allIds.contains(tsaFourLocalId));
+    QVERIFY(allIds.contains(tsaFourAggId));
+
+    // modify two and four locally, and ensure they don't get synced up.
+    tsaFourLocal = m_cm->contact(tsaFourLocalId);
+    tsaFourEmail = tsaFourLocal.detail<QContactEmailAddress>();
+    tsaFourEmail.setEmailAddress("jennifer2@tsafour.com");
+    tsaFourLocal.saveDetail(&tsaFourEmail);
+    m_cm->saveContact(&tsaFourLocal);
+    tsaTwoAggregate = m_cm->contact(tsaTwoAggId);
+    tsaTwoEmail = tsaTwoAggregate.detail<QContactEmailAddress>();
+    tsaTwoEmail.setEmailAddress("bob3@tsatwo.com");
+    tsaTwoAggregate.saveDetail(&tsaTwoEmail);
+    m_cm->saveContact(&tsaTwoAggregate);
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 9);
+    QVERIFY(!tsa.downsyncWasRequired(accountId)); // no remote changes since last sync, and last sync didn't upsync any changes.
+    QVERIFY(!tsa.upsyncWasRequired(accountId));   // changes shouldn't have been upsynced.
+
+    // modify (the only remaining) remote contact, delete the local contacts.
+    // the conflict should be resolved in favour of the local device, and the
+    // removal should be upsynced.  TODO: support different conflict resolutions.
+    tsa.changeRemoteContactPhone(accountId, QStringLiteral("John"), QStringLiteral("TsaOne"), QStringLiteral("1111112"));
+    QVERIFY(m_cm->removeContact(tsaOneAggId));
+    QVERIFY(m_cm->removeContact(tsaTwoAggId));
+    QVERIFY(m_cm->removeContact(tsaFourAggId));
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 10);
+    QVERIFY(tsa.downsyncWasRequired(accountId));
+    QVERIFY(tsa.upsyncWasRequired(accountId));
+    allIds = m_cm->contactIds(allSyncTargets);
+    QVERIFY(!allIds.contains(tsaOneStcId));
+    QVERIFY(!allIds.contains(tsaOneAggId));
+    QVERIFY(!allIds.contains(tsaTwoLocalId));
+    QVERIFY(!allIds.contains(tsaTwoAggId));
+    QVERIFY(!allIds.contains(tsaFourLocalId));
+    QVERIFY(!allIds.contains(tsaFourAggId));
+    // should be back to original set of ids prior to test.
+    QCOMPARE(originalIds.size(), allIds.size());
+    foreach (const QContactId &id, allIds) {
+        QVERIFY(originalIds.contains(id));
+    }
+
+    // now add a new contact remotely, which has a name.
+    // remove the name locally, and modify it remotely - this will cause a "composed detail" modification update.
+    tsa.addRemoteContact(accountId, "John", "TsaFive", "555555", TestSyncAdaptor::ImplicitlyModifiable);
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 11);
+    allIds = m_cm->contactIds(allSyncTargets);
+    QCOMPARE(allIds.size(), originalIds.size() + 2); // remote + aggregate
+    allContacts = m_cm->contacts(allSyncTargets);
+    QContact tsaFiveStc, tsaFiveAgg;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        if (originalIds.contains(c.id())) {
+            allContacts.removeAt(i);
+        } else {
+            bool isAggregate = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size() > 0;
+            if (isAggregate) {
+                tsaFiveAgg = c;
+            } else {
+                tsaFiveStc = c;
+            }
+        }
+    }
+    QVERIFY(tsaFiveAgg.id() != QContactId());
+    QVERIFY(tsaFiveStc.id() != QContactId());
+    // now remove the name on the local copy
+    QContactName tsaFiveName = tsaFiveStc.detail<QContactName>();
+    tsaFiveStc.removeDetail(&tsaFiveName);
+    QVERIFY(m_cm->saveContact(&tsaFiveStc));
+    // now modify the name on the remote server, and trigger sync.
+    // during this process, the local contact will NOT have a QContactName detail
+    // so the modification pair will be <null, newName>.  This used to trigger a bug.
+    tsa.changeRemoteContactName(accountId, "John", "TsaFive", "Jonathan", "TsaFive");
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 12);
+    // ensure that the contact contains the data we expect
+    // currently, we only support PreserveLocalChanges conflict resolution
+    tsaFiveStc = m_cm->contact(tsaFiveStc.id());
+    QCOMPARE(tsaFiveStc.detail<QContactName>().firstName(), QString());
+    QCOMPARE(tsaFiveStc.detail<QContactName>().lastName(), QString());
+    QCOMPARE(tsaFiveStc.detail<QContactPhoneNumber>().number(), QStringLiteral("555555"));
+    // now do the same test as above, but this time remove the name remotely and modify it locally.
+    tsa.addRemoteContact(accountId, "James", "TsaSix", "666666", TestSyncAdaptor::ImplicitlyModifiable);
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 13);
+    allIds = m_cm->contactIds(allSyncTargets);
+    QCOMPARE(allIds.size(), originalIds.size() + 4); // remote + aggregate for Five and Six
+    allContacts = m_cm->contacts(allSyncTargets);
+    QContact tsaSixStc, tsaSixAgg;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        if (originalIds.contains(c.id())) {
+            allContacts.removeAt(i);
+        } else {
+            bool isAggregate = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size() > 0;
+            if (isAggregate && c.id() != tsaFiveAgg.id()) {
+                tsaSixAgg = c;
+            } else if (!isAggregate && c.id() != tsaFiveStc.id()){
+                tsaSixStc = c;
+            }
+        }
+    }
+    QVERIFY(tsaSixAgg.id() != QContactId());
+    QVERIFY(tsaSixStc.id() != QContactId());
+    // now modify the name on the local copy
+    QContactName tsaSixName = tsaSixStc.detail<QContactName>();
+    tsaSixName.setFirstName("Jimmy");
+    tsaSixStc.saveDetail(&tsaSixName);
+    QVERIFY(m_cm->saveContact(&tsaSixStc));
+    // now remove the name on the remote server, and trigger sync.
+    // during this process, the remote contact will NOT have a QContactName detail
+    // so the modification pair will be <newName, null>.
+    tsa.changeRemoteContactName(accountId, "James", "TsaSix", "", "");
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 14);
+    // ensure that the contact contains the data we expect
+    // currently, we only support PreserveLocalChanges conflict resolution
+    tsaSixStc = m_cm->contact(tsaSixStc.id());
+    QCOMPARE(tsaSixStc.detail<QContactName>().firstName(), QStringLiteral("Jimmy"));
+    QCOMPARE(tsaSixStc.detail<QContactName>().lastName(), QStringLiteral("TsaSix"));
+    QCOMPARE(tsaSixStc.detail<QContactPhoneNumber>().number(), QStringLiteral("666666"));
+    // partial clean up, locally remove all contact aggregates from sync adapter.
+    QVERIFY(m_cm->removeContact(tsaFiveAgg.id()));
+    QVERIFY(m_cm->removeContact(tsaSixAgg.id()));
+    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), originalIds.size());
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 15);
+
+    // the following test ensures that "remote duplicate removal" works correctly.
+    // - have multiple duplicated contacts server-side
+    // - sync them down
+    // - remove all but one duplicate server-side
+    // - sync the changes (removals)
+    // - ensure that the removals are applied correctly device-side.
+    tsa.addRemoteDuplicates(accountId, "John", "Duplicate", "1234321");
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 16);
+    allContacts = m_cm->contacts(allSyncTargets);
+    int syncTargetConstituentsCount = 0, aggCount = 0;
+    QContact tsaSevenAgg;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        if (originalIds.contains(c.id())) {
+            allContacts.removeAt(i);
+        } else {
+            int tempAggCount = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size();
+            if (tempAggCount > 0) {
+                aggCount = tempAggCount;
+                tsaSevenAgg = c;
+            } else {
+                syncTargetConstituentsCount += 1;
+            }
+        }
+    }
+    QVERIFY(tsaSevenAgg.id() != QContactId());
+    QCOMPARE(aggCount, 3); // the aggregate should aggregate the 3 duplicates
+    QCOMPARE(syncTargetConstituentsCount, 3); // there should be 3 duplicates
+    tsa.mergeRemoteDuplicates(accountId);
+    tsa.performTwoWaySync(accountId);
+    QTRY_COMPARE(finishedSpy.count(), 17);
+    allContacts = m_cm->contacts(allSyncTargets);
+    syncTargetConstituentsCount = 0; aggCount = 0;
+    for (int i = allContacts.size() - 1; i >= 0; --i) {
+        const QContact &c(allContacts[i]);
+        if (originalIds.contains(c.id())) {
+            allContacts.removeAt(i);
+        } else {
+            int tempAggCount = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size();
+            if (tempAggCount > 0) {
+                tsaSevenAgg = c;
+                aggCount = tempAggCount;
+            } else {
+                syncTargetConstituentsCount += 1;
+            }
+        }
+    }
+    QCOMPARE(aggCount, 1); // now there should be just one sync target constituent.
+    QCOMPARE(syncTargetConstituentsCount, 1);
+    // clean up.
+    QVERIFY(m_cm->removeContact(tsaSevenAgg.id()));
+    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), originalIds.size());
+    tsa.removeAllContacts();
+}
+
+*/
 
 QTEST_GUILESS_MAIN(tst_synctransactions)
 #include "tst_synctransactions.moc"
