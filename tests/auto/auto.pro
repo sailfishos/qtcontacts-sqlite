@@ -8,5 +8,6 @@ SUBDIRS = \
     memorytable \
     database \
     displaylabelgroups \
-    detailfetchrequest
+    detailfetchrequest \
+    synctransactions
 

@@ -41,6 +41,10 @@
 #include "qtcontacts-extensions.h"
 #include "qtcontacts-extensions_impl.h"
 #include "qcontactdetailfetchrequest_p.h"
+#include "qcontactcollectionchangesfetchrequest_p.h"
+#include "qcontactchangesfetchrequest_p.h"
+#include "qcontactchangessaverequest_p.h"
+#include "qcontactclearchangeflagsrequest_p.h"
 #include "displaylabelgroupgenerator.h"
 
 #include <QCoreApplication>
@@ -51,6 +55,8 @@
 #include <QUuid>
 #include <QDataStream>
 
+#include <QContactCollection>
+#include <QContact>
 #include <QContactAbstractRequest>
 #include <QContactFetchRequest>
 #include <QContactCollectionFetchRequest>
@@ -681,7 +687,260 @@ private:
     const QList<int> m_fields;
     QList<QContactDetail> m_details;
     const QContactDetail::DetailType m_type;
+};
 
+class CollectionChangesFetchJob : public TemplateJob<QContactCollectionChangesFetchRequest>
+{
+public:
+    CollectionChangesFetchJob(QContactCollectionChangesFetchRequest *request, QContactCollectionChangesFetchRequestPrivate *d)
+        : TemplateJob(request)
+        , m_accountId(d->accountId)
+        , m_applicationName(d->applicationName)
+        , m_addedCollections(d->addedCollections)
+        , m_modifiedCollections(d->modifiedCollections)
+        , m_removedCollections(d->removedCollections)
+        , m_unmodifiedCollections(d->unmodifiedCollections)
+    {
+    }
+
+    void execute(ContactReader *, WriterProxy &writer) override
+    {
+        m_error = writer->fetchCollectionChanges(
+                m_accountId,
+                m_applicationName,
+                &m_addedCollections,
+                &m_modifiedCollections,
+                &m_removedCollections,
+                &m_unmodifiedCollections);
+    }
+
+    void updateState(QContactAbstractRequest::State state) override
+    {
+        if (m_request) {
+            QContactCollectionChangesFetchRequestPrivate * const d = QContactCollectionChangesFetchRequestPrivate::get(m_request);
+
+            d->error = m_error;
+            d->state = state;
+
+            if (state == QContactAbstractRequest::FinishedState) {
+                d->addedCollections = m_addedCollections;
+                d->modifiedCollections = m_modifiedCollections;
+                d->removedCollections = m_removedCollections;
+                d->unmodifiedCollections = m_unmodifiedCollections;
+                emit (m_request->*(d->resultsAvailable))();
+            }
+            emit (m_request->*(d->stateChanged))(state);
+        }
+    }
+
+    QString description() const override
+    {
+        QString s(QLatin1String("Collection Changes Fetch"));
+        return s;
+    }
+
+private:
+    const int m_accountId;
+    const QString m_applicationName;
+    QList<QContactCollection> m_addedCollections;
+    QList<QContactCollection> m_modifiedCollections;
+    QList<QContactCollection> m_removedCollections;
+    QList<QContactCollection> m_unmodifiedCollections;
+};
+
+class ContactChangesFetchJob : public TemplateJob<QContactChangesFetchRequest>
+{
+public:
+    ContactChangesFetchJob(QContactChangesFetchRequest *request, QContactChangesFetchRequestPrivate *d)
+        : TemplateJob(request)
+        , m_collectionId(d->collectionId)
+        , m_addedContacts(d->addedContacts)
+        , m_modifiedContacts(d->modifiedContacts)
+        , m_removedContacts(d->removedContacts)
+        , m_unmodifiedContacts(d->unmodifiedContacts)
+    {
+    }
+
+    void execute(ContactReader *, WriterProxy &writer) override
+    {
+        m_error = writer->fetchContactChanges(
+                m_collectionId,
+                &m_addedContacts,
+                &m_modifiedContacts,
+                &m_removedContacts,
+                &m_unmodifiedContacts);
+    }
+
+    void updateState(QContactAbstractRequest::State state) override
+    {
+        if (m_request) {
+            QContactChangesFetchRequestPrivate * const d = QContactChangesFetchRequestPrivate::get(m_request);
+
+            d->error = m_error;
+            d->state = state;
+
+            if (state == QContactAbstractRequest::FinishedState) {
+                d->addedContacts = m_addedContacts;
+                d->modifiedContacts = m_modifiedContacts;
+                d->removedContacts = m_removedContacts;
+                d->unmodifiedContacts = m_unmodifiedContacts;
+                emit (m_request->*(d->resultsAvailable))();
+            }
+            emit (m_request->*(d->stateChanged))(state);
+        }
+    }
+
+    QString description() const override
+    {
+        QString s(QLatin1String("Collection Changes Fetch"));
+        return s;
+    }
+
+private:
+    const QContactCollectionId m_collectionId;
+    QList<QContact> m_addedContacts;
+    QList<QContact> m_modifiedContacts;
+    QList<QContact> m_removedContacts;
+    QList<QContact> m_unmodifiedContacts;
+};
+
+class ContactChangesSaveJob : public TemplateJob<QContactChangesSaveRequest>
+{
+public:
+    ContactChangesSaveJob(QContactChangesSaveRequest *request, QContactChangesSaveRequestPrivate *d)
+        : TemplateJob(request)
+        , m_addedCollections(d->addedCollections)
+        , m_modifiedCollections(d->modifiedCollections)
+        , m_removedCollections(d->removedCollections)
+        , m_policy(d->policy == QContactChangesSaveRequest::PreserveLocalChanges
+                   ? QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges
+                   : QtContactsSqliteExtensions::ContactManagerEngine::PreserveRemoteChanges)
+        , m_clearChangeFlags(d->clearChangeFlags)
+    {
+    }
+
+    void execute(ContactReader *, WriterProxy &writer) override
+    {
+        QList<QContactCollection> collections;
+        QList<QList<QContact> > contacts;
+        QHash<QContactCollection*, QList<QContact>* > addedCollections_ptrs;
+        QHash<QContactCollection*, QList<QContact>* > modifiedCollections_ptrs;
+
+        // the storeSyncChanges method parameters are in+out parameters.
+        // construct the appropriate data structures.
+        // this depends on QList reference stability.
+        QHash<QContactCollection, QList<QContact> >::iterator ait, aend, mit, mend;
+        ait = m_addedCollections.begin(), aend = m_addedCollections.end();
+        for ( ; ait != aend; ++ait) {
+            collections.append(ait.key());
+            contacts.append(ait.value());
+            addedCollections_ptrs.insert(&collections.last(), &contacts.last());
+        }
+        mit = m_modifiedCollections.begin(), mend = m_modifiedCollections.end();
+        for ( ; mit != mend; ++mit) {
+            collections.append(mit.key());
+            contacts.append(mit.value());
+            modifiedCollections_ptrs.insert(&collections.last(), &contacts.last());
+        }
+
+        m_error = writer->storeChanges(
+            &addedCollections_ptrs,
+            &modifiedCollections_ptrs,
+            m_removedCollections,
+            m_policy,
+            m_clearChangeFlags);
+
+        if (m_error == QContactManager::NoError) {
+            m_addedCollections.clear();
+            QHash<QContactCollection*, QList<QContact>* >::iterator ait, aend, mit, mend;
+            ait = addedCollections_ptrs.begin(), aend = addedCollections_ptrs.end();
+            for ( ; ait != aend; ++ait) {
+                m_addedCollections.insert(*ait.key(), *ait.value());
+            }
+            m_modifiedCollections.clear();
+            mit = modifiedCollections_ptrs.begin(), mend = modifiedCollections_ptrs.end();
+            for ( ; mit != mend; ++mit) {
+                m_modifiedCollections.insert(*mit.key(), *mit.value());
+            }
+        }
+    }
+
+    void updateState(QContactAbstractRequest::State state) override
+    {
+        if (m_request) {
+            QContactChangesSaveRequestPrivate * const d = QContactChangesSaveRequestPrivate::get(m_request);
+
+            d->error = m_error;
+            d->state = state;
+
+            if (state == QContactAbstractRequest::FinishedState) {
+                d->addedCollections = m_addedCollections;
+                d->modifiedCollections = m_modifiedCollections;
+                emit (m_request->*(d->resultsAvailable))();
+            }
+            emit (m_request->*(d->stateChanged))(state);
+        }
+    }
+
+    QString description() const override
+    {
+        QString s(QLatin1String("Changes Save"));
+        return s;
+    }
+
+private:
+    QHash<QContactCollection, QList<QContact> > m_addedCollections;
+    QHash<QContactCollection, QList<QContact> > m_modifiedCollections;
+    QList<QContactCollectionId> m_removedCollections;
+    const QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy m_policy;
+    const bool m_clearChangeFlags;
+};
+
+class ClearChangeFlagsJob : public TemplateJob<QContactClearChangeFlagsRequest>
+{
+public:
+    ClearChangeFlagsJob(QContactClearChangeFlagsRequest *request, QContactClearChangeFlagsRequestPrivate *d)
+        : TemplateJob(request)
+        , m_collectionId(d->collectionId)
+        , m_contactIds(d->contactIds)
+    {
+    }
+
+    void execute(ContactReader *, WriterProxy &writer) override
+    {
+        m_error = m_collectionId.isNull()
+                ? writer->clearChangeFlags(
+                      m_contactIds,
+                      false)
+                : writer->clearChangeFlags(
+                      m_collectionId,
+                      false);
+    }
+
+    void updateState(QContactAbstractRequest::State state) override
+    {
+        if (m_request) {
+            QContactClearChangeFlagsRequestPrivate * const d = QContactClearChangeFlagsRequestPrivate::get(m_request);
+
+            d->error = m_error;
+            d->state = state;
+
+            if (state == QContactAbstractRequest::FinishedState) {
+                emit (m_request->*(d->resultsAvailable))();
+            }
+            emit (m_request->*(d->stateChanged))(state);
+        }
+    }
+
+    QString description() const override
+    {
+        QString s(QLatin1String("Clear Change Flags"));
+        return s;
+    }
+
+private:
+    const QContactCollectionId m_collectionId;
+    const QList<QContactId> m_contactIds;
 };
 
 class JobThread : public QThread
@@ -1490,6 +1749,46 @@ bool ContactsEngine::startRequest(QContactAbstractRequest* request)
 bool ContactsEngine::startRequest(QContactDetailFetchRequest* request)
 {
     Job *job = new DetailFetchJob(request, QContactDetailFetchRequestPrivate::get(request));
+
+    job->updateState(QContactAbstractRequest::ActiveState);
+    m_jobThread->enqueue(job);
+
+    return true;
+}
+
+bool ContactsEngine::startRequest(QContactCollectionChangesFetchRequest* request)
+{
+    Job *job = new CollectionChangesFetchJob(request, QContactCollectionChangesFetchRequestPrivate::get(request));
+
+    job->updateState(QContactAbstractRequest::ActiveState);
+    m_jobThread->enqueue(job);
+
+    return true;
+}
+
+bool ContactsEngine::startRequest(QContactChangesFetchRequest* request)
+{
+    Job *job = new ContactChangesFetchJob(request, QContactChangesFetchRequestPrivate::get(request));
+
+    job->updateState(QContactAbstractRequest::ActiveState);
+    m_jobThread->enqueue(job);
+
+    return true;
+}
+
+bool ContactsEngine::startRequest(QContactChangesSaveRequest* request)
+{
+    Job *job = new ContactChangesSaveJob(request, QContactChangesSaveRequestPrivate::get(request));
+
+    job->updateState(QContactAbstractRequest::ActiveState);
+    m_jobThread->enqueue(job);
+
+    return true;
+}
+
+bool ContactsEngine::startRequest(QContactClearChangeFlagsRequest* request)
+{
+    Job *job = new ClearChangeFlagsJob(request, QContactClearChangeFlagsRequestPrivate::get(request));
 
     job->updateState(QContactAbstractRequest::ActiveState);
     m_jobThread->enqueue(job);

@@ -37,6 +37,10 @@
 
 QT_BEGIN_NAMESPACE_CONTACTS
 class QContactDetailFetchRequest;
+class QContactChangesFetchRequest;
+class QContactCollectionChangesFetchRequest;
+class QContactChangesSaveRequest;
+class QContactClearChangeFlagsRequest;
 QT_END_NAMESPACE_CONTACTS
 
 QTCONTACTS_USE_NAMESPACE
@@ -119,6 +123,10 @@ public:
 
     virtual void requestDestroyed(QObject* request) = 0;
     virtual bool startRequest(QContactDetailFetchRequest* request) = 0;
+    virtual bool startRequest(QContactCollectionChangesFetchRequest* request) = 0;
+    virtual bool startRequest(QContactChangesFetchRequest* request) = 0;
+    virtual bool startRequest(QContactChangesSaveRequest* request) = 0;
+    virtual bool startRequest(QContactClearChangeFlagsRequest* request) = 0;
     virtual bool cancelRequest(QObject* request) = 0;
     virtual bool waitForRequestFinished(QObject* req, int msecs) = 0;
 
