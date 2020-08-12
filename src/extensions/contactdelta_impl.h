@@ -276,7 +276,7 @@ bool detailPairExactlyMatches(
     return true;
 }
 
-// move some information (detail uris, provenance, database id)
+// move some information (modifiable, detail uris, provenance, database id)
 // from the old detail to the new detail.
 void constructModification(const QContactDetail &old, QContactDetail *update)
 {
@@ -285,6 +285,7 @@ void constructModification(const QContactDetail &old, QContactDetail *update)
     for (int field : oldValues.keys()) {
         if (field == QContactDetail__FieldDatabaseId
                 || (!values.contains(field)
+                    && field == QContactDetail__FieldModifiable
                     && field == QContactDetail__FieldProvenance
                     && field == QContactDetail::FieldDetailUri
                     && field == QContactDetail::FieldLinkedDetailUris)) {
@@ -422,6 +423,73 @@ QList<QContactDetail> improveDelta(
     return finalModifications;
 }
 
+typedef QMap<int, QVariant> DetailMap;
+
+DetailMap detailValues(const QContactDetail &detail, bool includeProvenance = true, bool includeModifiable = true)
+{
+    DetailMap rv(detail.values());
+
+    if (!includeProvenance || !includeModifiable) {
+        DetailMap::iterator it = rv.begin();
+        while (it != rv.end()) {
+            if (!includeProvenance && it.key() == QContactDetail__FieldProvenance) {
+                it = rv.erase(it);
+            } else if (!includeModifiable && it.key() == QContactDetail__FieldModifiable) {
+                it = rv.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    return rv;
+}
+
+static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
+{
+    // Work around incorrect result from QVariant::operator== when variants contain QList<int>
+    static const int QListIntType = QMetaType::type("QList<int>");
+
+    const int lhsType = lhs.userType();
+    if (lhsType != rhs.userType()) {
+        return false;
+    }
+
+    if (lhsType == QListIntType) {
+        return (lhs.value<QList<int> >() == rhs.value<QList<int> >());
+    }
+    return (lhs == rhs);
+}
+
+static bool detailValuesEqual(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    const DetailMap lhsValues(detailValues(lhs, false, false));
+    const DetailMap rhsValues(detailValues(rhs, false, false));
+
+    if (lhsValues.count() != rhsValues.count()) {
+        return false;
+    }
+
+    // Because of map ordering, matching fields should be in the same order in both details
+    DetailMap::const_iterator lit = lhsValues.constBegin(), lend = lhsValues.constEnd();
+    DetailMap::const_iterator rit = rhsValues.constBegin();
+    for ( ; lit != lend; ++lit, ++rit) {
+        if (lit.key() != rit.key() || !variantEqual(*lit, *rit)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool detailsEquivalent(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    // Same as operator== except ignores differences in certain field values
+    if (lhs.type() != rhs.type())
+        return false;
+    return detailValuesEqual(lhs, rhs);
+}
+
 } // namespace
 
 const QSet<QContactDetail::DetailType>& QtContactsSqliteExtensions::defaultIgnorableDetailTypes()
@@ -511,167 +579,6 @@ ContactDetailDelta QtContactsSqliteExtensions::determineContactDetailDelta(
 
     return delta;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-// XXXXXXXXXXXXXXXXXXXXX TODO: move these into twowaycontactsyncadapter?
-typedef QMap<int, QVariant> DetailMap;
-
-DetailMap detailValues(const QContactDetail &detail, bool includeProvenance = true, bool includeModifiable = true)
-{
-    DetailMap rv(detail.values());
-
-    if (!includeProvenance || !includeModifiable) {
-        DetailMap::iterator it = rv.begin();
-        while (it != rv.end()) {
-            if (!includeProvenance && it.key() == QContactDetail__FieldProvenance) {
-                it = rv.erase(it);
-            } else if (!includeModifiable && it.key() == QContactDetail__FieldModifiable) {
-                it = rv.erase(it);
-            } else {
-                ++it;
-            }
-        }
-    }
-
-    return rv;
-}
-
-static bool variantEqual(const QVariant &lhs, const QVariant &rhs)
-{
-    // Work around incorrect result from QVariant::operator== when variants contain QList<int>
-    static const int QListIntType = QMetaType::type("QList<int>");
-
-    const int lhsType = lhs.userType();
-    if (lhsType != rhs.userType()) {
-        return false;
-    }
-
-    if (lhsType == QListIntType) {
-        return (lhs.value<QList<int> >() == rhs.value<QList<int> >());
-    }
-    return (lhs == rhs);
-}
-
-static bool detailValuesEqual(const QContactDetail &lhs, const QContactDetail &rhs)
-{
-    const DetailMap lhsValues(detailValues(lhs, false, false));
-    const DetailMap rhsValues(detailValues(rhs, false, false));
-
-    if (lhsValues.count() != rhsValues.count()) {
-        return false;
-    }
-
-    // Because of map ordering, matching fields should be in the same order in both details
-    DetailMap::const_iterator lit = lhsValues.constBegin(), lend = lhsValues.constEnd();
-    DetailMap::const_iterator rit = rhsValues.constBegin();
-    for ( ; lit != lend; ++lit, ++rit) {
-        if (lit.key() != rit.key() || !variantEqual(*lit, *rit)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-static bool detailsEquivalent(const QContactDetail &lhs, const QContactDetail &rhs)
-{
-    // Same as operator== except ignores differences in accessConstraints values
-    if (lhs.type() != rhs.type())
-        return false;
-    return detailValuesEqual(lhs, rhs);
-}
-
-static void modifyContactDetail(const QContactDetail &original, const QContactDetail &modified,
-                                QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
-                                QContactDetail *recipient)
-{
-    // Apply changes field-by-field
-    DetailMap originalValues(detailValues(original, false));
-    DetailMap modifiedValues(detailValues(modified, false));
-
-    DetailMap::const_iterator mit = modifiedValues.constBegin(), mend = modifiedValues.constEnd();
-    for ( ; mit != mend; ++mit) {
-        const int field(mit.key());
-
-        const QVariant originalValue(originalValues[field]);
-        originalValues.remove(field);
-
-        const QVariant currentValue(recipient->value(field));
-        if (!variantEqual(currentValue, originalValue)) {
-            // The local value has changed since this data was exported
-            if (conflictPolicy == QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges) {
-                // Ignore this remote change
-                continue;
-            }
-        }
-
-        // Update the result value
-        recipient->setValue(field, mit.value());
-    }
-
-    DetailMap::const_iterator oit = originalValues.constBegin(), oend = originalValues.constEnd();
-    for ( ; oit != oend; ++oit) {
-        // Any previously existing values that are no longer present should be removed
-        const int field(oit.key());
-        const QVariant originalValue(oit.value());
-
-        const QVariant currentValue(recipient->value(field));
-        if (!variantEqual(currentValue, originalValue)) {
-            // The local value has changed since this data was exported
-            if (conflictPolicy == QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges) {
-                // Ignore this remote removal
-                continue;
-            }
-        }
-
-        recipient->removeValue(field);
-    }
-
-    // set the modifiable flag to true unless the sync adapter has set it explicitly
-    if (!recipient->values().contains(QContactDetail__FieldModifiable)) {
-        recipient->setValue(QContactDetail__FieldModifiable, true);
-    }
-}
-
-// TODO: StringPair is typically used for <provenance>:<detailtype> - now that provenance
-// uniquely identifies a detail, we probably don't need detailtype in most uses...
-typedef QPair<QString, QString> StringPair;
-typedef QPair<QContactDetail, QContactDetail> DetailPair;
-static void removeEquivalentDetails(QList<QPair<QContactDetail, StringPair> > &original, QList<QPair<QContactDetail, StringPair> > &updated)
-{
-    // Determine which details are in the update contact which aren't in the database contact:
-    // Detail order is not defined, so loop over the entire set for each, removing matches or
-    // superset details (eg, backend added a field (like lastModified to timestamp) on previous save)
-    QList<QPair<QContactDetail, StringPair> >::iterator oit = original.begin(), oend;
-    while (oit != original.end()) {
-        QList<QPair<QContactDetail, StringPair> >::iterator uit = updated.begin(), uend = updated.end();
-        for ( ; uit != uend; ++uit) {
-            if (detailsEquivalent((*oit).first, (*uit).first)) {
-                // These details match - remove from the lists
-                updated.erase(uit);
-                break;
-            }
-        }
-        if (uit != uend) {
-            // We found a match
-            oit = original.erase(oit);
-        } else {
-            ++oit;
-        }
-    }
-}
-
 
 #endif // CONTACTDELTA_IMPL_H
 
