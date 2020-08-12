@@ -13,9 +13,11 @@ HEADERS += \
     ../../../src/extensions/qcontactchangesfetchrequest.h \
     ../../../src/extensions/qcontactchangessaverequest.h \
     ../../../src/extensions/qcontactclearchangeflagsrequest.h \
-    ../../util.h
+    ../../util.h \
+    testsyncadaptor.h
 
 SOURCES += \
     ../../../src/engine/contactid.cpp \
-    tst_synctransactions.cpp
+    tst_synctransactions.cpp \
+    testsyncadaptor.cpp
 

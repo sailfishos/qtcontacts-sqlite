@@ -40,6 +40,8 @@ EXTENSION_REQUESTS = \
 
 EXTENSION_PLUGIN_INTERFACES = \
     extensions/displaylabelgroupgenerator.h \
+    extensions/twowaycontactsyncadaptor.h \
+    extensions/twowaycontactsyncadaptor_impl.h \
     extensions/twowaycontactsyncadapter.h \
     extensions/twowaycontactsyncadapter_impl.h
 
