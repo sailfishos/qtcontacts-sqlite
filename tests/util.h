@@ -58,8 +58,8 @@
 #include "../../../src/extensions/qcontactdeactivated.h"
 #include "../../../src/extensions/qcontactdeactivated_impl.h"
 
-#include "../../../src/extensions/qcontactincidental.h"
-#include "../../../src/extensions/qcontactincidental_impl.h"
+#include "../../../src/extensions/qcontactundelete.h"
+#include "../../../src/extensions/qcontactundelete_impl.h"
 
 #include "../../../src/extensions/qcontactoriginmetadata.h"
 #include "../../../src/extensions/qcontactoriginmetadata_impl.h"

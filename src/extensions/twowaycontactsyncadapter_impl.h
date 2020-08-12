@@ -214,7 +214,6 @@ QSet<QContactDetail::DetailType> getDefaultIgnorableDetailTypes()
     rv.insert(QContactDetail__TypeDeactivated);
     rv.insert(QContactDetail::TypeDisplayLabel);
     rv.insert(QContactDetail::TypeGlobalPresence);
-    rv.insert(QContactDetail__TypeIncidental);
     rv.insert(QContactDetail::TypePresence);
     rv.insert(QContactDetail::TypeOnlineAccount);
     rv.insert(QContactDetail__TypeStatusFlags);

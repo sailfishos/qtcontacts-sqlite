@@ -149,14 +149,32 @@ public:
     bool isRelationshipTypeSupported(const QString &relationshipType, QContactType::TypeValues contactType) const override;
     QList<QContactType::TypeValues> supportedContactTypes() const override;
 
-    void regenerateDisplayLabel(QContact &contact);
+    void regenerateDisplayLabel(QContact &contact, bool *emitDisplayLabelGroupChange);
 
-    bool fetchSyncContacts(const QContactCollectionId &collectionId, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
-                           QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
-                           QDateTime *maxTimestamp, QContactManager::Error *error) override;
+    bool clearChangeFlags(const QList<QContactId> &contactIds, QContactManager::Error *error) override;
+    bool clearChangeFlags(const QContactCollectionId &collectionId, QContactManager::Error *error) override;
 
-    bool storeSyncContacts(const QContactCollectionId &collectionId, ConflictResolutionPolicy conflictPolicy,
-                           QList<QPair<QContact, QContact> > *remoteChanges, QContactManager::Error *error) override;
+    bool fetchCollectionChanges(int accountId,
+                                const QString &applicationName,
+                                QList<QContactCollection> *addedCollections,
+                                QList<QContactCollection> *modifiedCollections,
+                                QList<QContactCollection> *deletedCollections,
+                                QList<QContactCollection> *unmodifiedCollections,
+                                QContactManager::Error *error) override;
+
+    bool fetchContactChanges(const QContactCollectionId &collectionId,
+                             QList<QContact> *addedContacts,
+                             QList<QContact> *modifiedContacts,
+                             QList<QContact> *deletedContacts,
+                             QList<QContact> *unmodifiedContacts,
+                             QContactManager::Error *error) override;
+
+    bool storeChanges(QHash<QContactCollection*, QList<QContact> * /* added contacts */> *addedCollections,
+                      QHash<QContactCollection*, QList<QContact> * /* added/modified/deleted contacts */> *modifiedCollections,
+                      const QList<QContactCollectionId> &deletedCollections,
+                      ConflictResolutionPolicy conflictResolutionPolicy,
+                      bool clearChangeFlags,
+                      QContactManager::Error *error) override;
 
     bool fetchOOB(const QString &scope, const QString &key, QVariant *value) override;
     bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values) override;
@@ -174,16 +192,16 @@ public:
     QStringList displayLabelGroups() override;
 
     QString synthesizedDisplayLabel(const QContact &contact, QContactManager::Error *error) const;
-    static bool setContactDisplayLabel(QContact *contact, const QString &label, const QString &group);
+    static bool setContactDisplayLabel(QContact *contact, const QString &label, const QString &group, int sortOrder);
     static QString normalizedPhoneNumber(const QString &input);
 
 private slots:
     void _q_collectionsAdded(const QVector<quint32> &collectionIds);
     void _q_collectionsChanged(const QVector<quint32> &collectionIds);
     void _q_collectionsRemoved(const QVector<quint32> &collectionIds);
+    void _q_collectionContactsChanged(const QVector<quint32> &collectionIds);
     void _q_contactsChanged(const QVector<quint32> &contactIds);
     void _q_contactsPresenceChanged(const QVector<quint32> &contactIds);
-    void _q_syncContactsChanged(const QVector<quint32> &collectionIds);
     void _q_contactsAdded(const QVector<quint32> &contactIds);
     void _q_contactsRemoved(const QVector<quint32> &contactIds);
     void _q_selfContactIdChanged(quint32,quint32);

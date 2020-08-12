@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2014 Jolla Ltd. <mattthew.vogt@jollamobile.com>
+ * Copyright (C) 2014 Jolla Ltd.
+ * Copyright (C) 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -29,27 +30,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QCONTACTINCIDENTAL_H
-#define QCONTACTINCIDENTAL_H
+#ifndef QCONTACTUNDELETE_IMPL_H
+#define QCONTACTUNDELETE_IMPL_H
 
-#include <QContactDetail>
+#include "qcontactundelete.h"
+#include "qtcontacts-extensions.h"
 
-QT_BEGIN_NAMESPACE_CONTACTS
+QTCONTACTS_USE_NAMESPACE
 
-class QContactIncidental : public QContactDetail
-{
-public:
-    Q_DECLARE_CUSTOM_CONTACT_DETAIL(QContactIncidental)
-
-    enum {
-        FieldInitialAggregateId = 0
-    };
-
-    // This field is not available after contact creation
-    void setInitialAggregateId(const QContactId &id);
-    QContactId initialAggregateId() const;
-};
-
-QT_END_NAMESPACE_CONTACTS
+const QContactDetail::DetailType QContactUndelete::Type(static_cast<QContactDetail::DetailType>(QContactDetail__TypeUndelete));
 
 #endif

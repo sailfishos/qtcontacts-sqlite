@@ -153,48 +153,15 @@ static QVariant dateValue(const QVariant &columnValue)
     return QDate::fromString(dtString, Qt::ISODate);
 }
 
-static const FieldInfo displayLabelFields[] =
-{
-    { QContactDisplayLabel::FieldLabel, "displayLabel", LocalizedField },
-    { QContactDisplayLabel__FieldLabelGroup, "displayLabelGroup", LocalizedField }
-};
-
-static const FieldInfo nameFields[] =
-{
-    { QContactName::FieldFirstName, "firstName", LocalizedField },
-    { invalidField, "lowerFirstName", LocalizedField },
-    { QContactName::FieldLastName, "lastName", LocalizedField },
-    { invalidField, "lowerLastName", LocalizedField },
-    { QContactName::FieldMiddleName, "middleName", LocalizedField },
-    { QContactName::FieldPrefix, "prefix", LocalizedField },
-    { QContactName::FieldSuffix, "suffix", LocalizedField },
-    { QContactName__FieldCustomLabel, "customLabel", LocalizedField }
-};
-
-static const FieldInfo syncTargetFields[] =
-{
-    { QContactSyncTarget::FieldSyncTarget, "syncTarget", StringField }
-};
-
 static const FieldInfo timestampFields[] =
 {
     { QContactTimestamp::FieldCreationTimestamp, "created", DateField },
     { QContactTimestamp::FieldModificationTimestamp, "modified", DateField }
 };
 
-static const FieldInfo genderFields[] =
-{
-    { QContactGender::FieldGender, "gender", StringField }
-};
-
-static const FieldInfo favoriteFields[] =
-{
-    { QContactFavorite::FieldFavorite, "isFavorite", BooleanField }
-};
-
 static const FieldInfo statusFlagsFields[] =
 {
-    // No specific field; tests hasPhoneNumber/hasEmailAddress/hasOnlineAccount/isOnline/isDeactivated
+    // No specific field; tests hasPhoneNumber/hasEmailAddress/hasOnlineAccount/isOnline/isDeactivated/isDeleted
     { QContactStatusFlags::FieldFlags, "", OtherField }
 };
 
@@ -287,6 +254,29 @@ static void setValues(QContactBirthday *detail, QSqlQuery *query, const int offs
     setValue(detail, T::FieldCalendarId, query->value(offset + 1));
 }
 
+static const FieldInfo displayLabelFields[] =
+{
+    { QContactDisplayLabel::FieldLabel, "displayLabel", LocalizedField },
+    { QContactDisplayLabel__FieldLabelGroup, "displayLabelGroup", LocalizedField },
+    { QContactDisplayLabel__FieldLabelGroupSortOrder, "displayLabelGroupSortOrder", IntegerField }
+};
+
+static void setValues(QContactDisplayLabel *detail, QSqlQuery *query, const int offset)
+{
+    typedef QContactDisplayLabel T;
+
+    const QString label = query->value(offset + 0).toString();
+    const QString group = query->value(offset + 1).toString();
+    const int sortOrder = query->value(offset + 2).toInt();
+
+    if (!label.trimmed().isEmpty())
+        setValue(detail, T::FieldLabel, label);
+    if (!group.trimmed().isEmpty())
+        setValue(detail, QContactDisplayLabel__FieldLabelGroup, group);
+    if (!label.trimmed().isEmpty() || !group.trimmed().isEmpty())
+        setValue(detail, QContactDisplayLabel__FieldLabelGroupSortOrder, sortOrder);
+}
+
 static const FieldInfo emailAddressFields[] =
 {
     { QContactEmailAddress::FieldEmailAddress, "emailAddress", StringField },
@@ -314,6 +304,30 @@ static void setValues(QContactFamily *detail, QSqlQuery *query, const int offset
 
     setValue(detail, T::FieldSpouse  , query->value(offset + 0));
     setValue(detail, T::FieldChildren, query->value(offset + 1).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+}
+
+static const FieldInfo favoriteFields[] =
+{
+    { QContactFavorite::FieldFavorite, "isFavorite", BooleanField },
+};
+
+static void setValues(QContactFavorite *detail, QSqlQuery *query, const int offset)
+{
+    typedef QContactFavorite T;
+
+    setValue(detail, T::FieldFavorite  , query->value(offset + 0).toBool());
+}
+
+static const FieldInfo genderFields[] =
+{
+    { QContactGender::FieldGender, "gender", StringField },
+};
+
+static void setValues(QContactGender *detail, QSqlQuery *query, const int offset)
+{
+    typedef QContactGender T;
+
+    setValue(detail, T::FieldGender, static_cast<QContactGender::GenderType>(query->value(offset + 0).toString().toInt()));
 }
 
 static const FieldInfo geoLocationFields[] =
@@ -366,6 +380,32 @@ static void setValues(QContactHobby *detail, QSqlQuery *query, const int offset)
     typedef QContactHobby T;
 
     setValue(detail, T::FieldHobby, query->value(offset + 0));
+}
+
+static const FieldInfo nameFields[] =
+{
+    { QContactName::FieldFirstName, "firstName", LocalizedField },
+    { invalidField, "lowerFirstName", LocalizedField },
+    { QContactName::FieldLastName, "lastName", LocalizedField },
+    { invalidField, "lowerLastName", LocalizedField },
+    { QContactName::FieldMiddleName, "middleName", LocalizedField },
+    { QContactName::FieldPrefix, "prefix", LocalizedField },
+    { QContactName::FieldSuffix, "suffix", LocalizedField },
+    { QContactName__FieldCustomLabel, "customLabel", LocalizedField }
+};
+
+static void setValues(QContactName *detail, QSqlQuery *query, const int offset)
+{
+    typedef QContactName T;
+
+    setValue(detail, T::FieldFirstName, query->value(offset + 0));
+    // ignore lowerFirstName
+    setValue(detail, T::FieldLastName, query->value(offset + 2));
+    // ignore lowerLastName
+    setValue(detail, T::FieldMiddleName, query->value(offset + 4));
+    setValue(detail, T::FieldPrefix, query->value(offset + 5));
+    setValue(detail, T::FieldSuffix, query->value(offset + 6));
+    setValue(detail, T::FieldCustomLabel, query->value(offset + 7));
 }
 
 static const FieldInfo nicknameFields[] =
@@ -522,6 +562,18 @@ static void setValues(QContactRingtone *detail, QSqlQuery *query, const int offs
     setValue(detail, T::FieldVibrationRingtoneUrl, urlValue(query->value(offset + 2)));
 }
 
+static const FieldInfo syncTargetFields[] =
+{
+    { QContactSyncTarget::FieldSyncTarget, "syncTarget", StringField }
+};
+
+static void setValues(QContactSyncTarget *detail, QSqlQuery *query, const int offset)
+{
+    typedef QContactSyncTarget T;
+
+    setValue(detail, T::FieldSyncTarget, query->value(offset + 0));
+}
+
 static const FieldInfo tagFields[] =
 {
     { QContactTag::FieldTag, "tag", LocalizedField }
@@ -597,25 +649,27 @@ static int contextType(const QString &type)
 }
 
 template <typename T>
-static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable, const QContactCollectionId &collectionId, bool relaxConstraints, int offset)
+static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable, const QContactCollectionId &collectionId, bool relaxConstraints, bool keepChangeFlags, int offset)
 {
     const bool aggregateContact(ContactCollectionId::databaseId(collectionId) == ContactsDatabase::AggregateAddressbookCollectionId);
 
     T detail;
 
-    /*
-    const quint32 detailId = query.value(0).toUInt();
-    const quint32 contactId = query.value(1).toUInt();
-    const QString detailName = query.value(2).toString();
-    */
-    int col = 3;
+    int col = 0;
+    const quint32 dbId = query.value(col++).toUInt();
+    Q_ASSERT(dbId == detailId);
+    /*const quint32 contactId = query.value(1).toUInt();*/ col++;
+    /*const QString detailName = query.value(2).toString();*/ col++;
     const QString detailUriValue = query.value(col++).toString();
     const QString linkedDetailUrisValue = query.value(col++).toString();
     const QString contextValue = query.value(col++).toString();
     const int accessConstraints = query.value(col++).toInt();
     QString provenance = query.value(col++).toString();
-    const bool modifiable = query.value(col++).toBool();
+    QVariant modifiableVariant = query.value(col++);
     const bool nonexportable = query.value(col++).toBool();
+    const int changeFlags = query.value(col++).toInt();
+
+    setValue(&detail, QContactDetail__FieldDatabaseId, dbId);
 
     if (!detailUriValue.isEmpty()) {
         setValue(&detail,
@@ -642,19 +696,23 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
 
     if (!aggregateContact) {
         // This detail is not aggregated from another - its provenance should match its ID
-        provenance = QStringLiteral("%1:%2:%3").arg(contactId).arg(detailId).arg(ContactCollectionId::databaseId(collectionId));
+        provenance = QStringLiteral("%1:%2:%3").arg(ContactCollectionId::databaseId(collectionId)).arg(contactId).arg(dbId);
     }
     setValue(&detail, QContactDetail__FieldProvenance, provenance);
 
     // Only report modifiable state for non-local contacts.
-    // local contacts are always modifiable.
-    if (syncable) {
-        setValue(&detail, QContactDetail__FieldModifiable, modifiable);
+    // local contacts are always (implicitly) modifiable.
+    if (syncable && !modifiableVariant.isNull() && modifiableVariant.isValid()) {
+        setValue(&detail, QContactDetail__FieldModifiable, modifiableVariant.toBool());
     }
 
     // Only include non-exportable if it is set
     if (nonexportable) {
         setValue(&detail, QContactDetail__FieldNonexportable, nonexportable);
+    }
+
+    if (keepChangeFlags) {
+        setValue(&detail, QContactDetail__FieldChangeFlags, changeFlags);
     }
 
     // Constraints should be applied unless generating a partial aggregate; the partial aggregate
@@ -667,7 +725,12 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
     setValues(&detail, &query, offset);
 
     setDetailImmutableIfAggregate(aggregateContact, &detail);
-    contact->saveDetail(&detail, QContact::IgnoreAccessConstraints);
+
+    // only return the detail if it hasn't been deleted,
+    // or if we are part of a sync fetch (i.e. keepChangeFlags is true)
+    if (keepChangeFlags || changeFlags < 4) {
+        contact->saveDetail(&detail, QContact::IgnoreAccessConstraints);
+    }
 }
 
 template <typename T>
@@ -691,7 +754,7 @@ static QContactRelationship makeRelationship(const QString &type, quint32 firstI
     return relationship;
 }
 
-typedef void (*ReadDetail)(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable, const QContactCollectionId &collectionId, bool relaxConstraints, int offset);
+typedef void (*ReadDetail)(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable, const QContactCollectionId &collectionId, bool relaxConstraints, bool keepChangeFlags, int offset);
 typedef void (*AppendUniqueDetail)(QList<QContactDetail> *details, QSqlQuery &query);
 
 struct DetailInfo
@@ -746,23 +809,22 @@ template <typename T> QContactDetail::DetailType detailIdentifier() { return T::
 // Note: joinToSort should be true only if there can be only a single row for each contact in that table
 static const DetailInfo detailInfo[] =
 {
-    DEFINE_DETAIL_PRIMARY_TABLE(QContactDisplayLabel, displayLabelFields),
-    DEFINE_DETAIL_PRIMARY_TABLE(QContactName,         nameFields),
-    DEFINE_DETAIL_PRIMARY_TABLE(QContactSyncTarget,   syncTargetFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactTimestamp,    timestampFields),
-    DEFINE_DETAIL_PRIMARY_TABLE(QContactGender,       genderFields),
-    DEFINE_DETAIL_PRIMARY_TABLE(QContactFavorite,     favoriteFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactStatusFlags,  statusFlagsFields),
     DEFINE_DETAIL_PRIMARY_TABLE(QContactType,         typeFields),
     DEFINE_DETAIL(QContactAddress       , Addresses      , addressFields       , true , false),
     DEFINE_DETAIL(QContactAnniversary   , Anniversaries  , anniversaryFields   , false, false),
     DEFINE_DETAIL(QContactAvatar        , Avatars        , avatarFields        , false, false),
     DEFINE_DETAIL(QContactBirthday      , Birthdays      , birthdayFields      , false, true),
+    DEFINE_DETAIL(QContactDisplayLabel  , DisplayLabels  , displayLabelFields  , false, true),
     DEFINE_DETAIL(QContactEmailAddress  , EmailAddresses , emailAddressFields  , true , false),
     DEFINE_DETAIL(QContactFamily        , Families       , familyFields        , false, false),
+    DEFINE_DETAIL(QContactFavorite      , Favorites      , favoriteFields      , false, false),
+    DEFINE_DETAIL(QContactGender        , Genders        , genderFields        , false, false),
     DEFINE_DETAIL(QContactGeoLocation   , GeoLocations   , geoLocationFields   , false, false),
     DEFINE_DETAIL(QContactGuid          , Guids          , guidFields          , false, true),
     DEFINE_DETAIL(QContactHobby         , Hobbies        , hobbyFields         , false, false),
+    DEFINE_DETAIL(QContactName          , Names          , nameFields          , false, true),
     DEFINE_DETAIL(QContactNickname      , Nicknames      , nicknameFields      , false, false),
     DEFINE_DETAIL(QContactNote          , Notes          , noteFields          , false, false),
     DEFINE_DETAIL(QContactOnlineAccount , OnlineAccounts , onlineAccountFields , false, false),
@@ -770,6 +832,7 @@ static const DetailInfo detailInfo[] =
     DEFINE_DETAIL(QContactPhoneNumber   , PhoneNumbers   , phoneNumberFields   , false, false),
     DEFINE_DETAIL(QContactPresence      , Presences      , presenceFields      , false, false),
     DEFINE_DETAIL(QContactRingtone      , Ringtones      , ringtoneFields      , false, false),
+    DEFINE_DETAIL(QContactSyncTarget    , SyncTargets    , syncTargetFields    , false, false),
     DEFINE_DETAIL(QContactTag           , Tags           , tagFields           , false, false),
     DEFINE_DETAIL(QContactUrl           , Urls           , urlFields           , false, false),
     DEFINE_DETAIL(QContactOriginMetadata, OriginMetadata , originMetadataFields, false, true),
@@ -827,8 +890,8 @@ static QString fieldName(const char *table, const char *field)
 static QHash<QString, QString> getCaseInsensitiveColumnNames()
 {
     QHash<QString, QString> names;
-    names.insert(fieldName("Contacts", "firstName"), QString::fromLatin1("lowerFirstName"));
-    names.insert(fieldName("Contacts", "lastName"), QString::fromLatin1("lowerLastName"));
+    names.insert(fieldName("Names", "firstName"), QString::fromLatin1("lowerFirstName"));
+    names.insert(fieldName("Names", "lastName"), QString::fromLatin1("lowerLastName"));
     names.insert(fieldName("EmailAddresses", "emailAddress"), QString::fromLatin1("lowerEmailAddress"));
     names.insert(fieldName("OnlineAccounts", "accountUri"), QString::fromLatin1("lowerAccountUri"));
     names.insert(fieldName("Nicknames", "nickname"), QString::fromLatin1("lowerNickname"));
@@ -981,12 +1044,18 @@ static QString buildWhere(
                                                  QContactStatusFlags::HasEmailAddress,
                                                  QContactStatusFlags::HasOnlineAccount,
                                                  QContactStatusFlags::IsOnline,
-                                                 QContactStatusFlags::IsDeactivated };
+                                                 QContactStatusFlags::IsDeactivated,
+                                                 QContactStatusFlags::IsAdded,
+                                                 QContactStatusFlags::IsModified,
+                                                 QContactStatusFlags::IsDeleted };
                 static const char *flagColumns[] = { "hasPhoneNumber",
                                                      "hasEmailAddress",
                                                      "hasOnlineAccount",
                                                      "isOnline",
-                                                     "isDeactivated" };
+                                                     "isDeactivated",
+                                                     "changeFlags",
+                                                     "changeFlags",
+                                                     "changeFlags" };
 
                 quint64 flagsValue = filter.value().value<quint64>();
 
@@ -998,6 +1067,15 @@ static QString buildWhere(
                         if (flags[i] == QContactStatusFlags::IsOnline) {
                             // Use special case test to include transient presence state
                             comparison = QStringLiteral("COALESCE(temp.GlobalPresenceStates.isOnline, Contacts.isOnline) = %1");
+                        } else if (flags[i] == QContactStatusFlags::IsAdded) {
+                            // Use special case test to check changeFlags for added status
+                            comparison = QStringLiteral("(%1 & 1) = %2").arg(flagColumns[i]); // ChangeFlags::IsAdded
+                        } else if (flags[i] == QContactStatusFlags::IsModified) {
+                            // Use special case test to check changeFlags for modified status
+                            comparison = QStringLiteral("((%1 & 2)/2) = %2").arg(flagColumns[i]); // ChangeFlags::IsModified
+                        } else if (flags[i] == QContactStatusFlags::IsDeleted) {
+                            // Use special case test to check changeFlags for deleted status
+                            comparison = QStringLiteral("((%1 & 4)/4) = %2").arg(flagColumns[i]); // ChangeFlags::IsDeleted
                         } else {
                             comparison = QStringLiteral("%1 = %2").arg(flagColumns[i]);
                         }
@@ -1009,6 +1087,15 @@ static QString buildWhere(
                             if (flags[i] == QContactStatusFlags::IsOnline) {
                                 *globalPresenceRequired = true;
                                 clauses.append(QStringLiteral("COALESCE(temp.GlobalPresenceStates.isOnline, Contacts.isOnline) = 1"));
+                            } else if (flags[i] == QContactStatusFlags::IsAdded) {
+                                // Use special case test to check changeFlags for added status
+                                clauses.append(QStringLiteral("(%1 & 1) = 1").arg(flagColumns[i])); // ChangeFlags::IsAdded
+                            } else if (flags[i] == QContactStatusFlags::IsModified) {
+                                // Use special case test to check changeFlags for modified status
+                                clauses.append(QStringLiteral("(%1 & 2) = 2").arg(flagColumns[i])); // ChangeFlags::IsModified
+                            } else if (flags[i] == QContactStatusFlags::IsDeleted) {
+                                // Use special case test to check changeFlags for deleted status
+                                clauses.append(QStringLiteral("%1 >= 4").arg(flagColumns[i])); // ChangeFlags::IsDeleted
                             } else {
                                 clauses.append(QString::fromLatin1("%1 = 1").arg(flagColumns[i]));
                             }
@@ -1310,50 +1397,94 @@ static QString buildWhere(const QContactRelationshipFilter &filter, QVariantList
     if (!needsId && !needsType) {
         // return the id of every contact who is in a relationship
         if (rcr == QContactRelationship::First) { // where the other contact is the First
-            statement += QLatin1String("SELECT DISTINCT secondId FROM Relationships)");
+            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships");
+            statement += QLatin1String(" WHERE firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(")");
         } else if (rcr == QContactRelationship::Second) { // where the other contact is the Second
-            statement += QLatin1String("SELECT DISTINCT firstId FROM Relationships)");
+            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships");
+            statement += QLatin1String(" WHERE firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(")");
         } else { // where the other contact is either First or Second
-            statement += QLatin1String("SELECT DISTINCT firstId FROM Relationships UNION SELECT DISTINCT secondId FROM Relationships)");
+            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships");
+            statement += QLatin1String(" WHERE firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(" UNION ");
+            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships");
+            statement += QLatin1String(" WHERE firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(")");
         }
     } else if (!needsId && needsType) {
         // return the id of every contact who is in a relationship of the specified type
         if (rcr == QContactRelationship::First) { // where the other contact is the First
-            statement += QLatin1String("SELECT DISTINCT secondId FROM Relationships WHERE type = ?)");
+            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships WHERE type = ?");
+            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(")");
             bindings->append(rt);
         } else if (rcr == QContactRelationship::Second) { // where the other contact is the Second
-            statement += QLatin1String("SELECT DISTINCT firstId FROM Relationships WHERE type = ?)");
+            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships WHERE type = ?");
+            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(")");
             bindings->append(rt);
         } else { // where the other contact is either First or Second
-            statement += QLatin1String("SELECT DISTINCT firstId FROM Relationships WHERE type = ? UNION SELECT DISTINCT secondId FROM Relationships WHERE type = ?)");
+            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships WHERE type = ?");
+            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(" UNION ");
+            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships WHERE type = ?");
+            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(")");
             bindings->append(rt);
             bindings->append(rt);
         }
     } else if (needsId && !needsType) {
         // return the id of every contact who is in a relationship with the specified contact
         if (rcr == QContactRelationship::First) { // where the specified contact is the First
-            statement += QLatin1String("SELECT DISTINCT secondId FROM Relationships WHERE firstId = ?)");
+            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships WHERE firstId = ?");
+            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(")");
             bindings->append(dbId);
         } else if (rcr == QContactRelationship::Second) { // where the specified contact is the Second
-            statement += QLatin1String("SELECT DISTINCT firstId FROM Relationships WHERE secondId = ?)");
+            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships WHERE secondId = ?");
+            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(")");
             bindings->append(dbId);
         } else { // where the specified contact is either First or Second
-            statement += QLatin1String("SELECT DISTINCT firstId FROM Relationships WHERE secondId = ? UNION SELECT DISTINCT secondId FROM Relationships WHERE firstId = ?)");
+            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships WHERE firstId = ?");
+            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(" UNION ");
+            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships WHERE secondId = ?");
+            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(")");
             bindings->append(dbId);
             bindings->append(dbId);
         }
     } else if (needsId && needsType) {
         // return the id of every contact who is in a relationship of the specified type with the specified contact
         if (rcr == QContactRelationship::First) { // where the specified contact is the First
-            statement += QLatin1String("SELECT DISTINCT secondId FROM Relationships WHERE firstId = ? AND type = ?)");
+            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships WHERE firstId = ? AND type = ?");
+            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(")");
             bindings->append(dbId);
             bindings->append(rt);
         } else if (rcr == QContactRelationship::Second) { // where the specified contact is the Second
-            statement += QLatin1String("SELECT DISTINCT firstId FROM Relationships WHERE secondId = ? AND type = ?)");
+            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships WHERE secondId = ? AND type = ?");
+            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(")");
             bindings->append(dbId);
             bindings->append(rt);
         } else { // where the specified contact is either First or Second
-            statement += QLatin1String("SELECT DISTINCT firstId FROM Relationships WHERE secondId = ? AND type = ? UNION SELECT DISTINCT secondId FROM Relationships WHERE firstId = ? AND type = ?)");
+            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships WHERE firstId = ? AND type = ?");
+            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(" UNION ");
+            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships WHERE secondId = ? AND type = ?");
+            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QLatin1String(")");
             bindings->append(dbId);
             bindings->append(rt);
             bindings->append(dbId);
@@ -1594,9 +1725,12 @@ static QString buildOrderBy(
     }
 
     const bool isDisplayLabelGroup = detail.detailType == QContactDisplayLabel::Type && field.field == QContactDisplayLabel__FieldLabelGroup;
-    QString sortExpression(QStringLiteral("%1.%2")
-            .arg(joinToSort ? detail.table : QStringLiteral("Contacts"))
-            .arg(isDisplayLabelGroup ? QStringLiteral("DisplayLabelGroupSortOrder") : field.column));
+    QString sortExpression(joinToSort
+            ? QStringLiteral("%1.%2")
+                .arg(detail.table)
+                .arg(isDisplayLabelGroup ? QStringLiteral("DisplayLabelGroupSortOrder") : field.column)
+            : QStringLiteral("%1")
+                .arg(isDisplayLabelGroup ? QStringLiteral("DisplayLabelGroupSortOrder") : field.column));
     bool sortBlanks = true;
     bool collate = true;
     bool localized = field.fieldType == LocalizedField;
@@ -1679,7 +1813,7 @@ static QString buildOrderBy(
         bool *globalPresenceRequired,
         bool useLocale,
         QContactDetail::DetailType detailType = QContactDetail::TypeUndefined,
-        const QString &finalOrder = QStringLiteral("displayLabel"))
+        const QString &finalOrder = QStringLiteral("Contacts.contactId"))
 {
     Q_ASSERT(join);
     Q_ASSERT(transientModifiedRequired);
@@ -1700,7 +1834,8 @@ static QString buildOrderBy(
 
     *join = joins.join(QLatin1String(" "));
 
-    fragments.append(finalOrder);
+    if (!finalOrder.isEmpty())
+        fragments.append(finalOrder);
     return fragments.join(QLatin1String(", "));
 }
 
@@ -1831,6 +1966,61 @@ bool includesCollectionFilter(const QContactFilter &filter)
         return false;
     }
 }
+
+bool includesDeleted(const QContactFilter &filter);
+
+// Returns true if this filter includes deleted contacts
+bool includesDeleted(const QList<QContactFilter> &filters)
+{
+    foreach (const QContactFilter &filter, filters) {
+        if (includesDeleted(filter)) {
+            return true;
+        }
+    }
+    return false;
+}
+bool includesDeleted(const QContactIntersectionFilter &filter)
+{
+    return includesDeleted(filter.filters());
+}
+bool includesDeleted(const QContactUnionFilter &filter)
+{
+    return includesDeleted(filter.filters());
+}
+bool includesDeleted(const QContactDetailFilter &filter)
+{
+    if (filterOnField<QContactStatusFlags>(filter, QContactStatusFlags::FieldFlags)) {
+        quint64 flagsValue = filter.value().value<quint64>();
+        if (flagsValue & QContactStatusFlags::IsDeleted) {
+            return true;
+        }
+    }
+    return false;
+}
+bool includesDeleted(const QContactFilter &filter)
+{
+    switch (filter.type()) {
+    case QContactFilter::IdFilter:
+    case QContactFilter::DefaultFilter:
+    case QContactFilter::ContactDetailRangeFilter:
+    case QContactFilter::ChangeLogFilter:
+    case QContactFilter::RelationshipFilter:
+    case QContactFilter::CollectionFilter:
+        return false;
+
+    case QContactFilter::IntersectionFilter:
+        return includesDeleted(static_cast<const QContactIntersectionFilter &>(filter));
+    case QContactFilter::UnionFilter:
+        return includesDeleted(static_cast<const QContactUnionFilter &>(filter));
+    case QContactFilter::ContactDetailFilter:
+        return includesDeleted(static_cast<const QContactDetailFilter &>(filter));
+
+    default:
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot includesDeleted with unknown filter type %1").arg(filter.type()));
+        return false;
+    }
+}
+
 
 bool includesDeactivated(const QContactFilter &filter);
 
@@ -1979,6 +2169,11 @@ QString expandWhere(const QString &where, const QContactFilter &filter, const bo
         if (!includesDeactivated(filter)) {
             constraints.append("Contacts.isDeactivated = 0 ");
         }
+
+        // exclude deleted unless they're explicitly included
+        if (!includesDeleted(filter)) {
+            constraints.append("Contacts.changeFlags < 4 ");
+        }
     }
 
     // some (union) filters can add spurious braces around empty expressions
@@ -2010,12 +2205,71 @@ QString expandWhere(const QString &where, const QContactFilter &filter, const bo
 
 }
 
+QContactManager::Error ContactReader::fetchContacts(const QContactCollectionId &collectionId,
+                                                    QList<QContact> *addedContacts,
+                                                    QList<QContact> *modifiedContacts,
+                                                    QList<QContact> *deletedContacts,
+                                                    QList<QContact> *unmodifiedContacts)
+{
+    QContactCollectionFilter collectionFilter;
+    collectionFilter.setCollectionId(collectionId);
+
+    const QContactFilter addedContactsFilter = collectionFilter & QContactStatusFlags::matchFlag(QContactStatusFlags::IsAdded, QContactFilter::MatchContains);
+    const QContactFilter modifiedContactsFilter = collectionFilter & QContactStatusFlags::matchFlag(QContactStatusFlags::IsModified, QContactFilter::MatchContains);
+    const QContactFilter deletedContactsFilter = collectionFilter & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeleted, QContactFilter::MatchContains);
+
+    // optimisation: if the caller doesn't care about unmodified contacts,
+    // we can save some memory by only fetching added/modified/deleted contacts.
+    const QContactFilter filter = unmodifiedContacts
+                                ? (collectionFilter
+                                  |deletedContactsFilter)
+                                : (addedContactsFilter
+                                  |modifiedContactsFilter
+                                  |deletedContactsFilter);
+
+    const bool keepChangeFlags = true;
+
+    QList<QContact> allContacts;
+    const QContactManager::Error error = readContacts(
+            QStringLiteral("FetchContacts"),
+            &allContacts,
+            filter,
+            QList<QContactSortOrder>(),
+            QContactFetchHint(),
+            keepChangeFlags);
+
+    for (QList<QContact>::const_iterator it = allContacts.constBegin(); it != allContacts.constEnd(); it++) {
+        const QContactStatusFlags flags = it->detail<QContactStatusFlags>();
+        if (flags.testFlag(QContactStatusFlags::IsDeleted)) {
+            if (deletedContacts) {
+                deletedContacts->append(*it);
+            }
+        } else if (flags.testFlag(QContactStatusFlags::IsAdded)) {
+            if (addedContacts) {
+                addedContacts->append(*it);
+            }
+        } else if (flags.testFlag(QContactStatusFlags::IsModified)) {
+            if (modifiedContacts) {
+                modifiedContacts->append(*it);
+            }
+        } else {
+            Q_ASSERT(unmodifiedContacts);
+            if (unmodifiedContacts) {
+                unmodifiedContacts->append(*it);
+            }
+        }
+    }
+
+    return error;
+}
+
 QContactManager::Error ContactReader::readContacts(
         const QString &table,
         QList<QContact> *contacts,
         const QContactFilter &filter,
         const QList<QContactSortOrder> &order,
-        const QContactFetchHint &fetchHint)
+        const QContactFetchHint &fetchHint,
+        bool keepChangeFlags)
 {
     QMutexLocker locker(m_database.accessMutex());
 
@@ -2056,7 +2310,10 @@ QContactManager::Error ContactReader::readContacts(
     if (!m_database.createTemporaryContactIdsTable(table, join, where, orderBy, bindings, maximumCount)) {
         error = QContactManager::UnspecifiedError;
     } else {
-        error = queryContacts(table, contacts, fetchHint);
+        error = queryContacts(table, contacts, fetchHint,
+                              false /* relax constraints */,
+                              false /* ignore deleted - however they will be omitted unless filter specifically requires */,
+                              keepChangeFlags);
     }
 
     return error;
@@ -2103,7 +2360,7 @@ QContactManager::Error ContactReader::readContacts(
     if (!m_database.createTemporaryContactIdsTable(table, boundIds, maximumCount)) {
         error = QContactManager::UnspecifiedError;
     } else {
-        error = queryContacts(table, contacts, fetchHint, relaxConstraints);
+        error = queryContacts(table, contacts, fetchHint, relaxConstraints, true /* ignore deleted */);
     }
 
     // the ordering of the queried contacts is identical to
@@ -2125,38 +2382,34 @@ QContactManager::Error ContactReader::readContacts(
 }
 
 QContactManager::Error ContactReader::queryContacts(
-        const QString &tableName, QList<QContact> *contacts, const QContactFetchHint &fetchHint, bool relaxConstraints)
+        const QString &tableName,
+        QList<QContact> *contacts,
+        const QContactFetchHint &fetchHint,
+        bool relaxConstraints,
+        bool ignoreDeleted,
+        bool keepChangeFlags)
 {
     QContactManager::Error err = QContactManager::NoError;
 
-    const QString idsQueryStatement(QString::fromLatin1(
+    const QString dataQueryStatement(QString::fromLatin1(
         "SELECT " // order and content can change due to schema upgrades, so list manually.
             "Contacts.contactId, "
             "Contacts.collectionId, "
-            "Contacts.displayLabel, "
-            "Contacts.displayLabelGroup, "
-            "Contacts.firstName, "
-            "Contacts.lowerFirstName, "
-            "Contacts.lastName, "
-            "Contacts.lowerLastName, "
-            "Contacts.middleName, "
-            "Contacts.prefix, "
-            "Contacts.suffix, "
-            "Contacts.customLabel, "
-            "Contacts.syncTarget, "
             "Contacts.created, "
             "Contacts.modified, "
-            "Contacts.gender, "
-            "Contacts.isFavorite, "
+            "Contacts.deleted, "
             "Contacts.hasPhoneNumber, "
             "Contacts.hasEmailAddress, "
             "Contacts.hasOnlineAccount, "
             "Contacts.isOnline, "
             "Contacts.isDeactivated, "
-            "Contacts.type "
+            "Contacts.changeFlags "
         "FROM temp.%1 "
         "CROSS JOIN Contacts ON temp.%1.contactId = Contacts.contactId " // Cross join ensures we scan the temp table first
-        "ORDER BY temp.%1.rowId ASC").arg(tableName));
+        "%2 "
+        "ORDER BY temp.%1.rowId ASC").arg(tableName)
+                                     .arg(ignoreDeleted ? QStringLiteral("WHERE Contacts.changeFlags < 4") // ChangeFlags::IsDeleted
+                                                        : QString()));
 
     const QString relationshipQueryStatement(QString::fromLatin1(
         "SELECT "
@@ -2166,25 +2419,30 @@ QContactManager::Error ContactReader::queryContacts(
             "R2.type AS firstType,"
             "R2.secondId AS secondId "
         "FROM temp.%1 "
-        "LEFT JOIN Relationships AS R1 ON R1.secondId = temp.%1.contactId " // Must join in this order to get correct query plan
-        "LEFT JOIN Relationships AS R2 ON R2.firstId = temp.%1.contactId "
+         // Must join in this order to get correct query plan.
+         // We also filter based on ChangeFlags::IsDeleted here.
+         // TODO: if this performs poorly, instead do a separate SELECT query to get deleted contacts,
+         // and manually filter out the results in-memory when adding the relationships to the contact,
+         // in the queryContacts(..., relationshipQuery, ...) method.
+        "LEFT JOIN Relationships AS R1 ON R1.secondId = temp.%1.contactId AND R1.firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4) "
+        "LEFT JOIN Relationships AS R2 ON R2.firstId = temp.%1.contactId AND R2.secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4) "
         "ORDER BY contactId ASC").arg(tableName));
 
     QSqlQuery contactQuery(m_database);
     QSqlQuery relationshipQuery(m_database);
 
     // Prepare the query for the contact properties
-    if (!contactQuery.prepare(idsQueryStatement)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for contact details:\n%1\nQuery:\n%2")
+    if (!contactQuery.prepare(dataQueryStatement)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for contact data:\n%1\nQuery:\n%2")
                 .arg(contactQuery.lastError().text())
-                .arg(idsQueryStatement));
+                .arg(dataQueryStatement));
         err = QContactManager::UnspecifiedError;
     } else {
         contactQuery.setForwardOnly(true);
         if (!ContactsDatabase::execute(contactQuery)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to execute query for contact details:\n%1\nQuery:\n%2")
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to execute query for contact data:\n%1\nQuery:\n%2")
                     .arg(contactQuery.lastError().text())
-                    .arg(idsQueryStatement));
+                    .arg(dataQueryStatement));
             err = QContactManager::UnspecifiedError;
         } else {
             QContactFetchHint::OptimizationHints optimizationHints(fetchHint.optimizationHints());
@@ -2212,7 +2470,7 @@ QContactManager::Error ContactReader::queryContacts(
             }
 
             if (err == QContactManager::NoError) {
-                err = queryContacts(tableName, contacts, fetchHint, relaxConstraints, contactQuery, relationshipQuery);
+                err = queryContacts(tableName, contacts, fetchHint, relaxConstraints, keepChangeFlags, contactQuery, relationshipQuery);
             }
 
             contactQuery.finish();
@@ -2226,10 +2484,16 @@ QContactManager::Error ContactReader::queryContacts(
 }
 
 QContactManager::Error ContactReader::queryContacts(
-        const QString &tableName, QList<QContact> *contacts, const QContactFetchHint &fetchHint, bool relaxConstraints, QSqlQuery &contactQuery, QSqlQuery &relationshipQuery)
+        const QString &tableName,
+        QList<QContact> *contacts,
+        const QContactFetchHint &fetchHint,
+        bool relaxConstraints,
+        bool keepChangeFlags,
+        QSqlQuery &contactQuery,
+        QSqlQuery &relationshipQuery)
 {
     // Formulate the query to fetch the contact details
-    const QString detailQueryTemplate(QString::fromLatin1(
+    const QString detailQueryTemplate(QStringLiteral(
         "SELECT "
             "Details.detailId,"
             "Details.contactId,"
@@ -2239,8 +2503,9 @@ QContactManager::Error ContactReader::queryContacts(
             "Details.contexts,"
             "Details.accessConstraints,"
             "Details.provenance,"
-            "COALESCE(Details.modifiable, 0),"
+            "Details.modifiable,"
             "COALESCE(Details.nonexportable, 0),"
+            "Details.changeFlags, "
             "%1 "
         "FROM temp.%2 "
         "CROSS JOIN Details ON Details.contactId = temp.%2.contactId " // Cross join ensures we scan the temp table first
@@ -2262,7 +2527,7 @@ QContactManager::Error ContactReader::queryContacts(
     QHash<QString, QPair<ReadDetail, int> > readProperties;
 
     // Skip the Details table fields, and the indexing fields of the first join table
-    int offset = 10 + 2;
+    int offset = 11 + 2;
 
     const ContactWriter::DetailList &definitionMask = fetchHint.detailTypesHint();
 
@@ -2336,53 +2601,10 @@ QContactManager::Error ContactReader::queryContacts(
         contact.setId(ContactId::apiId(dbId, m_managerUri));
         contact.setCollectionId(ContactCollectionId::apiId(collectionId, m_managerUri));
 
-        QString persistedDL = contactQuery.value(col++).toString();
-        QString displayLabelGroup = contactQuery.value(col++).toString();
-        QContactDisplayLabel displayLabel = contact.detail<QContactDisplayLabel>();
-        setDetailImmutableIfAggregate(aggregateContact, &displayLabel);
-        contact.saveDetail(&displayLabel);
-        ContactsEngine::setContactDisplayLabel(&contact, persistedDL, displayLabelGroup);
-
-        QContactName name;
-        setValue(&name, QContactName::FieldFirstName  , contactQuery.value(col++));
-        col++; // ignore lowerFirstName
-        setValue(&name, QContactName::FieldLastName   , contactQuery.value(col++));
-        col++; // ignore lowerLastName
-        setValue(&name, QContactName::FieldMiddleName , contactQuery.value(col++));
-        setValue(&name, QContactName::FieldPrefix     , contactQuery.value(col++));
-        setValue(&name, QContactName::FieldSuffix     , contactQuery.value(col++));
-        setValue(&name, QContactName__FieldCustomLabel, contactQuery.value(col++));
-        if (!name.isEmpty()) {
-            setDetailImmutableIfAggregate(aggregateContact, &name);
-            contact.saveDetail(&name);
-        }
-
-        const QString syncTarget(contactQuery.value(col++).toString());
-
-        QContactSyncTarget starget;
-        setValue(&starget, QContactSyncTarget::FieldSyncTarget, syncTarget);
-        if (!starget.isEmpty()) {
-            setDetailImmutableIfAggregate(aggregateContact, &starget);
-            contact.saveDetail(&starget);
-        }
-
         QContactTimestamp timestamp;
         setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , ContactsDatabase::fromDateTimeString(contactQuery.value(col++).toString()));
         setValue(&timestamp, QContactTimestamp::FieldModificationTimestamp, ContactsDatabase::fromDateTimeString(contactQuery.value(col++).toString()));
-
-        QContactGender gender;
-        // Gender is an enum in qtpim
-        QString genderText = contactQuery.value(col++).toString();
-        gender.setGender(static_cast<QContactGender::GenderType>(genderText.toInt()));
-        setDetailImmutableIfAggregate(aggregateContact, &gender);
-        contact.saveDetail(&gender);
-
-        QContactFavorite favorite;
-        setValue(&favorite, QContactFavorite::FieldFavorite, contactQuery.value(col++).toBool());
-        if (!favorite.isEmpty()) {
-            setDetailImmutableIfAggregate(aggregateContact, &favorite);
-            contact.saveDetail(&favorite);
-        }
+        col++; // ignore Deleted timestamp.
 
         QContactStatusFlags flags;
         flags.setFlag(QContactStatusFlags::HasPhoneNumber, contactQuery.value(col++).toBool());
@@ -2390,6 +2612,10 @@ QContactManager::Error ContactReader::queryContacts(
         flags.setFlag(QContactStatusFlags::HasOnlineAccount, contactQuery.value(col++).toBool());
         flags.setFlag(QContactStatusFlags::IsOnline, contactQuery.value(col++).toBool());
         flags.setFlag(QContactStatusFlags::IsDeactivated, contactQuery.value(col++).toBool());
+        const int changeFlags = contactQuery.value(col++).toInt();
+        flags.setFlag(QContactStatusFlags::IsAdded, changeFlags & ContactsDatabase::IsAdded);
+        flags.setFlag(QContactStatusFlags::IsModified, changeFlags & ContactsDatabase::IsModified);
+        flags.setFlag(QContactStatusFlags::IsDeleted, changeFlags >= ContactsDatabase::IsDeleted);
 
         if (flags.testFlag(QContactStatusFlags::IsDeactivated)) {
             QContactDeactivated deactivated;
@@ -2475,6 +2701,7 @@ QContactManager::Error ContactReader::queryContacts(
         // Add the details of this contact from the detail tables
         if (includeDetails) {
             if (detailQuery.isValid()) {
+                QSet<quint32> seenDetailIds;
                 do {
                     const quint32 contactId = detailQuery.value(1).toUInt();
                     if (contactId != dbId) {
@@ -2482,6 +2709,13 @@ QContactManager::Error ContactReader::queryContacts(
                     }
 
                     const quint32 detailId = detailQuery.value(0).toUInt();
+                    if (seenDetailIds.contains(detailId)) {
+                        // the client must have requested the same contact twice in a row, by id.
+                        // we have already processed all of this contact's details, so break.
+                        break;
+                    }
+                    seenDetailIds.insert(detailId);
+
                     const QString detailName = detailQuery.value(2).toString();
 
                     // Are we reporting this detail type?
@@ -2494,10 +2728,10 @@ QContactManager::Error ContactReader::queryContacts(
                             continue;
                         }
 
-                        // Extract the values from the result row
+                        // Extract the values from the result row (readDetail()).
                         properties.first(&contact, detailQuery, contactId, detailId, syncable,
                                          ContactCollectionId::apiId(collectionId, m_managerUri),
-                                         relaxConstraints, properties.second);
+                                         relaxConstraints, keepChangeFlags, properties.second);
                     }
                 } while (detailQuery.next());
             }
@@ -2598,6 +2832,7 @@ QContactManager::Error ContactReader::readDeletedContactIds(
 
     QStringList restrictions;
     QVariantList bindings;
+    restrictions.append(QString::fromLatin1("changeFlags >= 4"));
     if (!since.isNull()) {
         restrictions.append(QString::fromLatin1("deleted >= ?"));
         bindings.append(ContactsDatabase::dateTimeString(since.toUTC()));
@@ -2611,7 +2846,7 @@ QContactManager::Error ContactReader::readDeletedContactIds(
         bindings.append(ContactCollectionId::databaseId(collectionIds.first()));
     }
 
-    QString queryStatement(QString::fromLatin1("SELECT contactId FROM DeletedContacts"));
+    QString queryStatement(QString::fromLatin1("SELECT contactId FROM Contacts"));
     if (!restrictions.isEmpty()) {
         queryStatement.append(QString::fromLatin1(" WHERE "));
         queryStatement.append(restrictions.takeFirst());
@@ -2796,9 +3031,15 @@ QContactManager::Error ContactReader::readRelationships(
         bindings.append(secondId);
     }
 
-    const QString where = !whereStatements.isEmpty()
-            ? QLatin1String("\n WHERE ") + whereStatements.join(QLatin1String(" AND "))
-            : QString();
+    const QString whereParticipantNotDeleted = QStringLiteral(
+            "\n WHERE firstId NOT IN ("
+                "\n SELECT contactId FROM Contacts WHERE changeFlags >= 4)"   // ChangeFlags::IsDeleted
+            "\n AND secondId NOT IN ("
+                "\n SELECT contactId FROM Contacts WHERE changeFlags >= 4)"); // ChangeFlags::IsDeleted
+
+    const QString where = whereParticipantNotDeleted + (!whereStatements.isEmpty()
+                        ? (QStringLiteral(" AND ") + whereStatements.join(QLatin1String(" AND ")))
+                        : QString());
 
     QString statement = QLatin1String(
             "\n SELECT type, firstId, secondId"
@@ -2954,20 +3195,47 @@ QContactManager::Error ContactReader::readCollections(
         QList<QContactCollection> *collections)
 {
     Q_UNUSED(table);
+    QList<QContactCollection> cols;
+    QContactManager::Error err = fetchCollections(0, QString(), &cols, &cols, nullptr, &cols);
+    if (err == QContactManager::NoError) {
+        *collections = cols;
+        collectionsAvailable(cols);
+    }
+    return err;
+}
 
-    const QString collectionsQueryStatement(QString::fromLatin1(
-        "SELECT " // order and content can change due to schema upgrades, so list manually.
-            "collectionId, "
-            "aggregable, "
-            "name, "
-            "description, "
-            "color, "
-            "secondaryColor, "
-            "image, "
-            "accountId, "
-            "remotePath "
-        "FROM Collections "
-        "ORDER BY collectionId ASC"));
+QContactManager::Error ContactReader::fetchCollections(
+        int accountId,
+        const QString &applicationName,
+        QList<QContactCollection> *addedCollections,
+        QList<QContactCollection> *modifiedCollections,
+        QList<QContactCollection> *deletedCollections,
+        QList<QContactCollection> *unmodifiedCollections)
+{
+    const QString where = accountId > 0
+            ? (!applicationName.isEmpty()
+                ? QStringLiteral("WHERE accountId = :accountId AND applicationName = :applicationName")
+                : QStringLiteral("WHERE accountId = :accountId"))
+            : (!applicationName.isEmpty()
+                ? QStringLiteral("WHERE applicationName = :applicationName")
+                : QString());
+
+    const QString collectionsQueryStatement = QStringLiteral(
+                  "SELECT " // order and content can change due to schema upgrades, so list manually.
+                    "collectionId, "
+                    "aggregable, "
+                    "name, "
+                    "description, "
+                    "color, "
+                    "secondaryColor, "
+                    "image, "
+                    "applicationName, "
+                    "accountId, "
+                    "remotePath, "
+                    "changeFlags "
+                  "FROM Collections "
+                  "%1 "
+                  "ORDER BY collectionId ASC").arg(where);
 
     QSqlQuery collectionsQuery(m_database);
     if (!collectionsQuery.prepare(collectionsQueryStatement)) {
@@ -2975,6 +3243,13 @@ QContactManager::Error ContactReader::readCollections(
                 .arg(collectionsQuery.lastError().text())
                 .arg(collectionsQueryStatement));
         return QContactManager::UnspecifiedError;
+    }
+
+    if (accountId > 0) {
+        collectionsQuery.bindValue(":accountId", accountId);
+    }
+    if (!applicationName.isEmpty()) {
+        collectionsQuery.bindValue(":applicationName", applicationName);
     }
 
     collectionsQuery.setForwardOnly(true);
@@ -2987,7 +3262,7 @@ QContactManager::Error ContactReader::readCollections(
 
     while (collectionsQuery.next()) {
         int col = 0;
-        quint32 dbId = collectionsQuery.value(col++).toUInt();
+        const quint32 dbId = collectionsQuery.value(col++).toUInt();
 
         QContactCollection collection;
         collection.setId(ContactCollectionId::apiId(dbId, m_managerUri));
@@ -2998,14 +3273,102 @@ QContactManager::Error ContactReader::readCollections(
         collection.setMetaData(QContactCollection::KeyColor, collectionsQuery.value(col++).toString());
         collection.setMetaData(QContactCollection::KeySecondaryColor, collectionsQuery.value(col++).toString());
         collection.setMetaData(QContactCollection::KeyImage, collectionsQuery.value(col++).toString());
+        collection.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, collectionsQuery.value(col++).toString());
         collection.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, collectionsQuery.value(col++).toInt());
         collection.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, collectionsQuery.value(col++).toString());
+        const int changeFlags = collectionsQuery.value(col++).toInt();
 
-        collections->append(collection);
+        const QString metadataStatement(QString::fromLatin1(
+            "SELECT " // order and content can change due to schema upgrades, so list manually.
+                "collectionId, "
+                "key, "
+                "value "
+            "FROM CollectionsMetadata "
+            "WHERE collectionId = :collectionId "
+            "ORDER BY collectionId ASC"));
+
+        QSqlQuery metadataQuery(m_database);
+        if (!metadataQuery.prepare(metadataStatement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for collection metadata details:\n%1\nQuery:\n%2")
+                    .arg(metadataQuery.lastError().text())
+                    .arg(metadataStatement));
+            return QContactManager::UnspecifiedError;
+        }
+
+        metadataQuery.bindValue(":collectionId", dbId);
+        metadataQuery.setForwardOnly(true);
+        if (!ContactsDatabase::execute(metadataQuery)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to execute query for collection metadata details:\n%1\nQuery:\n%2")
+                    .arg(metadataQuery.lastError().text())
+                    .arg(metadataStatement));
+            return QContactManager::UnspecifiedError;
+        }
+
+        while (metadataQuery.next()) {
+            int col = 0;
+            const quint32 dbId = metadataQuery.value(col++).toUInt();
+            Q_ASSERT(ContactCollectionId::databaseId(collection.id()) == dbId);
+            const QString key = metadataQuery.value(col++).toString();
+            const QVariant value = metadataQuery.value(col++);
+            collection.setExtendedMetaData(key, value);
+        }
+
+        if (changeFlags & ContactsDatabase::IsDeleted) {
+            if (deletedCollections) {
+                deletedCollections->append(collection);
+            }
+        } else if (changeFlags & ContactsDatabase::IsAdded) {
+            if (addedCollections) {
+                addedCollections->append(collection);
+            }
+        } else if (changeFlags & ContactsDatabase::IsModified) {
+            if (modifiedCollections) {
+                modifiedCollections->append(collection);
+            }
+        } else { // unmodified.
+            if (unmodifiedCollections) {
+                unmodifiedCollections->append(collection);
+            }
+        }
     }
 
-    collectionsAvailable(*collections);
     return QContactManager::NoError;
+}
+
+
+QContactManager::Error ContactReader::recordUnhandledChangeFlags(
+        const QContactCollectionId &collectionId,
+        bool *record)
+{
+    const QString unhandledChangeFlagsStatement = QStringLiteral(
+            "SELECT recordUnhandledChangeFlags "
+            "FROM Collections "
+            "WHERE collectionId = :collectionId");
+
+
+    QSqlQuery query(m_database);
+    if (!query.prepare(unhandledChangeFlagsStatement)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for record unhandled change flags:\n%1\nQuery:\n%2")
+                .arg(query.lastError().text())
+                .arg(unhandledChangeFlagsStatement));
+        return QContactManager::UnspecifiedError;
+    }
+
+    query.bindValue(":collectionId", ContactCollectionId::databaseId(collectionId));
+    query.setForwardOnly(true);
+    if (!ContactsDatabase::execute(query)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to execute query for record unhandled change flags:\n%1\nQuery:\n%2")
+                .arg(query.lastError().text())
+                .arg(unhandledChangeFlagsStatement));
+        return QContactManager::UnspecifiedError;
+    }
+
+    if (query.next()) {
+        *record = query.value(0).toBool();
+        return QContactManager::NoError;
+    }
+
+    return QContactManager::DoesNotExistError;
 }
 
 bool ContactReader::fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values)

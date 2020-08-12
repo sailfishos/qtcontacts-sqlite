@@ -73,12 +73,34 @@ public:
     void setMergePresenceChanges(bool b) { m_mergePresenceChanges = b; }
     void setAutoTest(bool b) { m_autoTest = b; }
 
-    virtual bool fetchSyncContacts(const QContactCollectionId &collectionId, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
-                                   QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
-                                   QDateTime *maxTimestamp, QContactManager::Error *error) = 0;
 
-    virtual bool storeSyncContacts(const QContactCollectionId &collectionId, ConflictResolutionPolicy conflictPolicy,
-                                   QList<QPair<QContact, QContact> > *remoteChanges, QContactManager::Error *error) = 0;
+    virtual bool clearChangeFlags(const QList<QContactId> &contactIds, QContactManager::Error *error) = 0;
+    virtual bool clearChangeFlags(const QContactCollectionId &collectionId, QContactManager::Error *error) = 0;
+
+    // doesn't cause a transaction
+    virtual bool fetchCollectionChanges(int accountId,
+                                        const QString &applicationName,
+                                        QList<QContactCollection> *addedCollections,
+                                        QList<QContactCollection> *modifiedCollections,
+                                        QList<QContactCollection> *deletedCollections,
+                                        QList<QContactCollection> *unmodifiedCollections,
+                                        QContactManager::Error *error) = 0;
+
+    // causes a transaction: sets Collection.recordUnhandledChangeFlags, clears Contact+Detail.unhandledChangeFlags
+    virtual bool fetchContactChanges(const QContactCollectionId &collectionId,
+                                     QList<QContact> *addedContacts,
+                                     QList<QContact> *modifiedContacts,
+                                     QList<QContact> *deletedContacts,
+                                     QList<QContact> *unmodifiedContacts,
+                                     QContactManager::Error *error) = 0;
+
+    // causes a transaction
+    virtual bool storeChanges(QHash<QContactCollection*, QList<QContact> * /* added contacts */> *addedCollections,
+                              QHash<QContactCollection*, QList<QContact> * /* added/modified/deleted contacts */> *modifiedCollections,
+                              const QList<QContactCollectionId> &deletedCollections,
+                              ConflictResolutionPolicy conflictResolutionPolicy,
+                              bool clearChangeFlags,
+                              QContactManager::Error *error) = 0;
 
     virtual bool fetchOOB(const QString &scope, const QString &key, QVariant *value) = 0;
     virtual bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values) = 0;
@@ -102,7 +124,7 @@ public:
 
 Q_SIGNALS:
     void contactsPresenceChanged(const QList<QContactId> &contactsIds);
-    void syncContactsChanged(const QList<QContactCollectionId> &collectionIds);
+    void collectionContactsChanged(const QList<QContactCollectionId> &collectionIds);
     void displayLabelGroupsChanged(const QStringList &groups);
 
 protected:

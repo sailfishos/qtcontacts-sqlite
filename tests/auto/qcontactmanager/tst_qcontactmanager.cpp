@@ -1304,17 +1304,17 @@ void tst_QContactManager::batch()
     QVERIFY(contacts.at(1).id() != QContactId());
     QVERIFY(contacts.at(2).id() != QContactId());
 
-    QCOMPARE(contacts.at(0).detail<QContactName>(), na);
-    QCOMPARE(contacts.at(1).detail<QContactName>(), nb);
-    QCOMPARE(contacts.at(2).detail<QContactName>(), nc);
+    QCOMPARE(contacts.at(0).detail<QContactName>().value(nameField), na.value(nameField));
+    QCOMPARE(contacts.at(1).detail<QContactName>().value(nameField), nb.value(nameField));
+    QCOMPARE(contacts.at(2).detail<QContactName>().value(nameField), nc.value(nameField));
 
     /* Retrieve again */
     a = cm->contact(retrievalId(contacts.at(0)));
     b = cm->contact(retrievalId(contacts.at(1)));
     c = cm->contact(retrievalId(contacts.at(2)));
-    QCOMPARE(contacts.at(0).detail<QContactName>(), na);
-    QCOMPARE(contacts.at(1).detail<QContactName>(), nb);
-    QCOMPARE(contacts.at(2).detail<QContactName>(), nc);
+    QCOMPARE(contacts.at(0).detail<QContactName>().value(nameField), na.value(nameField));
+    QCOMPARE(contacts.at(1).detail<QContactName>().value(nameField), nb.value(nameField));
+    QCOMPARE(contacts.at(2).detail<QContactName>().value(nameField), nc.value(nameField));
 
     /* Save again, with a null error map */
     QVERIFY(cm->saveContacts(&contacts, NULL));
@@ -1338,9 +1338,9 @@ void tst_QContactManager::batch()
     a = cm->contact(retrievalId(contacts.at(0)));
     b = cm->contact(retrievalId(contacts.at(1)));
     c = cm->contact(retrievalId(contacts.at(2)));
-    QCOMPARE(contacts.at(0).detail<QContactName>(), na);
-    QCOMPARE(contacts.at(1).detail<QContactName>(), nb);
-    QCOMPARE(contacts.at(2).detail<QContactName>(), nc);
+    QCOMPARE(contacts.at(0).detail<QContactName>().value(nameField), na.value(nameField));
+    QCOMPARE(contacts.at(1).detail<QContactName>().value(nameField), nb.value(nameField));
+    QCOMPARE(contacts.at(2).detail<QContactName>().value(nameField), nc.value(nameField));
 
     QCOMPARE(a.details<QContactPhoneNumber>().count(), 1);
     QCOMPARE(b.details<QContactPhoneNumber>().count(), 1);
@@ -1359,18 +1359,18 @@ void tst_QContactManager::batch()
     QList<QContact> batchFetch = cm->contacts(batchIds, QContactFetchHint(), &map);
     QCOMPARE(cm->error(), QContactManager::NoError);
     QCOMPARE(batchFetch.count(), 3);
-    QCOMPARE(batchFetch.at(0).detail<QContactName>(), na);
-    QCOMPARE(batchFetch.at(1).detail<QContactName>(), nb);
-    QCOMPARE(batchFetch.at(2).detail<QContactName>(), nc);
+    QCOMPARE(batchFetch.at(0).detail<QContactName>().value(nameField), na.value(nameField));
+    QCOMPARE(batchFetch.at(1).detail<QContactName>().value(nameField), nb.value(nameField));
+    QCOMPARE(batchFetch.at(2).detail<QContactName>().value(nameField), nc.value(nameField));
 
     // With error map
     batchFetch = cm->contacts(batchIds, QContactFetchHint(), &errorMap);
     QCOMPARE(cm->error(), QContactManager::NoError);
     QCOMPARE(errorMap.count(), 0);
     QCOMPARE(batchFetch.count(), 3);
-    QCOMPARE(batchFetch.at(0).detail<QContactName>(), na);
-    QCOMPARE(batchFetch.at(1).detail<QContactName>(), nb);
-    QCOMPARE(batchFetch.at(2).detail<QContactName>(), nc);
+    QCOMPARE(batchFetch.at(0).detail<QContactName>().value(nameField), na.value(nameField));
+    QCOMPARE(batchFetch.at(1).detail<QContactName>().value(nameField), nb.value(nameField));
+    QCOMPARE(batchFetch.at(2).detail<QContactName>().value(nameField), nc.value(nameField));
 
     /* Now an empty id */
     batchIds.clear();
@@ -1379,9 +1379,9 @@ void tst_QContactManager::batch()
     QVERIFY(cm->error() != QContactManager::NoError);
     QCOMPARE(batchFetch.count(), 4);
     QCOMPARE(batchFetch.at(0).detail<QContactName>(), QContactName());
-    QCOMPARE(batchFetch.at(1).detail<QContactName>(), na);
-    QCOMPARE(batchFetch.at(2).detail<QContactName>(), nb);
-    QCOMPARE(batchFetch.at(3).detail<QContactName>(), nc);
+    QCOMPARE(batchFetch.at(1).detail<QContactName>().value(nameField), na.value(nameField));
+    QCOMPARE(batchFetch.at(2).detail<QContactName>().value(nameField), nb.value(nameField));
+    QCOMPARE(batchFetch.at(3).detail<QContactName>().value(nameField), nc.value(nameField));
 
     batchFetch = cm->contacts(batchIds, QContactFetchHint(), &errorMap);
     QVERIFY(cm->error() != QContactManager::NoError);
@@ -1389,22 +1389,24 @@ void tst_QContactManager::batch()
     if (errorMap.size())
         QCOMPARE(errorMap[0], QContactManager::DoesNotExistError);
     QCOMPARE(batchFetch.at(0).detail<QContactName>(), QContactName());
-    QCOMPARE(batchFetch.at(1).detail<QContactName>(), na);
-    QCOMPARE(batchFetch.at(2).detail<QContactName>(), nb);
-    QCOMPARE(batchFetch.at(3).detail<QContactName>(), nc);
+    QCOMPARE(batchFetch.at(1).detail<QContactName>().value(nameField), na.value(nameField));
+    QCOMPARE(batchFetch.at(2).detail<QContactName>().value(nameField), nb.value(nameField));
+    QCOMPARE(batchFetch.at(3).detail<QContactName>().value(nameField), nc.value(nameField));
 
     /* Now multiple of the same contact */
     batchIds.clear();
-    batchIds << ContactId::apiId(c) << ContactId::apiId(b) << ContactId::apiId(c) << ContactId::apiId(a) << ContactId::apiId(a);
+    batchIds << ContactId::apiId(c) << ContactId::apiId(b) << ContactId::apiId(c) << ContactId::apiId(a) << ContactId::apiId(a) << ContactId::apiId(b);
     batchFetch = cm->contacts(batchIds, QContactFetchHint(), &errorMap);
     QVERIFY(cm->error() == QContactManager::NoError);
-    QCOMPARE(batchFetch.count(), 5);
+    QCOMPARE(batchFetch.count(), 6);
     QCOMPARE(errorMap.count(), 0);
-    QCOMPARE(batchFetch.at(0).detail<QContactName>(), nc);
-    QCOMPARE(batchFetch.at(1).detail<QContactName>(), nb);
-    QCOMPARE(batchFetch.at(2).detail<QContactName>(), nc);
-    QCOMPARE(batchFetch.at(3).detail<QContactName>(), na);
-    QCOMPARE(batchFetch.at(4).detail<QContactName>(), na);
+
+    QCOMPARE(batchFetch.at(0).detail<QContactName>().value(nameField), nc.value(nameField));
+    QCOMPARE(batchFetch.at(1).detail<QContactName>().value(nameField), nb.value(nameField));
+    QCOMPARE(batchFetch.at(2).detail<QContactName>().value(nameField), nc.value(nameField));
+    QCOMPARE(batchFetch.at(3).detail<QContactName>().value(nameField), na.value(nameField));
+    QCOMPARE(batchFetch.at(4).detail<QContactName>().value(nameField), na.value(nameField));
+    QCOMPARE(batchFetch.at(5).detail<QContactName>().value(nameField), nb.value(nameField));
 
     /* Now delete them all */
     QList<QContactId> ids;
@@ -1939,7 +1941,6 @@ void tst_QContactManager::presenceAccumulation()
     QCOMPARE(a.detail<QContactPresence>().presenceState(), QContactPresence::PresenceBusy);
     QCOMPARE(a.detail<QContactPresence>().customMessage(), p.customMessage());
     QCOMPARE(a.detail<QContactPresence>().timestamp(), p.timestamp());
-
     QCOMPARE(a.detail<QContactGlobalPresence>().presenceState(), QContactPresence::PresenceBusy);
     QCOMPARE(a.detail<QContactGlobalPresence>().customMessage(), p.customMessage());
     QCOMPARE(a.detail<QContactGlobalPresence>().timestamp(), p.timestamp());
@@ -4755,6 +4756,7 @@ void tst_QContactManager::constituentOfSelf()
     // Create a contact which is aggregated by the self contact
     QContactCollection testAddressbook;
     testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_QContactManager::constituentOfSelf");
     testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
     testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
     QVERIFY(m->saveCollection(&testAddressbook));
