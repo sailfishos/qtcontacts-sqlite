@@ -214,6 +214,7 @@ private slots:
     void _q_displayLabelGroupsChanged();
 
 private:
+    bool regenerateAggregatesIfNeeded();
     QString databaseUuid();
     ContactsDatabase &database();
 
