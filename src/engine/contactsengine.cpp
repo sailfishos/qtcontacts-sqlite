@@ -60,6 +60,7 @@
 #include <QContactAbstractRequest>
 #include <QContactFetchRequest>
 #include <QContactCollectionFetchRequest>
+#include <QContactCollectionFilter>
 
 // ---- for schema modification ------
 #include <QtContacts/QContactDisplayLabel>
@@ -2162,9 +2163,62 @@ ContactsDatabase &ContactsEngine::database()
         m_database.reset(new ContactsDatabase(this));
         if (!m_database->open(dbId, m_nonprivileged, m_autoTest, true)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to open synchronous engine database connection"));
+        } else if (!m_nonprivileged && !regenerateAggregatesIfNeeded()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to regenerate aggregates after schema upgrade"));
         }
     }
     return *m_database;
+}
+
+bool ContactsEngine::regenerateAggregatesIfNeeded()
+{
+    QContactManager::Error err = QContactManager::NoError;
+    QContactCollectionFilter aggregatesFilter, localsFilter;
+    aggregatesFilter.setCollectionId(QContactCollectionId(m_managerUri, QByteArrayLiteral("col-1")));
+    localsFilter.setCollectionId(QContactCollectionId(m_managerUri, QByteArrayLiteral("col-2")));
+
+    const QList<QContactId> aggregateIds = contactIds(aggregatesFilter, QList<QContactSortOrder>(), &err);
+    if (err != QContactManager::NoError) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read aggregate contact ids during attempt to regenerate aggregates"));
+        return false;
+    }
+
+    if (!aggregateIds.isEmpty()) {
+        // if we already have aggregates, then aggregates must
+        // have been regenerated already.
+        return true;
+    }
+
+    const QList<QContactId> localIds = contactIds(localsFilter, QList<QContactSortOrder>(), &err);
+    if (err != QContactManager::NoError) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read local contact ids during attempt to regenerate aggregates"));
+        return false;
+    }
+
+    if (localIds.isEmpty()) {
+        // no local contacts in database to be aggregated.
+        return true;
+    }
+
+    // We need to regenerate aggregates for our local contacts, due to
+    // the database schema upgrade from version 20 to version 21.
+    QList<QContact> localContacts = contacts(
+            localsFilter,
+            QList<QContactSortOrder>(),
+            QContactFetchHint(),
+            &err);
+    if (err != QContactManager::NoError) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read local contacts during attempt to regenerate aggregates"));
+        return false;
+    }
+
+    // Simply save them all; this should regenerate aggregates as required.
+    if (!saveContacts(&localContacts, nullptr, &err)) {
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to save local contacts during attempt to regenerate aggregates"));
+        return false;
+    }
+
+    return true;
 }
 
 ContactReader *ContactsEngine::reader() const
