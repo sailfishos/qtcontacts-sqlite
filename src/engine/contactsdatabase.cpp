@@ -1673,8 +1673,12 @@ static const char *upgradeVersion20[] = {
         " WHERE Details.detail = 'Name'",
     // delete the old contacts table
     "DROP TABLE OldContacts",
-    // XXXXXXXXXXX TODO: re-generate the aggregates...
-    // ...
+    // we need to regenerate aggregates, but cannot do it via a query.
+    // instead, we do it manually from C++ after the schema upgrade is complete.
+    // we also need to drop and recreate OOB as it will have stale
+    // sync data in it.
+    "DROP TABLE OOB",
+    createOOBTable,
     // rebuild the indexes we dropped
     createDetailsRemoveIndex,
     createAddressesDetailsContactIdIndex,
