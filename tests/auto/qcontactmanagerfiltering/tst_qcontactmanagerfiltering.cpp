@@ -2514,6 +2514,17 @@ void tst_QContactManagerFiltering::allFiltering()
     QList<QContactId> contacts = contactsAddedToManagers.values(cm);
     QContactFilter f; // default = permissive
     QList<QContactId> ids = cm->contactIds(f);
+
+    // Remove the "self contact" (aggregate and local) if required
+    if (cm->managerUri().contains(QStringLiteral("org.nemomobile.contacts.sqlite"))) {
+        for (int i = ids.size() - 1; i >= 0; --i) {
+            if (ids[i].localId() == QByteArrayLiteral("sql-1")
+                    || ids[i].localId() == QByteArrayLiteral("sql-2")) {
+                ids.removeAt(i);
+            }
+        }
+    }
+
     QCOMPARE(ids.count(), contacts.size());
     QString output = convertIds(contacts, ids, 'a', 'k'); // don't include the convenience filtering contacts
     QString expected = convertIds(contacts, contacts, 'a', 'k'); // :)

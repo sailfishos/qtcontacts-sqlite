@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <matthew.vogt@jollamobile.com>
+ * Copyright (C) 2013 - 2014 Jolla Ltd.
+ * Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -177,27 +178,16 @@ QString normalize(const QString &input, int flags, int maxCharacters)
 
 namespace QtContactsSqliteExtensions {
 
-QContactId apiContactId(quint32 iid)
+QContactId apiContactId(quint32 iid, const QString &managerUri)
 {
-    QContactId contactId;
-    if (iid != 0) {
-        static const QString idStr(QString::fromLatin1("qtcontacts:org.nemomobile.contacts.sqlite::sql-%1"));
-        contactId = QContactId::fromString(idStr.arg(iid));
-        if (contactId.isNull()) {
-            qWarning() << "Unable to formulate valid ID from:" << iid;
-        }
-    }
-    return contactId;
+    return QContactId(managerUri, QByteArrayLiteral("sql-") + QByteArray::number(iid));
 }
 
 quint32 internalContactId(const QContactId &id)
 {
-    if (!id.isNull()) {
-        QStringList components = id.toString().split(QChar::fromLatin1(':'));
-        const QString &idComponent = components.isEmpty() ? QString() : components.last();
-        if (idComponent.startsWith(QString::fromLatin1("sql-"))) {
-            return idComponent.mid(4).toUInt();
-        }
+    const QByteArray localId = id.localId();
+    if (localId.startsWith(QByteArrayLiteral("sql-"))) {
+        return localId.mid(4).toUInt();
     }
     return 0;
 }
