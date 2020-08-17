@@ -2481,6 +2481,116 @@ void tst_Aggregation::alterRelationships()
     QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1);
     QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().number(), localAlice.detail<QContactPhoneNumber>().number());
     QCOMPARE(aggregateAlice.details<QContactEmailAddress>().size(), 0);
+
+    // finally, create two new local addresbook contacts,
+    // which we will later manually aggregate together.
+    QContact localEdmond;
+    QContactName en;
+    en.setMiddleName("Edmond");
+    en.setFirstName("test");
+    en.setLastName("alterRelationshipsLocal");
+    localEdmond.saveDetail(&en);
+    QContactPhoneNumber ep;
+    ep.setNumber("8765432");
+    ep.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
+    ep.setDetailUri("edmond-alterRelationships-phone");
+    localEdmond.saveDetail(&ep);
+    QContactHobby eh;
+    eh.setHobby("Surfing");
+    localEdmond.saveDetail(&eh);
+    QContactGuid eg;
+    eg.setGuid("alterRelationships-Edmond");
+    localEdmond.saveDetail(&eg);
+
+    QContact localFred;
+    QContactName fn;
+    fn.setMiddleName("Fred");
+    fn.setFirstName("trial");
+    fn.setLastName("alterRelationshipsLocal");
+    localFred.saveDetail(&fn);
+    QContactPhoneNumber fp;
+    fp.setNumber("9876543");
+    fp.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
+    fp.setDetailUri("fred-alterRelationships-phone");
+    localFred.saveDetail(&fp);
+    QContactHobby fh;
+    fh.setHobby("Bowling");
+    localFred.saveDetail(&fh);
+    QContactGuid fg;
+    fg.setGuid("alterRelationships-Fred");
+    localFred.saveDetail(&fg);
+
+    QVERIFY(m_cm->saveContact(&localEdmond));
+    QVERIFY(m_cm->saveContact(&localFred));
+
+    // fetch the contacts, ensure we have what we expect.
+    QContact aggregateEdmond, aggregateFred;
+    allContacts = m_cm->contacts(allCollections);
+    foreach (const QContact &curr, allContacts) {
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.middleName() == QLatin1String("Alice") && currName.lastName() == QLatin1String("alterRelationships")) {
+            if (curr.collectionId() == testAddressbook.id()) {
+                localAlice = curr;
+            } else {
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
+                aggregateAlice = curr;
+            }
+        } else if (currName.middleName() == QLatin1String("Bob") && currName.lastName() == QLatin1String("alterRelationships")) {
+            if (curr.collectionId() == trialAddressbook.id()) {
+                localBob = curr;
+            } else {
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
+                aggregateBob = curr;
+            }
+        } else if (currName.middleName() == QLatin1String("Edmond") && currName.lastName() == QLatin1String("alterRelationshipsLocal")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
+                localEdmond = curr;
+            } else {
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
+                aggregateEdmond = curr;
+            }
+        } else if (currName.middleName() == QLatin1String("Fred") && currName.lastName() == QLatin1String("alterRelationshipsLocal")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
+                localFred = curr;
+            } else {
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
+                aggregateFred = curr;
+            }
+        }
+    }
+
+    QCOMPARE(localEdmond.collectionId().localId(), localAddressbookId());
+    QCOMPARE(localFred.collectionId().localId(), localAddressbookId());
+    QCOMPARE(aggregateEdmond.collectionId().localId(), aggregateAddressbookId());
+    QCOMPARE(aggregateFred.collectionId().localId(), aggregateAddressbookId());
+
+    remSpyCount = remSpy.count();
+
+    // Aggregate localFred into aggregateEdmond
+    relationship = makeRelationship(QContactRelationship::Aggregates, aggregateEdmond.id(), localFred.id());
+    QVERIFY(m_cm->saveRelationship(&relationship));
+
+    // Remove the relationship between localFred and aggregateFred
+    relationship = makeRelationship(QContactRelationship::Aggregates, aggregateFred.id(), localFred.id());
+    QVERIFY(m_cm->removeRelationship(relationship));
+
+    // The childless aggregate should have been removed
+    QTRY_VERIFY(remSpy.count() > remSpyCount);
+    QVERIFY(m_remAccumulatedIds.contains(ContactId::apiId(aggregateFred)));
+    remSpyCount = remSpy.count();
+
+    // Reload the aggregateEdmond, and ensure that it has the required details.
+    aggregateEdmond = m_cm->contact(aggregateEdmond.id());
+    QCOMPARE(aggregateEdmond.details<QContactPhoneNumber>().size(), 2);
+    QCOMPARE(aggregateEdmond.details<QContactHobby>().size(), 2);
+    QVERIFY((aggregateEdmond.details<QContactPhoneNumber>().at(0).number() == ep.number()
+                || aggregateEdmond.details<QContactPhoneNumber>().at(1).number() == ep.number())
+            && (aggregateEdmond.details<QContactPhoneNumber>().at(0).number() == fp.number()
+                || aggregateEdmond.details<QContactPhoneNumber>().at(1).number() == fp.number()));
+    QVERIFY((aggregateEdmond.details<QContactHobby>().at(0).hobby() == eh.hobby()
+                || aggregateEdmond.details<QContactHobby>().at(1).hobby() == eh.hobby())
+            && (aggregateEdmond.details<QContactHobby>().at(0).hobby() == fh.hobby()
+                || aggregateEdmond.details<QContactHobby>().at(1).hobby() == fh.hobby()));
 }
 
 void tst_Aggregation::aggregationHeuristic_data()
