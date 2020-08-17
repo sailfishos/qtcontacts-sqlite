@@ -106,7 +106,7 @@ namespace QtContactsSqliteExtensions {
 
 QTCONTACTS_USE_NAMESPACE
 
-QContactId apiContactId(quint32);
+QContactId apiContactId(quint32, const QString &managerUri);
 quint32 internalContactId(const QContactId &);
 
 enum NormalizePhoneNumberFlag {

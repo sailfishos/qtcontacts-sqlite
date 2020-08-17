@@ -4203,22 +4203,27 @@ QContactManager::Error ContactWriter::regenerateAggregates(const QList<quint32> 
             }
         }
 
-        // Step two: search for the "local" contact and promote its details first
+        // Step two: search for the "local" contacts and promote their details first
+        bool foundFirstLocal = false;
         for (int i = 1; i < readList.size(); ++i) { // start from 1 to skip aggregate
             QContact curr = readList.at(i);
             if (curr.details<QContactDeactivated>().count())
                 continue;
             if (ContactCollectionId::databaseId(curr.collectionId()) != ContactsDatabase::LocalAddressbookCollectionId)
                 continue;
-            QList<QContactDetail> currDetails = curr.details();
-            for (int j = 0; j < currDetails.size(); ++j) {
-                QContactDetail currDet = currDetails.at(j);
-                if (promoteDetailType(currDet.type(), definitionMask, false)) {
-                    // promote this detail to the aggregate.
-                    aggregateContact.saveDetail(&currDet, QContact::IgnoreAccessConstraints);
+            if (!foundFirstLocal) {
+                foundFirstLocal = true;
+                const QList<QContactDetail> currDetails = curr.details();
+                for (int j = 0; j < currDetails.size(); ++j) {
+                    QContactDetail currDet = currDetails.at(j);
+                    if (promoteDetailType(currDet.type(), definitionMask, false)) {
+                        // unconditionally promote this detail to the aggregate.
+                        aggregateContact.saveDetail(&currDet, QContact::IgnoreAccessConstraints);
+                    }
                 }
+            } else {
+                promoteDetailsToAggregate(curr, &aggregateContact, definitionMask, false);
             }
-            break; // we've successfully promoted the local contact's details to the aggregate.
         }
 
         // Step Three: promote data from details of other related contacts
