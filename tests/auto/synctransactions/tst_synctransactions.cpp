@@ -35,6 +35,7 @@
 
 #include "../../util.h"
 #include "testsyncadaptor.h"
+#include "qtcontacts-extensions.h"
 
 #include "qcontactcollectionchangesfetchrequest.h"
 #include "qcontactcollectionchangesfetchrequest_impl.h"
@@ -44,20 +45,6 @@
 #include "qcontactchangessaverequest_impl.h"
 #include "qcontactclearchangeflagsrequest.h"
 #include "qcontactclearchangeflagsrequest_impl.h"
-
-namespace {
-
-QByteArray aggregateAddressbookId()
-{
-    return QByteArrayLiteral("col-") + QByteArray::number(1); // AggregateAddressbookCollectionId
-}
-
-QByteArray localAddressbookId()
-{
-    return QByteArrayLiteral("col-") + QByteArray::number(2); // LocalAddressbookCollectionId
-}
-
-}
 
 class tst_synctransactions : public QObject
 {
@@ -96,6 +83,16 @@ private:
     QContactManager *m_cm;
     QSet<QContactCollectionId> m_createdColIds;
     QSet<QContactId> m_createdIds;
+
+    QByteArray aggregateAddressbookId()
+    {
+        return QtContactsSqliteExtensions::aggregateCollectionId(m_cm->managerUri()).localId();
+    }
+
+    QByteArray localAddressbookId()
+    {
+        return QtContactsSqliteExtensions::localCollectionId(m_cm->managerUri()).localId();
+    }
 };
 
 tst_synctransactions::tst_synctransactions()

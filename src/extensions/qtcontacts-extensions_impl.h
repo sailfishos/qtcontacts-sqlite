@@ -178,6 +178,16 @@ QString normalize(const QString &input, int flags, int maxCharacters)
 
 namespace QtContactsSqliteExtensions {
 
+QContactCollectionId aggregateCollectionId(const QString &managerUri)
+{
+    return QContactCollectionId(managerUri, QByteArrayLiteral("col-") + QByteArray::number(1));
+}
+
+QContactCollectionId localCollectionId(const QString &managerUri)
+{
+    return QContactCollectionId(managerUri, QByteArrayLiteral("col-") + QByteArray::number(2));
+}
+
 QContactId apiContactId(quint32 iid, const QString &managerUri)
 {
     return QContactId(managerUri, QByteArrayLiteral("sql-") + QByteArray::number(iid));
