@@ -33,6 +33,7 @@
 #define QT_STATICPLUGIN
 
 #include "../../util.h"
+#include "qtcontacts-extensions.h"
 
 #include <QLocale>
 
@@ -57,16 +58,6 @@ QString detailProvenanceContact(const QContactDetail &detail)
     // The contact element is the first part up to ':'
     const QString provenance(detailProvenance(detail));
     return provenance.left(provenance.indexOf(QChar::fromLatin1(':')));
-}
-
-QByteArray aggregateAddressbookId()
-{
-    return QByteArrayLiteral("col-") + QByteArray::number(1); // AggregateAddressbookCollectionId
-}
-
-QByteArray localAddressbookId()
-{
-    return QByteArrayLiteral("col-") + QByteArray::number(2); // LocalAddressbookCollectionId
 }
 
 }
@@ -152,6 +143,16 @@ private:
     QSet<QContactId> m_chgAccumulatedIds;
     QSet<QContactId> m_remAccumulatedIds;
     QSet<QContactId> m_createdIds;
+
+    QByteArray aggregateAddressbookId()
+    {
+        return QtContactsSqliteExtensions::aggregateCollectionId(m_cm->managerUri()).localId();
+    }
+
+    QByteArray localAddressbookId()
+    {
+        return QtContactsSqliteExtensions::localCollectionId(m_cm->managerUri()).localId();
+    }
 };
 
 tst_Aggregation::tst_Aggregation()

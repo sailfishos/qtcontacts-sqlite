@@ -34,6 +34,7 @@
 #define QTCONTACTS_EXTENSIONS_H
 
 #include <QContactDetail>
+#include <QContactCollectionId>
 #include <QContactId>
 #include <QContactManager>
 
@@ -105,6 +106,9 @@ QT_END_NAMESPACE_CONTACTS
 namespace QtContactsSqliteExtensions {
 
 QTCONTACTS_USE_NAMESPACE
+
+QContactCollectionId aggregateCollectionId(const QString &managerUri);
+QContactCollectionId localCollectionId(const QString &managerUri);
 
 QContactId apiContactId(quint32, const QString &managerUri);
 quint32 internalContactId(const QContactId &);
