@@ -58,9 +58,12 @@ public:
         ContinueAfterError
     };
 
-    TwoWayContactSyncAdaptor(int accountId = 0, const QString &applicationName = QString(), const QMap<QString, QString> &params = QMap<QString, QString>());
+    TwoWayContactSyncAdaptor(int accountId = 0, const QString &applicationName = QString());
+    TwoWayContactSyncAdaptor(int accountId, const QString &applicationName, const QMap<QString, QString> &params);
     TwoWayContactSyncAdaptor(int accountId, const QString &applicationName, QContactManager &mananger);
     virtual ~TwoWayContactSyncAdaptor();
+
+    void setManager(QContactManager &manager);
 
     // step two: start complete sync cycle
     // - determine collection metadata changes made on remote server
@@ -140,6 +143,13 @@ protected:
 
     void performNextQueuedOperation();
 
+
+    struct IgnorableDetailsAndFields {
+        QSet<QContactDetail::DetailType> detailTypes;
+        QHash<QContactDetail::DetailType, QSet<int> > detailFields;
+        QSet<int> commonFields;
+    };
+    virtual IgnorableDetailsAndFields ignorableDetailsAndFields() const;
     virtual QContact resolveConflictingChanges(const QContact &local, const QContact &remote, bool *identical);
 
     virtual void syncFinishedSuccessfully();

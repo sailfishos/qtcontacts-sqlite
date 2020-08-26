@@ -1330,15 +1330,25 @@ ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString>
 
     /* Store the engine into a property of QCoreApplication, so that it can be
      * retrieved by the extension code */
-    QCoreApplication::instance()->setProperty(CONTACT_MANAGER_ENGINE_PROP,
-                                              QVariant::fromValue(this));
+    QCoreApplication *app = QCoreApplication::instance();
+    QList<QVariant> engines = app->property(CONTACT_MANAGER_ENGINE_PROP).toList();
+    engines.append(QVariant::fromValue(this));
+    app->setProperty(CONTACT_MANAGER_ENGINE_PROP, engines);
 
     m_managerUri = managerUri();
 }
 
 ContactsEngine::~ContactsEngine()
 {
-    QCoreApplication::instance()->setProperty(CONTACT_MANAGER_ENGINE_PROP, 0);
+    QCoreApplication *app = QCoreApplication::instance();
+    QList<QVariant> engines = app->property(CONTACT_MANAGER_ENGINE_PROP).toList();
+    for (int i = 0; i < engines.size(); ++i) {
+        if (engines[i] == QVariant::fromValue(this)) {
+            engines.removeAt(i);
+            break;
+        }
+    }
+    app->setProperty(CONTACT_MANAGER_ENGINE_PROP, engines);
 }
 
 QString ContactsEngine::databaseUuid()

@@ -99,6 +99,13 @@ namespace QtContactsSqliteExtensions {
             const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields = defaultIgnorableDetailFields(),
             const QSet<int> &ignorableCommonFields = defaultIgnorableCommonFields());
 
+    int exactContactMatchExistsInList(
+            const QContact &aContact,
+            const QList<QContact> &list,
+            const QSet<QContactDetail::DetailType> &ignorableDetailTypes,
+            const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields,
+            const QSet<int> &ignorableCommonFields,
+            bool printDifferences = false);
 }
 
 #endif // CONTACTDELTA_H

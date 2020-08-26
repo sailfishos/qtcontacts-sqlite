@@ -276,6 +276,98 @@ bool detailPairExactlyMatches(
     return true;
 }
 
+int exactDetailMatchExistsInList(
+        const QContactDetail &det,
+        const QList<QContactDetail> &list,
+        const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields,
+        QSet<int> ignorableCommonFields,
+        bool printDifferences)
+{
+    for (int i = 0; i < list.size(); ++i) {
+        if (detailPairExactlyMatches(det, list[i], ignorableDetailFields, ignorableCommonFields, printDifferences)) {
+            return i; // exact match at this index.
+        }
+    }
+
+    return -1;
+}
+
+bool contactDetailsMatchExactly(
+        const QList<QContactDetail> &aDetails,
+        const QList<QContactDetail> &bDetails,
+        const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields,
+        QSet<int> ignorableCommonFields,
+        bool printDifferences = false)
+{
+    // for it to be an exact match:
+    // a) every detail in aDetails must exist in bDetails
+    // b) no extra details can exist in bDetails
+    if (aDetails.size() != bDetails.size()) {
+        if (Q_UNLIKELY(printDifferences)) {
+            // detail count differs, and continue the analysis to find out precisely what the differences are.
+            QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("A has more details than B:" << aDetails.size() << ">" << bDetails.size());
+        } else {
+            // detail count differs, return immediately.
+            return false;
+        }
+    }
+
+    QList<QContactDetail> nonMatchedADetails;
+    QList<QContactDetail> nonMatchedBDetails = bDetails;
+    bool allADetailsHaveMatches = true;
+    foreach (const QContactDetail &aDetail, aDetails) {
+        int exactMatchIndex = exactDetailMatchExistsInList(
+                aDetail, nonMatchedBDetails, ignorableDetailFields,
+                ignorableCommonFields, false);
+        if (exactMatchIndex == -1) {
+            // no exact match for this detail.
+            allADetailsHaveMatches = false;
+            if (Q_UNLIKELY(printDifferences)) {
+                // we only record the difference if we're printing them.
+                nonMatchedADetails.append(aDetail);
+            } else {
+                // we only break if we're not printing all differences.
+                break;
+            }
+        } else {
+            // found a match for this detail.
+            // remove it from ldets so that duplicates in cdets
+            // don't mess up our detection.
+            nonMatchedBDetails.removeAt(exactMatchIndex);
+        }
+    }
+
+    if (allADetailsHaveMatches && nonMatchedBDetails.size() == 0) {
+        return true; // exact match
+    }
+
+    if (Q_UNLIKELY(printDifferences)) {
+        Q_FOREACH (const QContactDetail &ad, nonMatchedADetails) {
+            bool foundMatch = false;
+            for (int i = 0; i < nonMatchedBDetails.size(); ++i) {
+                const QContactDetail &bd = nonMatchedBDetails[i];
+                if (ad.type() == bd.type()) { // most likely a modification.
+                    foundMatch = true;
+                    QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("Detail modified from A to B:");
+                    detailPairExactlyMatches(ad, bd, ignorableDetailFields, ignorableCommonFields, printDifferences);
+                    nonMatchedBDetails.removeAt(i);
+                    break;
+                }
+            }
+            if (!foundMatch) {
+                QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("New detail exists in contact A:");
+                QTCONTACTS_SQLITE_DELTA_DEBUG_DETAIL(ad);
+            }
+        }
+        Q_FOREACH (const QContactDetail &bd, nonMatchedBDetails) {
+            QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("New detail exists in contact B:");
+            QTCONTACTS_SQLITE_DELTA_DEBUG_DETAIL(bd);
+        }
+    }
+
+    return false;
+}
+
 // move some information (modifiable, detail uris, provenance, database id)
 // from the old detail to the new detail.
 void constructModification(const QContactDetail &old, QContactDetail *update)
@@ -578,6 +670,27 @@ ContactDetailDelta QtContactsSqliteExtensions::determineContactDetailDelta(
     delta.isValid = true;
 
     return delta;
+}
+
+int QtContactsSqliteExtensions::exactContactMatchExistsInList(
+        const QContact &aContact,
+        const QList<QContact> &list,
+        const QSet<QContactDetail::DetailType> &ignorableDetailTypes,
+        const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields,
+        const QSet<int> &ignorableCommonFields,
+        bool printDifferences)
+{
+    QList<QContactDetail> aDetails = aContact.details();
+    removeIgnorableDetailsFromList(&aDetails, ignorableDetailTypes);
+    for (int i = 0; i < list.size(); ++i) {
+        QList<QContactDetail> bDetails = list[i].details();
+        removeIgnorableDetailsFromList(&bDetails, ignorableDetailTypes);
+        if (contactDetailsMatchExactly(aDetails, bDetails, ignorableDetailFields, ignorableCommonFields, printDifferences)) {
+            return i; // exact match at this index.
+        }
+    }
+
+    return -1;
 }
 
 #endif // CONTACTDELTA_IMPL_H
