@@ -45,6 +45,8 @@
 #include <QContactSyncTarget>
 #include <QContactTimestamp>
 #include <QContactUrl>
+#include <QContactPhoneNumber>
+#include <QContactAddress>
 
 #include <QDebug>
 #include <QLocale>
@@ -73,6 +75,10 @@ namespace QtContactsSqliteExtensions {
     class TwoWayContactSyncAdaptorPrivate
     {
     public:
+        TwoWayContactSyncAdaptorPrivate(
+                TwoWayContactSyncAdaptor *q,
+                int accountId,
+                const QString &applicationName);
         TwoWayContactSyncAdaptorPrivate(
                 TwoWayContactSyncAdaptor *q,
                 int accountId,
@@ -218,9 +224,9 @@ QMap<QString, QString> checkParams(const QMap<QString, QString> &params)
     return rv;
 }
 
-static void modifyContactDetail(const QContactDetail &original, const QContactDetail &modified,
-                                QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
-                                QContactDetail *recipient)
+void modifyContactDetail(const QContactDetail &original, const QContactDetail &modified,
+                         QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
+                         QContactDetail *recipient)
 {
     // Apply changes field-by-field
     DetailMap originalValues(detailValues(original, false));
@@ -270,24 +276,21 @@ static void modifyContactDetail(const QContactDetail &original, const QContactDe
     }
 }
 
-// TODO: StringPair is typically used for <provenance>:<detailtype> - now that provenance
-// uniquely identifies a detail, we probably don't need detailtype in most uses...
-typedef QPair<QString, QString> StringPair;
-typedef QPair<QContactDetail, QContactDetail> DetailPair;
-static void removeEquivalentDetails(QList<QPair<QContactDetail, StringPair> > &original, QList<QPair<QContactDetail, StringPair> > &updated)
+void removeEquivalentDetails(QList<QContactDetail> &original, QList<QContactDetail> &updated, QList<QContact> &equivalent)
 {
     // Determine which details are in the update contact which aren't in the database contact:
     // Detail order is not defined, so loop over the entire set for each, removing matches or
     // superset details (eg, backend added a field (like lastModified to timestamp) on previous save)
-    QList<QPair<QContactDetail, StringPair> >::iterator oit = original.begin(), oend;
-    while (oit != original.end()) {
-        QList<QPair<QContactDetail, StringPair> >::iterator uit = updated.begin(), uend = updated.end();
-        for ( ; uit != uend; ++uit) {
-            if (detailsEquivalent((*oit).first, (*uit).first)) {
+    QList<QContactDetail>::iterator oit = original.begin(), oend = original.end();
+    while (oit != oend) {
+        QList<QContactDetail>::iterator uit = updated.begin(), uend = updated.end();
+        while (uit != uend) {
+            if (detailsEquivalent(*oit, *uit)) {
                 // These details match - remove from the lists
-                updated.erase(uit);
+                uit = updated.erase(uit);
                 break;
             }
+            ++uit;
         }
         if (uit != uend) {
             // We found a match
@@ -298,6 +301,18 @@ static void removeEquivalentDetails(QList<QPair<QContactDetail, StringPair> > &o
     }
 }
 
+}
+
+TwoWayContactSyncAdaptorPrivate::TwoWayContactSyncAdaptorPrivate(
+        TwoWayContactSyncAdaptor *q,
+        int accountId,
+        const QString &applicationName)
+    : m_q(q)
+    , m_applicationName(applicationName)
+    , m_accountId(accountId)
+    , m_deleteManager(false)
+{
+    registerTypes();
 }
 
 TwoWayContactSyncAdaptorPrivate::TwoWayContactSyncAdaptorPrivate(
@@ -339,6 +354,13 @@ TwoWayContactSyncAdaptorPrivate::~TwoWayContactSyncAdaptorPrivate()
 
 TwoWayContactSyncAdaptor::TwoWayContactSyncAdaptor(
         int accountId,
+        const QString &applicationName)
+    : d(new TwoWayContactSyncAdaptorPrivate(this, accountId, applicationName))
+{
+}
+
+TwoWayContactSyncAdaptor::TwoWayContactSyncAdaptor(
+        int accountId,
         const QString &applicationName,
         const QMap<QString, QString> &params)
     : d(new TwoWayContactSyncAdaptorPrivate(this, accountId, applicationName, params))
@@ -358,8 +380,25 @@ TwoWayContactSyncAdaptor::~TwoWayContactSyncAdaptor()
     delete d;
 }
 
+void TwoWayContactSyncAdaptor::setManager(QContactManager &manager)
+{
+    d->m_manager = &manager;
+    d->m_engine = contactManagerEngine(manager);
+    d->m_deleteManager = false;
+}
+
 bool TwoWayContactSyncAdaptor::startSync(ErrorHandlingMode mode)
 {
+    if (!d) {
+        qWarning() << "Sync adaptor not initialised!";
+        return false;
+    }
+
+    if (!d->m_engine) {
+        qWarning() << "Sync adaptor manager not set!";
+        return false;
+    }
+
     if (d->m_busy) {
         qWarning() << "Sync adaptor for application: " << d->m_applicationName
                    << " for account: " << d->m_accountId << " is already busy!";
@@ -669,6 +708,15 @@ void TwoWayContactSyncAdaptor::startCollectionSync(const QContactCollection &col
 {
     TwoWayContactSyncAdaptorPrivate::CollectionSyncOperationType opType
             = static_cast<TwoWayContactSyncAdaptorPrivate::CollectionSyncOperationType>(changeFlag);
+
+    QTCONTACTS_SQLITE_TWCSA_DEBUG_LOG(
+            QStringLiteral("Performing sync operation %1 on contacts collection %2 with application: %3 for account: %4")
+                      .arg(opType)
+                      .arg(collection.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH).toString().isEmpty()
+                            ? QString::fromLatin1(collection.id().localId())
+                            : collection.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH).toString())
+                      .arg(d->m_applicationName)
+                      .arg(d->m_accountId).toUtf8());
 
     if (opType == TwoWayContactSyncAdaptorPrivate::LocalDeletion) {
         if (!deleteRemoteCollection(collection)) {
@@ -1252,18 +1300,151 @@ QContactManager &TwoWayContactSyncAdaptor::contactManager()
 }
 
 // Note: this implementation can be overridden if the sync adapter knows
+// that the remote service doesn't support some detail or field types,
+// and thus these details and fields should not be inspected during
+// conflict resolution.
+TwoWayContactSyncAdaptor::IgnorableDetailsAndFields
+TwoWayContactSyncAdaptor::ignorableDetailsAndFields() const
+{
+    TwoWayContactSyncAdaptor::IgnorableDetailsAndFields ignorable;
+
+    // Note: we may still upsync these ignorable details+fields, just don't look at them during delta detection.
+    // We need to do this, otherwise there can be infinite loops caused due to spurious differences between the
+    // in-memory version (QContact) and the exportable version (vCard) resulting in ETag updates server-side.
+    // The downside is that changes to these details will not be upsynced unless another change also occurs.
+    QSet<QContactDetail::DetailType> ignorableDetailTypes = defaultIgnorableDetailTypes();
+    ignorableDetailTypes.insert(QContactDetail::TypeGender);   // ignore differences in X-GENDER field when detecting delta.
+    ignorableDetailTypes.insert(QContactDetail::TypeFavorite); // ignore differences in X-FAVORITE field when detecting delta.
+    ignorableDetailTypes.insert(QContactDetail::TypeAvatar);   // ignore differences in PHOTO field when detecting delta.
+    QHash<QContactDetail::DetailType, QSet<int> > ignorableDetailFields = defaultIgnorableDetailFields();
+    ignorableDetailFields[QContactDetail::TypeAddress] << QContactAddress::FieldSubTypes;         // and ADR subtypes
+    ignorableDetailFields[QContactDetail::TypePhoneNumber] << QContactPhoneNumber::FieldSubTypes; // and TEL number subtypes
+    ignorableDetailFields[QContactDetail::TypeUrl] << QContactUrl::FieldSubType;                  // and URL subtype
+
+    ignorable.detailTypes = ignorableDetailTypes;
+    ignorable.detailFields = ignorableDetailFields;
+    ignorable.commonFields = defaultIgnorableCommonFields();
+
+    return ignorable;
+}
+
+// Note: this implementation can be overridden if the sync adapter knows
 // more about how to resolve conflicts (eg persistent detail ids)
 QContact TwoWayContactSyncAdaptor::resolveConflictingChanges(
         const QContact &local,
         const QContact &remote,
         bool *identical)
 {
-    // TODO: do this properly.
-    // can inspect individual details, etc.
-    // use contactdelta.h for delta detection, etc.
-    // removeEquivalentDetails(), etc.
-    *identical = false;
-    return remote;
+    // first, remove duplicate details from both a and b.
+    bool detailIsDuplicate = false;
+    QList<QContactDetail> ldets = local.details(), rdets = remote.details();
+    QList<QContactDetail> nonDupLdets, nonDupRdets;
+    while (!ldets.isEmpty()) {
+        detailIsDuplicate = false;
+        QContactDetail d = ldets.takeLast();
+        Q_FOREACH (const QContactDetail &otherd, ldets) {
+            if (otherd == d) {
+                detailIsDuplicate = true;
+                break;
+            }
+        }
+        if (!detailIsDuplicate) {
+            nonDupLdets.append(d);
+        }
+    }
+    while (!rdets.isEmpty()) {
+        detailIsDuplicate = false;
+        QContactDetail d = rdets.takeLast();
+        Q_FOREACH (const QContactDetail &otherd, rdets) {
+            if (otherd == d) {
+                detailIsDuplicate = true;
+                break;
+            }
+        }
+        if (!detailIsDuplicate) {
+            nonDupRdets.append(d);
+        }
+    }
+
+    // second, attempt to apply the flagged modifications from local to the resolved contact.
+    // any details which remain in the remote detail list should also be saved in the resolved contact.
+    QContact resolved, localWithoutDeletedDetails;
+    for (int i = nonDupLdets.size() - 1; i >= 0; --i) {
+        QContactDetail &ldet(nonDupLdets[i]);
+        const quint32 localDetailDbId = ldet.value(QContactDetail__FieldDatabaseId).toUInt();
+        const int localDetailChangeFlag = ldet.value(QContactDetail__FieldChangeFlags).toInt();
+        if ((localDetailChangeFlag & QContactDetail__ChangeFlag_IsDeleted) == 0) {
+            localWithoutDeletedDetails.saveDetail(&ldet, QContact::IgnoreAccessConstraints);
+        }
+
+        // apply detail additions directly.
+        if (((localDetailChangeFlag & QContactDetail__ChangeFlag_IsAdded) > 0)
+                && ((localDetailChangeFlag & QContactDetail__ChangeFlag_IsDeleted) == 0)) {
+            ldet.removeValue(QContactDetail__FieldChangeFlags);
+            resolved.saveDetail(&ldet, QContact::IgnoreAccessConstraints);
+            continue;
+        }
+
+        // if the sync adapter provides the persistent detail database ids
+        // as detail field values, we can apply modifications and deletions directly.
+        if (((localDetailChangeFlag & QContactDetail__ChangeFlag_IsModified) > 0)
+                || ((localDetailChangeFlag & QContactDetail__ChangeFlag_IsDeleted) > 0)) {
+            for (int j = nonDupRdets.size() - 1; j >= 0; --j) {
+                const QContactDetail &rdet(nonDupRdets[j]);
+                const quint32 remoteDetailDbId = rdet.value(QContactDetail__FieldDatabaseId).toUInt();
+                if (ldet.type() == rdet.type()
+                        && (localDetailDbId > 0 && localDetailDbId == remoteDetailDbId)) {
+                    if ((localDetailChangeFlag & QContactDetail__ChangeFlag_IsModified) > 0) {
+                        // note: this will clobber the remote detail if it was also modified.
+                        ldet.removeValue(QContactDetail__FieldChangeFlags);
+                        nonDupRdets.replace(j, ldet);
+                    } else { // QContactDetail__ChangeFlag_IsDeleted
+                        nonDupRdets.removeAt(j);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    // any remaining details from the remote should also be stored into the resolved contact.
+    // note that we need to ensure that unique details (name etc) are replaced if they already exist.
+    const QSet<QContactDetail::DetailType> uniqueDetailTypes {
+        QContactDetail::TypeDisplayLabel,
+        QContactDetail::TypeGender,
+        QContactDetail::TypeGlobalPresence,
+        QContactDetail::TypeGuid,
+        QContactDetail::TypeName,
+        QContactDetail::TypeSyncTarget,
+        QContactDetail::TypeTimestamp,
+    };
+    for (int j = nonDupRdets.size() - 1; j >= 0; --j) {
+        QContactDetail &rdet(nonDupRdets[j]);
+        if (uniqueDetailTypes.contains(rdet.type()) && resolved.details(rdet.type()).size()) {
+            QContactDetail existing = resolved.detail(rdet.type());
+            existing.setValues(rdet.values());
+            resolved.saveDetail(&existing, QContact::IgnoreAccessConstraints);
+        } else {
+            resolved.saveDetail(&rdet, QContact::IgnoreAccessConstraints);
+        }
+    }
+
+    // set the id as appropriate into the resolved contact.
+    resolved.setId(local.id());
+    resolved.setCollectionId(local.collectionId());
+
+    // after applying the delta from the local to the remote as best we can,
+    // check to see if the resolved contact is identical to the local contact
+    // (after removing deleted details from the local contact).
+    TwoWayContactSyncAdaptor::IgnorableDetailsAndFields ignorable = ignorableDetailsAndFields();
+    *identical = exactContactMatchExistsInList(
+            resolved, QList<QContact>() << localWithoutDeletedDetails,
+            ignorable.detailTypes,
+            ignorable.detailFields,
+            ignorable.commonFields,
+            true) >= 0;
+
+    return resolved;
 }
 
 void TwoWayContactSyncAdaptor::syncFinishedSuccessfully()

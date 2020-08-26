@@ -1396,9 +1396,9 @@ QContactManager::Error ContactWriter::clearChangeFlags(const QList<QContactId> &
         // fourth, clear any added/modified change flags for details of contacts specified in the list.
         const QString detstatement(QString::fromLatin1("UPDATE Details SET changeFlags = unhandledChangeFlags, unhandledChangeFlags = 0 WHERE contactId = :contactId"));
         ContactsDatabase::Query detquery(m_database.prepare(detstatement));
-        query.bindValue(QLatin1String(":contactId"), cids);
+        detquery.bindValue(QLatin1String(":contactId"), cids);
         if (!ContactsDatabase::executeBatch(detquery)) {
-            query.reportError("Failed to clear detail change flags");
+            detquery.reportError("Failed to clear detail change flags");
             if (!withinTransaction) {
                 rollbackTransaction();
             }
@@ -1998,8 +1998,9 @@ quint32 writeCommonDetails(ContactsDatabase &db, quint32 contactId, quint32 deta
             "  :provenance,"
             "  :modifiable,"
             "  :nonexportable,"
-            "  1," // ChangeFlags::IsAdded
-            "  %1)").arg(recordUnhandledChangeFlags ? QStringLiteral("1") : QStringLiteral("0"))
+            "  %1,"
+            "  %2)").arg(aggregateContact ? QStringLiteral("0") : QStringLiteral("1"))  // ChangeFlags::IsAdded
+                    .arg((aggregateContact || !recordUnhandledChangeFlags) ? QStringLiteral("0") : QStringLiteral("1"))
         : QStringLiteral(
             " UPDATE Details SET"
             "  detail = :detail,"
@@ -2009,12 +2010,11 @@ quint32 writeCommonDetails(ContactsDatabase &db, quint32 contactId, quint32 deta
             "  accessConstraints = :accessConstraints,"
             "  provenance = :provenance,"
             "  modifiable = :modifiable,"
-            "  nonexportable = :nonexportable,"
-            " ChangeFlags = ChangeFlags | 2," // ChangeFlags::IsModified
-            " UnhandledChangeFlags = %1"
+            "  nonexportable = :nonexportable"
+            " %1 %2"
             " WHERE contactId = :contactId AND detailId = :detailId")
-                .arg(recordUnhandledChangeFlags ? QStringLiteral("UnhandledChangeFlags | 2")
-                                                : QStringLiteral("UnhandledChangeFlags")));
+                .arg(aggregateContact ? QString() : QStringLiteral(", ChangeFlags = ChangeFlags | 2")) // ChangeFlags::IsModified
+                .arg((aggregateContact || !recordUnhandledChangeFlags) ? QString() : QStringLiteral(", UnhandledChangeFlags = UnhandledChangeFlags | 2")));
 
     ContactsDatabase::Query query(db.prepare(statement));
 
@@ -2041,8 +2041,6 @@ quint32 writeCommonDetails(ContactsDatabase &db, quint32 contactId, quint32 deta
     query.bindValue(":provenance", provenance);
     query.bindValue(":modifiable", modifiable);
     query.bindValue(":nonexportable", nonexportable);
-    query.bindValue(":changeFlags", typeName);
-    query.bindValue(":unhandledChangeFlags", typeName);
 
     if (!ContactsDatabase::execute(query)) {
         query.reportError(QStringLiteral("Failed to write common details for %1\ndetailUri: %2, linkedDetailUris: %3")
@@ -4425,7 +4423,11 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
 
     // update the timestamp if necessary (aggregate contacts should have a composed timestamp value)
     if (!m_database.aggregating() || (contact->collectionId() != ContactCollectionId::apiId(ContactsDatabase::AggregateAddressbookCollectionId, m_managerUri))) {
-        updateTimestamp(contact, true); // set creation timestamp
+        // only update the timestamp for "normal" modifications, not updates caused by sync,
+        // as we should retain the revision timestamp for synced contacts.
+        if (!withinSyncUpdate) {
+            updateTimestamp(contact, true);
+        }
     }
 
     QContactManager::Error writeErr = enforceDetailConstraints(contact);
@@ -4568,7 +4570,11 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
         // update the modification timestamp (aggregate contacts should have a composed timestamp value)
         if (!m_database.aggregating()
                 || (contact->collectionId() != ContactCollectionId::apiId(ContactsDatabase::AggregateAddressbookCollectionId, m_managerUri))) {
-            updateTimestamp(contact, false);
+            // only update the timestamp for "normal" modifications, not updates caused by sync,
+            // as we should retain the revision timestamp for synced contacts.
+            if (!withinSyncUpdate) {
+                updateTimestamp(contact, false);
+            }
         }
 
         if (m_database.aggregating()
