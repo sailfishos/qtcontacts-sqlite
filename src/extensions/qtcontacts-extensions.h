@@ -100,6 +100,7 @@ static const QString COLLECTION_EXTENDEDMETADATA_KEY_AGGREGABLE = QString::fromL
 static const QString COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME = QString::fromLatin1("ApplicationName");
 static const QString COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID = QString::fromLatin1("AccountId");
 static const QString COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH = QString::fromLatin1("RemotePath");
+static const QString COLLECTION_EXTENDEDMETADATA_KEY_READONLY = QString::fromLatin1("ReadOnly");
 
 QT_END_NAMESPACE_CONTACTS
 
