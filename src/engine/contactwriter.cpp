@@ -60,6 +60,7 @@
 #include <cmath>
 
 #include <QtDebug>
+#include <QElapsedTimer>
 
 namespace {
     void dumpContact(const QContact &c)
@@ -3221,6 +3222,20 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     return query;
 }
 
+template <typename T> void removeDuplicateDetails(QList<T> *details)
+{
+    for (int i = 0; i < details->size() - 1; ++i) {
+        for (int j = details->size() - 1; j >= i+1; --j) {
+            if (detailPairExactlyMatches(
+                    details->at(i), details->at(j),
+                    QtContactsSqliteExtensions::defaultIgnorableDetailFields(),
+                    QtContactsSqliteExtensions::defaultIgnorableCommonFields())) {
+                details->removeAt(j);
+            }
+        }
+    }
+}
+
 }
 
 template <typename T> bool ContactWriter::writeDetails(
@@ -3340,6 +3355,10 @@ template <typename T> bool ContactWriter::writeDetails(
             return false;
 
         QList<T> contactDetails(contact->details<T>());
+        if (aggregateContact) {
+            removeDuplicateDetails(&contactDetails);
+        }
+
         typename QList<T>::iterator it = contactDetails.begin(), end = contactDetails.end();
         for ( ; it != end; ++it) {
             T &detail(*it);
@@ -3821,7 +3840,7 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
    aggregate contacts are searched for a match, and the matching
    one updated if it exists; or a new aggregate is created.
 */
-QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction, bool withinSyncUpdate, quint32 *aggregateContactId)
+QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact, const DetailList &definitionMask, bool withinTransaction, bool withinSyncUpdate, bool createOnly, quint32 *aggregateContactId)
 {
     // 1) search for match
     // 2) if exists, update the existing aggregate (by default, non-clobber:
@@ -3891,7 +3910,8 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     3) perform the heuristic matching, ordered by "best score"
     4) select highest score; if over threshold, select that as aggregate.
     */
-    static const char *possibleAggregatesWhere = /* SELECT contactId FROM Contacts ... */
+    static const QString possibleAggregatesWhere(QStringLiteral(
+        /* SELECT contactId FROM Contacts ... */
         " WHERE Contacts.collectionId = 1" // AggregateAddressbookCollectionId
         " AND Contacts.contactId IN ("
             " SELECT contactId FROM Names"
@@ -3910,7 +3930,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
             " SELECT secondId FROM Relationships WHERE firstId = :contactId AND type = 'IsNot'"
             " UNION"
             " SELECT firstId FROM Relationships WHERE secondId = :contactId AND type = 'IsNot'"
-        " )";
+        " )"));
 
     // Use a simple match algorithm, looking for exact matches on name fields,
     // or accumulating points for name matches (including partial matches of first name).
@@ -3918,8 +3938,8 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
     // step one: build the temporary table which contains all "possible" aggregate contact ids.
     m_database.clearTemporaryContactIdsTable(possibleAggregatesTable);
 
-    QString orderBy = QLatin1String("contactId ASC ");
-    QString where = QLatin1String(possibleAggregatesWhere);
+    const QString orderBy = QStringLiteral("contactId ASC ");
+    const QString where = possibleAggregatesWhere;
     QMap<QString, QVariant> bindings;
     bindings.insert(":lastName", lastName);
     bindings.insert(":contactId", ContactId::databaseId(*contact));
@@ -4017,7 +4037,11 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         }
     }
 
-    if (existingAggregateId) {
+    if (!existingAggregateId) {
+        // need to create an aggregating contact first.
+        matchingAggregate.setCollectionId(ContactCollectionId::apiId(ContactsDatabase::AggregateAddressbookCollectionId, m_managerUri));
+    } else if (!createOnly) {
+        // aggregate already exists.
         QList<quint32> readIds;
         readIds.append(existingAggregateId);
 
@@ -4032,29 +4056,35 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         }
 
         matchingAggregate = readList.at(0);
-    } else {
-        // need to create an aggregating contact first.
-        matchingAggregate.setCollectionId(ContactCollectionId::apiId(ContactsDatabase::AggregateAddressbookCollectionId, m_managerUri));
     }
 
-    // whether it's an existing or new contact, we promote details.
-    // TODO: promote non-Aggregates relationships!
-    promoteDetailsToAggregate(*contact, &matchingAggregate, definitionMask, false);
-
-    // now save in database.
+    QContactManager::Error err = QContactManager::NoError;
     QMap<int, QContactManager::Error> errorMap;
-    QList<QContact> saveContactList;
-    saveContactList.append(matchingAggregate);
-    QContactManager::Error err = save(&saveContactList, DetailList(), 0, &errorMap, withinTransaction, true, false); // we're updating (or creating) the aggregate
-    if (err != QContactManager::NoError) {
-        if (!existingAggregateId) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Could not create new aggregate contact"));
-        } else {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Could not update existing aggregate contact"));
+    QContactId matchingAggregateId;
+    if (existingAggregateId && createOnly) {
+        // the caller has specified that we should not update existing aggregates.
+        // this is because it will manually regenerate the aggregates themselves,
+        // with specific detail promotion order (e.g. prefer local contact details).
+        matchingAggregateId = QContactId(ContactId::apiId(existingAggregateId, m_managerUri));
+    } else {
+        // whether it's an existing or new contact, we promote details.
+        // TODO: promote non-Aggregates relationships!
+        promoteDetailsToAggregate(*contact, &matchingAggregate, definitionMask, false);
+
+        // now save in database.
+        QList<QContact> saveContactList;
+        saveContactList.append(matchingAggregate);
+        err = save(&saveContactList, DetailList(), 0, &errorMap, withinTransaction, true, false); // we're updating (or creating) the aggregate
+        if (err != QContactManager::NoError) {
+            if (!existingAggregateId) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Could not create new aggregate contact"));
+            } else {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Could not update existing aggregate contact"));
+            }
+            return err;
         }
-        return err;
+        matchingAggregateId = saveContactList.at(0).id();
     }
-    matchingAggregate = saveContactList.at(0);
 
     {
         // add the relationship and save in the database.
@@ -4068,7 +4098,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         ));
 
         ContactsDatabase::Query query(m_database.prepare(insertRelationship));
-        query.bindValue(":firstId", ContactId::databaseId(matchingAggregate));
+        query.bindValue(":firstId", ContactId::databaseId(matchingAggregateId));
         query.bindValue(":secondId", ContactId::databaseId(*contact));
         query.bindValue(":type", relationshipString(QContactRelationship::Aggregates));
         if (!ContactsDatabase::execute(query)) {
@@ -4079,7 +4109,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
 
     if (err == QContactManager::NoError) {
         if (aggregateContactId) {
-            *aggregateContactId = ContactId::databaseId(matchingAggregate);
+            *aggregateContactId = ContactId::databaseId(matchingAggregateId);
         }
     } else {
         // if the aggregation relationship fails, the entire save has failed.
@@ -4088,7 +4118,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         if (!existingAggregateId) {
             // clean up the newly created contact.
             QList<QContactId> removeList;
-            removeList.append(ContactId::apiId(matchingAggregate));
+            removeList.append(matchingAggregateId);
             QContactManager::Error cleanupErr = remove(removeList, &errorMap, withinTransaction, withinSyncUpdate);
             if (cleanupErr != QContactManager::NoError) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to cleanup newly created aggregate contact!"));
@@ -4398,12 +4428,15 @@ static bool updateTimestamp(QContact *contact, bool setCreationTimestamp)
 QContactManager::Error ContactWriter::create(QContact *contact, const DetailList &definitionMask, bool withinTransaction, bool withinAggregateUpdate, bool withinSyncUpdate, bool recordUnhandledChangeFlags)
 {
     // If not specified, this contact is a "local device" contact
+    bool contactIsLocal = false;
+    const QContactCollectionId localAddressbookId(ContactCollectionId::apiId(ContactsDatabase::LocalAddressbookCollectionId, m_managerUri));
     if (contact->collectionId().isNull()) {
-        contact->setCollectionId(ContactCollectionId::apiId(ContactsDatabase::LocalAddressbookCollectionId, m_managerUri));
+        contact->setCollectionId(localAddressbookId);
     }
 
     // If this contact is local, ensure it has a GUID for import/export stability
-    if (contact->collectionId() == ContactCollectionId::apiId(ContactsDatabase::LocalAddressbookCollectionId, m_managerUri)) {
+    if (contact->collectionId() == localAddressbookId) {
+        contactIsLocal = true;
         QContactGuid guid = contact->detail<QContactGuid>();
         if (guid.guid().isEmpty()) {
             guid.setGuid(QUuid::createUuid().toString());
@@ -4455,10 +4488,12 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
         if (m_database.aggregating() && !withinAggregateUpdate) {
             // and either update the aggregate contact (if it exists) or create a new one
             // (unless it is an aggregate contact, or should otherwise not be aggregated).
-            bool aggregable = false;
-            writeErr = collectionIsAggregable(contact->collectionId(), &aggregable);
-            if (writeErr != QContactManager::NoError) {
-                return writeErr;
+            bool aggregable = contactIsLocal; // local contacts are always aggregable.
+            if (!aggregable) {
+                writeErr = collectionIsAggregable(contact->collectionId(), &aggregable);
+                if (writeErr != QContactManager::NoError) {
+                    return writeErr;
+                }
             }
 
             if (aggregable) {
@@ -4625,12 +4660,14 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
         }
 
         if (!transientUpdate) {
-            // read the existing contact data from the database, to perform delta detection.
             QList<QContact> oldContacts;
-            QContactManager::Error readOldContactError = m_reader->readContacts(QStringLiteral("UpdateContact"), &oldContacts, QList<quint32>() << contactId, QContactFetchHint());
-            if (readOldContactError != QContactManager::NoError || oldContacts.size() != 1) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read existing data during update for contact: %1").arg(contactId));
-                return QContactManager::UnspecifiedError;
+            if (!withinAggregateUpdate) {
+                // read the existing contact data from the database, to perform delta detection.
+                QContactManager::Error readOldContactError = m_reader->readContacts(QStringLiteral("UpdateContact"), &oldContacts, QList<quint32>() << contactId, QContactFetchHint());
+                if (readOldContactError != QContactManager::NoError || oldContacts.size() != 1) {
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read existing data during update for contact: %1").arg(contactId));
+                    return QContactManager::UnspecifiedError;
+                }
             }
 
             // This update invalidates any details that may be present in the transient store
@@ -4645,7 +4682,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
                 }
             }
 
-            writeError = write(contactId, oldContacts.first(), contact, definitionMask, recordUnhandledChangeFlags);
+            writeError = write(contactId, withinAggregateUpdate ? QContact() : oldContacts.first(), contact, definitionMask, recordUnhandledChangeFlags);
         }
     }
 
@@ -4717,7 +4754,9 @@ QContactManager::Error ContactWriter::collectionIsAggregable(const QContactColle
 QContactManager::Error ContactWriter::setAggregate(QContact *contact, quint32 contactId, bool update, const DetailList &definitionMask, bool withinTransaction, bool withinSyncUpdate)
 {
     quint32 aggregateId = 0;
-    QContactManager::Error writeErr = updateOrCreateAggregate(contact, definitionMask, withinTransaction, withinSyncUpdate, &aggregateId);
+
+    const bool createOnly = true;
+    QContactManager::Error writeErr = updateOrCreateAggregate(contact, definitionMask, withinTransaction, withinSyncUpdate, createOnly, &aggregateId);
     if ((writeErr == QContactManager::NoError) && (update || (aggregateId < contactId))) {
         // The aggregate pre-dates the new contact - it probably had a local constituent already.
         // We must regenerate the aggregate, because the precedence order of the details may have changed.
