@@ -2560,21 +2560,12 @@ QContactManager::Error ContactReader::queryContacts(
         detailQueryStatement = detailQueryStatement.arg(detailNameTemplate.arg(detailNameSpec.join(QLatin1String("','"))));
 
     // If selectSpec is empty, all required details are in the Contacts table
-    QSqlQuery detailQuery(m_database);
+    ContactsDatabase::Query detailQuery(m_database.prepare(detailQueryStatement));
     if (!selectSpec.isEmpty()) {
-        if (!detailQuery.prepare(detailQueryStatement)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for joined details:\n%1\nQuery:\n%2")
-                    .arg(detailQuery.lastError().text())
-                    .arg(detailQueryStatement));
-            return QContactManager::UnspecifiedError;
-        }
-
         // Read the details for these contacts
         detailQuery.setForwardOnly(true);
         if (!ContactsDatabase::execute(detailQuery)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for joined details:\n%1\nQuery:\n%2")
-                    .arg(detailQuery.lastError().text())
-                    .arg(detailQueryStatement));
+            detailQuery.reportError(QString::fromLatin1("Failed to prepare query for joined details"));
             return QContactManager::UnspecifiedError;
         } else {
             // Move to the first row
