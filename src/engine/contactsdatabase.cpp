@@ -345,58 +345,8 @@ static const char *createDetailsRemoveIndex =
 static const char *createDetailsChangeFlagsIndex =
         "\n CREATE INDEX DetailsChangeFlagsIndex ON Details(changeFlags);";
 
-static const char *createAddressesDetailsContactIdIndex =
-        "\n CREATE INDEX AddressesDetailsContactIdIndex ON Addresses(contactId);";
-static const char *createAnniversariesDetailsContactIdIndex =
-        "\n CREATE INDEX AnniversariesDetailsContactIdIndex ON Anniversaries(contactId);";
-static const char *createAvatarsDetailsContactIdIndex =
-        "\n CREATE INDEX AvatarsDetailsContactIdIndex ON Avatars(contactId);";
-static const char *createBirthdaysDetailsContactIdIndex =
-        "\n CREATE INDEX BirthdaysDetailsContactIdIndex ON Birthdays(contactId);";
-static const char *createDisplayLabelsDetailsContactIdIndex =
-        "\n CREATE INDEX DisplayLabelsDetailsContactIdIndex ON DisplayLabels(contactId);";
-static const char *createEmailAddressesDetailsContactIdIndex =
-        "\n CREATE INDEX EmailAddressesDetailsContactIdIndex ON EmailAddresses(contactId);";
-static const char *createFamiliesDetailsContactIdIndex =
-        "\n CREATE INDEX FamiliesDetailsContactIdIndex ON Families(contactId);";
-static const char *createFavoritesDetailsContactIdIndex =
-        "\n CREATE INDEX FavoritesDetailsContactIdIndex ON Favorites(contactId);";
-static const char *createGendersDetailsContactIdIndex =
-        "\n CREATE INDEX GendersDetailsContactIdIndex ON Genders(contactId);";
-static const char *createGeoLocationsDetailsContactIdIndex =
-        "\n CREATE INDEX GeoLocationsDetailsContactIdIndex ON GeoLocations(contactId);";
-static const char *createGlobalPresencesDetailsContactIdIndex =
-        "\n CREATE INDEX GlobalPresencesDetailsContactIdIndex ON GlobalPresences(contactId);";
-static const char *createGuidsDetailsContactIdIndex =
-        "\n CREATE INDEX GuidsDetailsContactIdIndex ON Guids(contactId);";
-static const char *createHobbiesDetailsContactIdIndex =
-        "\n CREATE INDEX HobbiesDetailsContactIdIndex ON Hobbies(contactId);";
-static const char *createNamesDetailsContactIdIndex =
-        "\n CREATE INDEX NamesDetailsContactIdIndex ON Names(contactId);";
-static const char *createNicknamesDetailsContactIdIndex =
-        "\n CREATE INDEX NicknamesDetailsContactIdIndex ON Nicknames(contactId);";
-static const char *createNotesDetailsContactIdIndex =
-        "\n CREATE INDEX NotesDetailsContactIdIndex ON Notes(contactId);";
-static const char *createOnlineAccountsDetailsContactIdIndex =
-        "\n CREATE INDEX OnlineAccountsDetailsContactIdIndex ON OnlineAccounts(contactId);";
-static const char *createOrganizationsDetailsContactIdIndex =
-        "\n CREATE INDEX OrganizationsDetailsContactIdIndex ON Organizations(contactId);";
-static const char *createPhoneNumbersDetailsContactIdIndex =
-        "\n CREATE INDEX PhoneNumbersDetailsContactIdIndex ON PhoneNumbers(contactId);";
-static const char *createPresencesDetailsContactIdIndex =
-        "\n CREATE INDEX PresencesDetailsContactIdIndex ON Presences(contactId);";
-static const char *createRingtonesDetailsContactIdIndex =
-        "\n CREATE INDEX RingtonesDetailsContactIdIndex ON Ringtones(contactId);";
-static const char *createSyncTargetsDetailsContactIdIndex =
-        "\n CREATE INDEX SyncTargetsDetailsContactIdIndex ON SyncTargets(contactId);";
-static const char *createTagsDetailsContactIdIndex =
-        "\n CREATE INDEX TagsDetailsContactIdIndex ON Tags(contactId);";
-static const char *createUrlsDetailsContactIdIndex =
-        "\n CREATE INDEX UrlsDetailsContactIdIndex ON Urls(contactId);";
-static const char *createOriginMetadataDetailsContactIdIndex =
-        "\n CREATE INDEX OriginMetadataDetailsContactIdIndex ON OriginMetadata(contactId);";
-static const char *createExtendedDetailsContactIdIndex =
-        "\n CREATE INDEX ExtendedDetailsContactIdIndex ON ExtendedDetails(contactId);";
+static const char *createDetailsContactIdIndex =
+        "\n CREATE INDEX DetailsContactIdIndex ON Details(contactId);";
 
 static const char *createIdentitiesTable =
         "\n CREATE Table Identities ("
@@ -768,32 +718,28 @@ static const char *createAnalyzeData2 =
         "\n DELETE FROM sqlite_stat1;";
 static const char *createAnalyzeData3 =
         "\n INSERT INTO sqlite_stat1 VALUES"
-        "\n   ('Details', 'DetailsRemoveIndex', '25000 6 2'),"
-        "\n   ('Presences','PresencesDetailsContactIdIndex','1000 2'),"
-        "\n   ('OnlineAccounts','OnlineAccountsIndex','1000 3'),"
-        "\n   ('OnlineAccounts','OnlineAccountsDetailsContactIdIndex','1000 2'),"
-        "\n   ('Nicknames','NicknamesIndex','2000 4'),"
-        "\n   ('Nicknames','NicknamesDetailsContactIdIndex','2000 2'),"
-        "\n   ('Urls','UrlsDetailsContactIdIndex','1500 2'),"
-        "\n   ('Guids','GuidsDetailsContactIdIndex','3000 2'),"
-        "\n   ('OriginMetadata','OriginMetadataGroupIdIndex','2500 500'),"
-        "\n   ('OriginMetadata','OriginMetadataIdIndex','2500 6'),"
-        "\n   ('OriginMetadata','OriginMetadataDetailsContactIdIndex','2500 1'),"
-        "\n   ('GlobalPresences','GlobalPresencesDetailsContactIdIndex','500 1'),"
-        "\n   ('Contacts','ContactsTypeIndex','5000 5000'),"
-        "\n   ('Contacts','ContactsModifiedIndex','5000 3'),"
-        "\n   ('Birthdays','BirthdaysDetailsContactIdIndex','500 1'),"
-        "\n   ('PhoneNumbers','PhoneNumbersIndex','4500 7'),"
-        "\n   ('PhoneNumbers','PhoneNumbersDetailsContactIdIndex','4500 3'),"
-        "\n   ('Notes','NotesDetailsContactIdIndex','2000 2'),"
+        "\n   ('DbSettings','sqlite_autoindex_DbSettings_1','2 1'),"
+        "\n   ('Collections','','12'),"
         "\n   ('Relationships','RelationshipsSecondIdIndex','3000 2'),"
         "\n   ('Relationships','RelationshipsFirstIdIndex','3000 2'),"
         "\n   ('Relationships','sqlite_autoindex_Relationships_1','3000 2 2 1'),"
-        "\n   ('Avatars','AvatarsDetailsContactIdIndex','3000 3'),"
-        "\n   ('Organizations','OrganizationsDetailsContactIdIndex','500 2'),"
+        "\n   ('Contacts','ContactsTypeIndex','5000 5000'),"
+        "\n   ('Contacts','ContactsModifiedIndex','5000 30'),"
+        "\n   ('Contacts','ContactsChangeFlagsIndex','5000 200'),"
+        "\n   ('Contacts','ContactsCollectionIdIndex','5000 500'),"
+        "\n   ('Details', 'DetailsRemoveIndex', '25000 6 2'),"
+        "\n   ('Details', 'DetailsContactIdIndex', '25000 6 2'),"
+        "\n   ('Favorites','sqlite_autoindex_Favorites_1','100 2'),"
+        "\n   ('Names','LastNameIndex','3000 50'),"
+        "\n   ('Names','FirstNameIndex','3000 80'),"
+        "\n   ('Names','sqlite_autoindex_Names_1','3000 1'),"
+        "\n   ('DisplayLabels','sqlite_autoindex_DisplayLabels_1','5000 1'),"
+        "\n   ('OnlineAccounts','OnlineAccountsIndex','1000 3'),"
+        "\n   ('Nicknames','NicknamesIndex','2000 4'),"
+        "\n   ('OriginMetadata','OriginMetadataGroupIdIndex','2500 500'),"
+        "\n   ('OriginMetadata','OriginMetadataIdIndex','2500 6'),"
+        "\n   ('PhoneNumbers','PhoneNumbersIndex','4500 7'),"
         "\n   ('EmailAddresses','EmailAddressesIndex','4000 5'),"
-        "\n   ('EmailAddresses','EmailAddressesDetailsContactIdIndex','4000 2'),"
-        "\n   ('Addresses','AddressesDetailsContactIdIndex','500 2'),"
         "\n   ('OOB','sqlite_autoindex_OOB_1','29 1');";
 
 static const char *createStatements[] =
@@ -829,32 +775,8 @@ static const char *createStatements[] =
     createExtendedDetailsTable,
     createDetailsTable,
     createDetailsRemoveIndex,
-    createAddressesDetailsContactIdIndex,
-    createAnniversariesDetailsContactIdIndex,
-    createAvatarsDetailsContactIdIndex,
-    createBirthdaysDetailsContactIdIndex,
-    createDisplayLabelsDetailsContactIdIndex,
-    createEmailAddressesDetailsContactIdIndex,
-    createFamiliesDetailsContactIdIndex,
-    createFavoritesDetailsContactIdIndex,
-    createGendersDetailsContactIdIndex,
-    createGeoLocationsDetailsContactIdIndex,
-    createGlobalPresencesDetailsContactIdIndex,
-    createGuidsDetailsContactIdIndex,
-    createHobbiesDetailsContactIdIndex,
-    createNamesDetailsContactIdIndex,
-    createNicknamesDetailsContactIdIndex,
-    createNotesDetailsContactIdIndex,
-    createOnlineAccountsDetailsContactIdIndex,
-    createOrganizationsDetailsContactIdIndex,
-    createPhoneNumbersDetailsContactIdIndex,
-    createPresencesDetailsContactIdIndex,
-    createRingtonesDetailsContactIdIndex,
-    createSyncTargetsDetailsContactIdIndex,
-    createTagsDetailsContactIdIndex,
-    createUrlsDetailsContactIdIndex,
-    createOriginMetadataDetailsContactIdIndex,
-    createExtendedDetailsContactIdIndex,
+    createDetailsChangeFlagsIndex,
+    createDetailsContactIdIndex,
     createIdentitiesTable,
     createRelationshipsTable,
     createOOBTable,
@@ -1399,25 +1321,6 @@ static const char *upgradeVersion10[] = {
     "DROP TABLE DetailsIndexing",
     // Rebuild the indexes we dropped
     createDetailsRemoveIndex,
-    createAddressesDetailsContactIdIndex,
-    createAnniversariesDetailsContactIdIndex,
-    createAvatarsDetailsContactIdIndex,
-    createBirthdaysDetailsContactIdIndex,
-    createEmailAddressesDetailsContactIdIndex,
-    createGlobalPresencesDetailsContactIdIndex,
-    createGuidsDetailsContactIdIndex,
-    createHobbiesDetailsContactIdIndex,
-    createNicknamesDetailsContactIdIndex,
-    createNotesDetailsContactIdIndex,
-    createOnlineAccountsDetailsContactIdIndex,
-    createOrganizationsDetailsContactIdIndex,
-    createPhoneNumbersDetailsContactIdIndex,
-    createPresencesDetailsContactIdIndex,
-    createRingtonesDetailsContactIdIndex,
-    createTagsDetailsContactIdIndex,
-    createUrlsDetailsContactIdIndex,
-    createOriginMetadataDetailsContactIdIndex,
-    createExtendedDetailsContactIdIndex,
     createPhoneNumbersIndex,
     createEmailAddressesIndex,
     createOnlineAccountsIndex,
@@ -1681,27 +1584,6 @@ static const char *upgradeVersion20[] = {
     createOOBTable,
     // rebuild the indexes we dropped
     createDetailsRemoveIndex,
-    createAddressesDetailsContactIdIndex,
-    createAnniversariesDetailsContactIdIndex,
-    createAvatarsDetailsContactIdIndex,
-    createBirthdaysDetailsContactIdIndex,
-    createEmailAddressesDetailsContactIdIndex,
-    createFamiliesDetailsContactIdIndex,
-    createGeoLocationsDetailsContactIdIndex,
-    createGlobalPresencesDetailsContactIdIndex,
-    createGuidsDetailsContactIdIndex,
-    createHobbiesDetailsContactIdIndex,
-    createNicknamesDetailsContactIdIndex,
-    createNotesDetailsContactIdIndex,
-    createOnlineAccountsDetailsContactIdIndex,
-    createOrganizationsDetailsContactIdIndex,
-    createPhoneNumbersDetailsContactIdIndex,
-    createPresencesDetailsContactIdIndex,
-    createRingtonesDetailsContactIdIndex,
-    createTagsDetailsContactIdIndex,
-    createUrlsDetailsContactIdIndex,
-    createOriginMetadataDetailsContactIdIndex,
-    createExtendedDetailsContactIdIndex,
     createPhoneNumbersIndex,
     createEmailAddressesIndex,
     createOnlineAccountsIndex,
@@ -1713,12 +1595,7 @@ static const char *upgradeVersion20[] = {
     createContactsCollectionIdIndex,
     createContactsChangeFlagsIndex,
     createDetailsChangeFlagsIndex,
-    // TODO: are these following indexes really required, since the contactId is unique for those?
-    createDisplayLabelsDetailsContactIdIndex,
-    createFavoritesDetailsContactIdIndex,
-    createGendersDetailsContactIdIndex,
-    createNamesDetailsContactIdIndex,
-    createSyncTargetsDetailsContactIdIndex,
+    createDetailsContactIdIndex,
     // recreate the remove trigger.
     createRemoveTrigger_21,
     "PRAGMA user_version=21",
@@ -3293,6 +3170,17 @@ ContactsDatabase::ContactsDatabase(ContactsEngine *engine)
 
 ContactsDatabase::~ContactsDatabase()
 {
+    if (m_database.isOpen()) {
+        QSqlQuery optimizeQuery(m_database);
+        const QString statement = QStringLiteral("PRAGMA optimize");
+        if (!optimizeQuery.prepare(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to prepare OPTIMIZE query"));
+        } else if (!optimizeQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to execute OPTIMIZE query"));
+        } else {
+            QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Successfully executed OPTIMIZE query"));
+        }
+    }
     m_database.close();
 }
 
