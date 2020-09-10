@@ -83,6 +83,7 @@
 #include <QVector>
 
 #include <QtDebug>
+#include <QElapsedTimer>
 
 static const int ReportBatchSize = 50;
 
@@ -649,9 +650,10 @@ static int contextType(const QString &type)
 }
 
 template <typename T>
-static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable, const QContactCollectionId &collectionId, bool relaxConstraints, bool keepChangeFlags, int offset)
+static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable, const QContactCollectionId &apiCollectionId, bool relaxConstraints, bool keepChangeFlags, int offset)
 {
-    const bool aggregateContact(ContactCollectionId::databaseId(collectionId) == ContactsDatabase::AggregateAddressbookCollectionId);
+    const quint32 collectionId = ContactCollectionId::databaseId(apiCollectionId);
+    const bool aggregateContact(collectionId == ContactsDatabase::AggregateAddressbookCollectionId);
 
     T detail;
 
@@ -665,9 +667,15 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
     const QString contextValue = query.value(col++).toString();
     const int accessConstraints = query.value(col++).toInt();
     QString provenance = query.value(col++).toString();
-    QVariant modifiableVariant = query.value(col++);
+    const QVariant modifiableVariant = query.value(col++);
     const bool nonexportable = query.value(col++).toBool();
     const int changeFlags = query.value(col++).toInt();
+
+    // only save the detail to the contact if it hasn't been deleted,
+    // or if we are part of a sync fetch (i.e. keepChangeFlags is true)
+    if (!keepChangeFlags && changeFlags >= 4) { // ChangeFlags::IsDeleted
+        return;
+    }
 
     setValue(&detail, QContactDetail__FieldDatabaseId, dbId);
 
@@ -684,7 +692,7 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
     if (!contextValue.isEmpty()) {
         QList<int> contexts;
         foreach (const QString &context, contextValue.split(QLatin1Char(';'), QString::SkipEmptyParts)) {
-            int type = contextType(context);
+            const int type = contextType(context);
             if (type != -1) {
                 contexts.append(type);
             }
@@ -694,11 +702,8 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
         }
     }
 
-    if (!aggregateContact) {
-        // This detail is not aggregated from another - its provenance should match its ID
-        provenance = QStringLiteral("%1:%2:%3").arg(ContactCollectionId::databaseId(collectionId)).arg(contactId).arg(dbId);
-    }
-    setValue(&detail, QContactDetail::FieldProvenance, provenance);
+    // If the detail is not aggregated from another, then its provenance should match its ID.
+    setValue(&detail, QContactDetail::FieldProvenance, aggregateContact ? provenance : QStringLiteral("%1:%2:%3").arg(collectionId).arg(contactId).arg(dbId));
 
     // Only report modifiable state for non-local contacts.
     // local contacts are always (implicitly) modifiable.
@@ -723,14 +728,8 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
     }
 
     setValues(&detail, &query, offset);
-
     setDetailImmutableIfAggregate(aggregateContact, &detail);
-
-    // only return the detail if it hasn't been deleted,
-    // or if we are part of a sync fetch (i.e. keepChangeFlags is true)
-    if (keepChangeFlags || changeFlags < 4) {
-        contact->saveDetail(&detail, QContact::IgnoreAccessConstraints);
-    }
+    contact->saveDetail(&detail, QContact::IgnoreAccessConstraints);
 }
 
 template <typename T>
@@ -2586,11 +2585,12 @@ QContactManager::Error ContactReader::queryContacts(
         int col = 0;
         const quint32 dbId = contactQuery.value(col++).toUInt();
         const quint32 collectionId = contactQuery.value(col++).toUInt();
+        const QContactCollectionId apiCollectionId = ContactCollectionId::apiId(collectionId, m_managerUri);
         const bool aggregateContact = collectionId == ContactsDatabase::AggregateAddressbookCollectionId;
 
         QContact contact;
         contact.setId(ContactId::apiId(dbId, m_managerUri));
-        contact.setCollectionId(ContactCollectionId::apiId(collectionId, m_managerUri));
+        contact.setCollectionId(apiCollectionId);
 
         QContactTimestamp timestamp;
         setValue(&timestamp, QContactTimestamp::FieldCreationTimestamp    , ContactsDatabase::fromDateTimeString(contactQuery.value(col++).toString()));
@@ -2692,7 +2692,7 @@ QContactManager::Error ContactReader::queryContacts(
         // Add the details of this contact from the detail tables
         if (includeDetails) {
             if (detailQuery.isValid()) {
-                QSet<quint32> seenDetailIds;
+                quint32 firstContactDetailId = 0;
                 do {
                     const quint32 contactId = detailQuery.value(1).toUInt();
                     if (contactId != dbId) {
@@ -2700,12 +2700,13 @@ QContactManager::Error ContactReader::queryContacts(
                     }
 
                     const quint32 detailId = detailQuery.value(0).toUInt();
-                    if (seenDetailIds.contains(detailId)) {
+                    if (firstContactDetailId == 0) {
+                        firstContactDetailId = detailId;
+                    } else if (firstContactDetailId == detailId) {
                         // the client must have requested the same contact twice in a row, by id.
                         // we have already processed all of this contact's details, so break.
                         break;
                     }
-                    seenDetailIds.insert(detailId);
 
                     const QString detailName = detailQuery.value(2).toString();
 
@@ -2721,8 +2722,8 @@ QContactManager::Error ContactReader::queryContacts(
 
                         // Extract the values from the result row (readDetail()).
                         properties.first(&contact, detailQuery, contactId, detailId, syncable,
-                                         ContactCollectionId::apiId(collectionId, m_managerUri),
-                                         relaxConstraints, keepChangeFlags, properties.second);
+                                         apiCollectionId, relaxConstraints, keepChangeFlags,
+                                         properties.second);
                     }
                 } while (detailQuery.next());
             }
