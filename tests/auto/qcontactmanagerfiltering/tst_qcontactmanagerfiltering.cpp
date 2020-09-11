@@ -3208,28 +3208,28 @@ QList<QContactId> tst_QContactManagerFiltering::prepareModel(QContactManager *cm
 #ifdef CUSTOM_LABEL_SUPPORTED
     n2.setCustomLabel("xander");
 #elif defined (CUSTOM_LABEL_STORAGE_SUPPORTED)
-    n2.setValue(QContactName__FieldCustomLabel, "xander");
+    n2.setValue(QContactName::FieldCustomLabel, "xander");
 #endif
     contactH.saveDetail(&n2);
     n2.setFirstName("Xander");
 #ifdef CUSTOM_LABEL_SUPPORTED
     n2.setCustomLabel("Xander");
 #elif defined (CUSTOM_LABEL_STORAGE_SUPPORTED)
-    n2.setValue(QContactName__FieldCustomLabel, "Xander");
+    n2.setValue(QContactName::FieldCustomLabel, "Xander");
 #endif
     contactI.saveDetail(&n2);
     n2.setFirstName("xAnder");
 #ifdef CUSTOM_LABEL_SUPPORTED
     n2.setCustomLabel("xAnder");
 #elif defined (CUSTOM_LABEL_STORAGE_SUPPORTED)
-    n2.setValue(QContactName__FieldCustomLabel, "xAnder");
+    n2.setValue(QContactName::FieldCustomLabel, "xAnder");
 #endif
     contactJ.saveDetail(&n2);
     n2.setFirstName("Yarrow");
 #ifdef CUSTOM_LABEL_SUPPORTED
     n2.setCustomLabel("Yarrow");
 #elif defined (CUSTOM_LABEL_STORAGE_SUPPORTED)
-    n2.setValue(QContactName__FieldCustomLabel, "Yarrow");
+    n2.setValue(QContactName::FieldCustomLabel, "Yarrow");
 #endif
     contactK.saveDetail(&n2);
 
@@ -3251,7 +3251,7 @@ QList<QContactId> tst_QContactManagerFiltering::prepareModel(QContactManager *cm
 #ifdef CUSTOM_LABEL_SUPPORTED
     modifiedName.setCustomLabel("Clarence");
 #elif defined (CUSTOM_LABEL_STORAGE_SUPPORTED)
-    modifiedName.setValue(QContactName__FieldCustomLabel, "Clarence");
+    modifiedName.setValue(QContactName::FieldCustomLabel, "Clarence");
 #endif
     contactC.saveDetail(&modifiedName);
     cm->saveContact(&contactC);
@@ -3260,7 +3260,7 @@ QList<QContactId> tst_QContactManagerFiltering::prepareModel(QContactManager *cm
 #ifdef CUSTOM_LABEL_SUPPORTED
     modifiedName.setCustomLabel("Boris");
 #elif defined (CUSTOM_LABEL_STORAGE_SUPPORTED)
-    modifiedName.setValue(QContactName__FieldCustomLabel, "Boris");
+    modifiedName.setValue(QContactName::FieldCustomLabel, "Boris");
 #endif
     contactB.saveDetail(&modifiedName);
     cm->saveContact(&contactB);
@@ -3269,7 +3269,7 @@ QList<QContactId> tst_QContactManagerFiltering::prepareModel(QContactManager *cm
 #ifdef CUSTOM_LABEL_SUPPORTED
     modifiedName.setCustomLabel("Albert");
 #elif defined (CUSTOM_LABEL_STORAGE_SUPPORTED)
-    modifiedName.setValue(QContactName__FieldCustomLabel, "Albert");
+    modifiedName.setValue(QContactName::FieldCustomLabel, "Albert");
 #endif
     contactA.saveDetail(&modifiedName);
     cm->saveContact(&contactA);
@@ -3619,7 +3619,7 @@ void tst_QContactManagerFiltering::dumpContactDifferences(const QContact& ca, co
 #ifdef CUSTOM_LABEL_SUPPORTED
     QCOMPARE(n1.customLabel(), n2.customLabel());
 #elif defined (CUSTOM_LABEL_STORAGE_SUPPORTED)
-    QCOMPARE(n1.value<QString>(QContactName__FieldCustomLabel), n2.value<QString>(QContactName__FieldCustomLabel));
+    QCOMPARE(n1.value<QString>(QContactName::FieldCustomLabel), n2.value<QString>(QContactName::FieldCustomLabel));
 #endif
 
 #ifdef DISPLAY_LABEL_SUPPORTED

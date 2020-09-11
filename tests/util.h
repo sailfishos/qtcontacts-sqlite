@@ -156,7 +156,7 @@ DetailMap detailValues(const QContactDetail &detail, bool includeProvenance = tr
     if (!includeProvenance) {
         DetailMap::iterator it = rv.begin();
         while (it != rv.end()) {
-            if (it.key() == QContactDetail__FieldProvenance) {
+            if (it.key() == QContactDetail::FieldProvenance) {
                 it = rv.erase(it);
             } else {
                 ++it;

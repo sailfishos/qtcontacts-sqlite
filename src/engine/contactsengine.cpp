@@ -2033,7 +2033,7 @@ QString ContactsEngine::synthesizedDisplayLabel(const QContact &contact, QContac
     QContactName name = contact.detail<QContactName>();
 
     // If a custom label has been set, return that
-    const QString customLabel = name.value<QString>(QContactName__FieldCustomLabel);
+    const QString customLabel = name.value<QString>(QContactName::FieldCustomLabel);
     if (!customLabel.isEmpty())
         return customLabel;
 

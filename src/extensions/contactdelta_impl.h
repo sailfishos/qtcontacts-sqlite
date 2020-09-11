@@ -87,7 +87,7 @@ QSet<QContactDetail::DetailType> getDefaultIgnorableDetailTypes()
 QHash<QContactDetail::DetailType, QSet<int> > getDefaultIgnorableDetailFields()
 {
     QHash<QContactDetail::DetailType, QSet<int> > rv;
-    rv.insert(QContactDetail::TypePhoneNumber, { QContactPhoneNumber__FieldNormalizedNumber });
+    rv.insert(QContactDetail::TypePhoneNumber, { QContactPhoneNumber::FieldNormalizedNumber });
     // Clients can specify their own ignorable fields depending on the semantics of their
     // sync service (eg, might not be able to handle some subtypes or contexts, etc)
     return rv;
@@ -96,7 +96,7 @@ QHash<QContactDetail::DetailType, QSet<int> > getDefaultIgnorableDetailFields()
 QSet<int> getDefaultIgnorableCommonFields()
 {
     return {
-        QContactDetail__FieldProvenance,
+        QContactDetail::FieldProvenance,
         QContactDetail__FieldModifiable,
         QContactDetail__FieldNonexportable,
         QContactDetail__FieldChangeFlags,
@@ -378,7 +378,7 @@ void constructModification(const QContactDetail &old, QContactDetail *update)
         if (field == QContactDetail__FieldDatabaseId
                 || (!values.contains(field)
                     && field == QContactDetail__FieldModifiable
-                    && field == QContactDetail__FieldProvenance
+                    && field == QContactDetail::FieldProvenance
                     && field == QContactDetail::FieldDetailUri
                     && field == QContactDetail::FieldLinkedDetailUris)) {
             update->setValue(field, oldValues.value(field));
@@ -524,7 +524,7 @@ DetailMap detailValues(const QContactDetail &detail, bool includeProvenance = tr
     if (!includeProvenance || !includeModifiable) {
         DetailMap::iterator it = rv.begin();
         while (it != rv.end()) {
-            if (!includeProvenance && it.key() == QContactDetail__FieldProvenance) {
+            if (!includeProvenance && it.key() == QContactDetail::FieldProvenance) {
                 it = rv.erase(it);
             } else if (!includeModifiable && it.key() == QContactDetail__FieldModifiable) {
                 it = rv.erase(it);

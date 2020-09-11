@@ -2022,7 +2022,7 @@ quint32 writeCommonDetails(ContactsDatabase &db, quint32 contactId, quint32 deta
     const QVariant linkedDetailUris = QVariant(detail.linkedDetailUris().join(QStringLiteral(";")));
     const QVariant contexts = detailContexts(detail);
     const QVariant accessConstraints = static_cast<int>(detail.accessConstraints());
-    const QVariant provenance = aggregateContact ? detailValue(detail, QContactDetail__FieldProvenance) : QVariant();
+    const QVariant provenance = aggregateContact ? detailValue(detail, QContactDetail::FieldProvenance) : QVariant();
     const QVariant modifiable = wasLocal ? true : (syncable && detail.hasValue(QContactDetail__FieldModifiable)
                                                    ? detailValue(detail, QContactDetail__FieldModifiable)
                                                    : QVariant());
@@ -2373,7 +2373,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.bindValue(":contactId", contactId);
     query.bindValue(":imageUrl", detail.value<QString>(T::FieldImageUrl).trimmed());
     query.bindValue(":videoUrl", detail.value<QString>(T::FieldVideoUrl).trimmed());
-    query.bindValue(":avatarMetadata", detailValue(detail, QContactAvatar__FieldAvatarMetadata));
+    query.bindValue(":avatarMetadata", detailValue(detail, QContactAvatar::FieldMetaData));
     return query;
 }
 
@@ -2770,7 +2770,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.bindValue(":middleName", detail.value<QString>(QContactName::FieldMiddleName).trimmed());
     query.bindValue(":prefix", detail.value<QString>(QContactName::FieldPrefix).trimmed());
     query.bindValue(":suffix", detail.value<QString>(QContactName::FieldSuffix).trimmed());
-    query.bindValue(":customLabel", detail.value<QString>(QContactName__FieldCustomLabel).trimmed());
+    query.bindValue(":customLabel", detail.value<QString>(QContactName::FieldCustomLabel).trimmed());
 
     return query;
 }
@@ -3278,7 +3278,7 @@ template <typename T> bool ContactWriter::writeDetails(
             if (!aggregateContact) {
                 // Insert the provenance value into the detail, now that we have it
                 const QString provenance(QStringLiteral("%1:%2:%3").arg(ContactCollectionId::databaseId(collectionId)).arg(contactId).arg(detailId));
-                detail.setValue(QContactDetail__FieldProvenance, provenance);
+                detail.setValue(QContactDetail::FieldProvenance, provenance);
             }
 
             ContactsDatabase::Query query = bindDetail(m_database, contactId, detailId, true, detail);
@@ -3316,7 +3316,7 @@ template <typename T> bool ContactWriter::writeDetails(
             if (!aggregateContact) {
                 // Insert the provenance value into the detail, now that we have it
                 const QString provenance(QStringLiteral("%1:%2:%3").arg(ContactCollectionId::databaseId(collectionId)).arg(contactId).arg(detailId));
-                detail.setValue(QContactDetail__FieldProvenance, provenance);
+                detail.setValue(QContactDetail::FieldProvenance, provenance);
             }
 
             ContactsDatabase::Query query = bindDetail(m_database, contactId, detailId, false, detail);
@@ -3358,7 +3358,7 @@ template <typename T> bool ContactWriter::writeDetails(
             if (!aggregateContact) {
                 // Insert the provenance value into the detail, now that we have it
                 const QString provenance(QStringLiteral("%1:%2:%3").arg(ContactCollectionId::databaseId(collectionId)).arg(contactId).arg(detailId));
-                detail.setValue(QContactDetail__FieldProvenance, provenance);
+                detail.setValue(QContactDetail::FieldProvenance, provenance);
             }
 
             ContactsDatabase::Query query = bindDetail(m_database, contactId, detailId, false, detail);
@@ -3747,9 +3747,9 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
                 aname.setLastName(cname.lastName());
             if (!cname.suffix().isEmpty() && aname.suffix().isEmpty())
                 aname.setSuffix(cname.suffix());
-            QString customLabel = cname.value<QString>(QContactName__FieldCustomLabel);
-            if (!customLabel.isEmpty() && aname.value<QString>(QContactName__FieldCustomLabel).isEmpty())
-                aname.setValue(QContactName__FieldCustomLabel, cname.value(QContactName__FieldCustomLabel));
+            QString customLabel = cname.value<QString>(QContactName::FieldCustomLabel);
+            if (!customLabel.isEmpty() && aname.value<QString>(QContactName::FieldCustomLabel).isEmpty())
+                aname.setValue(QContactName::FieldCustomLabel, cname.value(QContactName::FieldCustomLabel));
             aggregate->saveDetail(&aname, QContact::IgnoreAccessConstraints);
         } else if (detailType(original) == detailType<QContactTimestamp>()) {
             // timestamp involves composition
@@ -3808,7 +3808,7 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
                 det.setValue(QContactDetail__FieldModifiable, false);
 
                 // Store the provenance of this promoted detail
-                det.setValue(QContactDetail__FieldProvenance, original.value<QString>(QContactDetail__FieldProvenance));
+                det.setValue(QContactDetail::FieldProvenance, original.value<QString>(QContactDetail::FieldProvenance));
 
                 aggregate->saveDetail(&det, QContact::IgnoreAccessConstraints);
             }

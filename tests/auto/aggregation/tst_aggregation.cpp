@@ -50,7 +50,7 @@ static const char *removedAccumulationSlot = SLOT(remAccumulationSlot(QList<QCon
 
 QString detailProvenance(const QContactDetail &detail)
 {
-    return detail.value<QString>(QContactDetail__FieldProvenance);
+    return detail.value<QString>(QContactDetail::FieldProvenance);
 }
 
 QString detailProvenanceContact(const QContactDetail &detail)
@@ -3392,13 +3392,13 @@ void tst_Aggregation::customSemantics()
     alice.saveDetail(&an);
     QContactAvatar aa;
     aa.setImageUrl(QUrl(QString::fromLatin1("test.png")));
-    aa.setValue(QContactAvatar__FieldAvatarMetadata, "cover");
+    aa.setValue(QContactAvatar::FieldMetaData, "cover");
     alice.saveDetail(&aa);
     QVERIFY(m_cm->saveContact(&alice));
     QContact aliceReloaded = m_cm->contact(retrievalId(alice));
     QCOMPARE(aliceReloaded.detail<QContactName>().value<QString>(QContactName::FieldFirstName), QLatin1String("Alice"));
     QCOMPARE(QUrl(aliceReloaded.detail<QContactAvatar>().value<QString>(QContactAvatar::FieldImageUrl)).toString(), QUrl(QString::fromLatin1("test.png")).toString());
-    QCOMPARE(aliceReloaded.detail<QContactAvatar>().value<QString>(QContactAvatar__FieldAvatarMetadata), QLatin1String("cover"));
+    QCOMPARE(aliceReloaded.detail<QContactAvatar>().value<QString>(QContactAvatar::FieldMetaData), QLatin1String("cover"));
 
     // test the self contact semantics
     QCOMPARE(m_cm->selfContactId(), ContactId::apiId(2, m_cm->managerUri()));
