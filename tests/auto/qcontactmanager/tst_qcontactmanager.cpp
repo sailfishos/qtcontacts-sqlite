@@ -405,7 +405,7 @@ void tst_QContactManager::dumpContactDifferences(const QContact& ca, const QCont
 #ifdef CUSTOM_LABEL_SUPPORTED
     QCOMPARE(n1.customLabel(), n2.customLabel());
 #elif defined(CUSTOM_LABEL_STORAGE_SUPPORTED)
-    QCOMPARE(n1.value<QString>(QContactName__FieldCustomLabel), n2.value<QString>(QContactName__FieldCustomLabel));
+    QCOMPARE(n1.value<QString>(QContactName::FieldCustomLabel), n2.value<QString>(QContactName::FieldCustomLabel));
 #endif
 
 #ifdef DISPLAY_LABEL_SUPPORTED
@@ -682,7 +682,7 @@ void tst_QContactManager::saveContactName(QContact *contact, QContactDetailDefin
 #ifdef CUSTOM_LABEL_SUPPORTED
     contactName->setCustomLabel(name);
 #elif defined(CUSTOM_LABEL_STORAGE_SUPPORTED)
-    contactName->setValue(QContactName__FieldCustomLabel, name);
+    contactName->setValue(QContactName::FieldCustomLabel, name);
 #else
     contactName->setFirstName(name);
 #endif

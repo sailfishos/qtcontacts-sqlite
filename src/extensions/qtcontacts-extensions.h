@@ -49,7 +49,6 @@
 QT_BEGIN_NAMESPACE_CONTACTS
 
 // In QContactDetail, we support some extra fields
-static const int QContactDetail__FieldProvenance = (QContactDetail::FieldLinkedDetailUris+1);
 static const int QContactDetail__FieldModifiable = (QContactDetail::FieldLinkedDetailUris+2);
 static const int QContactDetail__FieldNonexportable = (QContactDetail::FieldLinkedDetailUris+3);
 static const int QContactDetail__FieldChangeFlags = (QContactDetail::FieldLinkedDetailUris+4);
@@ -60,9 +59,6 @@ static const int QContactDetail__FieldDatabaseId = (QContactDetail::FieldLinkedD
 static const int QContactDetail__ChangeFlag_IsAdded    = 1 << 0;
 static const int QContactDetail__ChangeFlag_IsModified = 1 << 1;
 static const int QContactDetail__ChangeFlag_IsDeleted  = 1 << 2;
-
-// In QContactName, we support the customLabel property
-static const int QContactName__FieldCustomLabel = (QContactName::FieldSuffix+1);
 
 // In QContactDisplayLabel, we support the labelGroup property
 static const int QContactDisplayLabel__FieldLabelGroup = (QContactDisplayLabel::FieldLabel+1);
@@ -77,12 +73,6 @@ static const int QContactOnlineAccount__FieldAccountIconPath = (QContactOnlineAc
 static const int QContactOnlineAccount__FieldEnabled = (QContactOnlineAccount::FieldSubTypes+3);
 static const int QContactOnlineAccount__FieldAccountDisplayName = (QContactOnlineAccount::FieldSubTypes+4);
 static const int QContactOnlineAccount__FieldServiceProviderDisplayName = (QContactOnlineAccount::FieldSubTypes+5);
-
-// In QContactPhoneNumber, we support a field for normalized form of the number
-static const int QContactPhoneNumber__FieldNormalizedNumber = (QContactPhoneNumber::FieldSubTypes+1);
-
-// In QContactAvatar, we support a field for storing caller metadata
-static const int QContactAvatar__FieldAvatarMetadata = (QContactAvatar::FieldVideoUrl+1);
 
 // We support the QContactOriginMetadata detail type
 static const QContactDetail::DetailType QContactDetail__TypeOriginMetadata = static_cast<QContactDetail::DetailType>(QContactDetail::TypeVersion + 1);

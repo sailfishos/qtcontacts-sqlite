@@ -228,7 +228,7 @@ static const FieldInfo avatarFields[] =
 {
     { QContactAvatar::FieldImageUrl, "imageUrl", StringField },
     { QContactAvatar::FieldVideoUrl, "videoUrl", StringField },
-    { QContactAvatar__FieldAvatarMetadata, "avatarMetadata", StringField }
+    { QContactAvatar::FieldMetaData, "avatarMetadata", StringField }
 };
 
 static void setValues(QContactAvatar *detail, QSqlQuery *query, const int offset)
@@ -237,7 +237,7 @@ static void setValues(QContactAvatar *detail, QSqlQuery *query, const int offset
 
     setValue(detail, T::FieldImageUrl, urlValue(query->value(offset + 0)));
     setValue(detail, T::FieldVideoUrl, urlValue(query->value(offset + 1)));
-    setValue(detail, QContactAvatar__FieldAvatarMetadata, query->value(offset + 2));
+    setValue(detail, QContactAvatar::FieldMetaData, query->value(offset + 2));
 }
 
 static const FieldInfo birthdayFields[] =
@@ -391,7 +391,7 @@ static const FieldInfo nameFields[] =
     { QContactName::FieldMiddleName, "middleName", LocalizedField },
     { QContactName::FieldPrefix, "prefix", LocalizedField },
     { QContactName::FieldSuffix, "suffix", LocalizedField },
-    { QContactName__FieldCustomLabel, "customLabel", LocalizedField }
+    { QContactName::FieldCustomLabel, "customLabel", LocalizedField }
 };
 
 static void setValues(QContactName *detail, QSqlQuery *query, const int offset)
@@ -497,7 +497,7 @@ static const FieldInfo phoneNumberFields[] =
 {
     { QContactPhoneNumber::FieldNumber, "phoneNumber", LocalizedField },
     { QContactPhoneNumber::FieldSubTypes, "subTypes", StringListField },
-    { QContactPhoneNumber__FieldNormalizedNumber, "normalizedNumber", StringField }
+    { QContactPhoneNumber::FieldNormalizedNumber, "normalizedNumber", StringField }
 };
 
 static void setValues(QContactPhoneNumber *detail, QSqlQuery *query, const int offset)
@@ -509,7 +509,7 @@ static void setValues(QContactPhoneNumber *detail, QSqlQuery *query, const int o
     const QStringList subTypeValues(query->value(offset + 1).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
     setValue(detail, T::FieldSubTypes, QVariant::fromValue<QList<int> >(subTypeList(subTypeValues)));
 
-    setValue(detail, QContactPhoneNumber__FieldNormalizedNumber, query->value(offset + 2));
+    setValue(detail, QContactPhoneNumber::FieldNormalizedNumber, query->value(offset + 2));
 }
 
 static const FieldInfo presenceFields[] =
@@ -698,7 +698,7 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
         // This detail is not aggregated from another - its provenance should match its ID
         provenance = QStringLiteral("%1:%2:%3").arg(ContactCollectionId::databaseId(collectionId)).arg(contactId).arg(dbId);
     }
-    setValue(&detail, QContactDetail__FieldProvenance, provenance);
+    setValue(&detail, QContactDetail::FieldProvenance, provenance);
 
     // Only report modifiable state for non-local contacts.
     // local contacts are always (implicitly) modifiable.
