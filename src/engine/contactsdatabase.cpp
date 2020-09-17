@@ -2277,17 +2277,17 @@ static bool beginTransaction(QSqlDatabase &database)
 {
     // Use immediate lock acquisition; we should already have an IPC lock, so
     // there will be no lock contention with other writing processes
-    return execute(database, QString::fromLatin1("BEGIN IMMEDIATE TRANSACTION"));
+    return execute(database, QStringLiteral("BEGIN IMMEDIATE TRANSACTION"));
 }
 
 static bool commitTransaction(QSqlDatabase &database)
 {
-    return execute(database, QString::fromLatin1("COMMIT TRANSACTION"));
+    return execute(database, QStringLiteral("COMMIT TRANSACTION"));
 }
 
 static bool rollbackTransaction(QSqlDatabase &database)
 {
-    return execute(database, QString::fromLatin1("ROLLBACK TRANSACTION"));
+    return execute(database, QStringLiteral("ROLLBACK TRANSACTION"));
 }
 
 static bool finalizeTransaction(QSqlDatabase &database, bool success)
@@ -2560,10 +2560,10 @@ static bool executeUpgradeStatements(QSqlDatabase &database)
 static bool checkDatabase(QSqlDatabase &database)
 {
     QSqlQuery query(database);
-    if (query.exec(QLatin1String("PRAGMA quick_check"))) {
+    if (query.exec(QStringLiteral("PRAGMA quick_check"))) {
         while (query.next()) {
             const QString result(query.value(0).toString());
-            if (result == QLatin1String("ok")) {
+            if (result == QStringLiteral("ok")) {
                 return true;
             }
             qWarning() << "Integrity problem:" << result;
@@ -2596,10 +2596,10 @@ static bool configureDatabase(QSqlDatabase &database, QString &localeName)
                 .arg(database.lastError().text()));
         return false;
     } else {
-        const QString cLocaleName(QString::fromLatin1("C"));
+        const QString cLocaleName(QStringLiteral("C"));
         if (localeName != cLocaleName) {
             // Create a collation for sorting by the current locale
-            const QString statement(QString::fromLatin1("SELECT icu_load_collation('%1', 'localeCollation')"));
+            const QString statement(QStringLiteral("SELECT icu_load_collation('%1', 'localeCollation')"));
             if (!execute(database, statement.arg(localeName))) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to configure collation for locale %1: %2")
                         .arg(localeName).arg(database.lastError().text()));
@@ -2626,7 +2626,7 @@ static bool executeCreationStatements(QSqlDatabase &database)
         }
     }
 
-    if (!execute(database, QString::fromLatin1("PRAGMA user_version=%1").arg(currentSchemaVersion))) {
+    if (!execute(database, QStringLiteral("PRAGMA user_version=%1").arg(currentSchemaVersion))) {
         return false;
     }
 
@@ -2735,7 +2735,7 @@ static void bindValues(ContactsDatabase::Query &query, const QMap<QString, QVari
 
 static bool countTransientTables(ContactsDatabase &, QSqlDatabase &db, const QString &table, int *count)
 {
-    static const QString sql(QString::fromLatin1("SELECT COUNT(*) FROM sqlite_temp_master WHERE type = 'table' and name LIKE '%1_transient%'"));
+    static const QString sql(QStringLiteral("SELECT COUNT(*) FROM sqlite_temp_master WHERE type = 'table' and name LIKE '%1_transient%'"));
 
     *count = 0;
 
@@ -2752,7 +2752,7 @@ static bool countTransientTables(ContactsDatabase &, QSqlDatabase &db, const QSt
 
 static bool findTransientTables(ContactsDatabase &, QSqlDatabase &db, const QString &table, QStringList *tableNames)
 {
-    static const QString sql(QString::fromLatin1("SELECT name FROM sqlite_temp_master WHERE type = 'table' and name LIKE '%1_transient%'"));
+    static const QString sql(QStringLiteral("SELECT name FROM sqlite_temp_master WHERE type = 'table' and name LIKE '%1_transient%'"));
 
     QSqlQuery query(db);
     if (!query.prepare(sql.arg(table)) || !ContactsDatabase::execute(query)) {
@@ -2767,7 +2767,7 @@ static bool findTransientTables(ContactsDatabase &, QSqlDatabase &db, const QStr
 
 static bool dropTransientTables(ContactsDatabase &cdb, QSqlDatabase &db, const QString &table)
 {
-    static const QString dropTableStatement = QString::fromLatin1("DROP TABLE temp.%1");
+    static const QString dropTableStatement = QStringLiteral("DROP TABLE temp.%1");
 
     QStringList tableNames;
     if (!findTransientTables(cdb, db, table, &tableNames))
@@ -2797,8 +2797,8 @@ template<typename ValueContainer>
 bool createTemporaryContactIdsTable(ContactsDatabase &cdb, QSqlDatabase &, const QString &table, bool filter, const QVariantList &boundIds,
                                     const QString &join, const QString &where, const QString &orderBy, const ValueContainer &boundValues, int limit)
 {
-    static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 (contactId INTEGER)"));
-    static const QString insertFilterStatement(QString::fromLatin1("INSERT INTO temp.%1 (contactId) SELECT Contacts.contactId FROM Contacts %2 %3"));
+    static const QString createStatement(QStringLiteral("CREATE TABLE IF NOT EXISTS temp.%1 (contactId INTEGER)"));
+    static const QString insertFilterStatement(QStringLiteral("INSERT INTO temp.%1 (contactId) SELECT Contacts.contactId FROM Contacts %2 %3"));
 
     // Create the temporary table (if we haven't already).
     {
@@ -2815,10 +2815,10 @@ bool createTemporaryContactIdsTable(ContactsDatabase &cdb, QSqlDatabase &, const
         // specified by filter
         QString insertStatement = insertFilterStatement.arg(table).arg(join).arg(where);
         if (!orderBy.isEmpty()) {
-            insertStatement.append(QString::fromLatin1(" ORDER BY ") + orderBy);
+            insertStatement.append(QStringLiteral(" ORDER BY ") + orderBy);
         }
         if (limit > 0) {
-            insertStatement.append(QString::fromLatin1(" LIMIT %1").arg(limit));
+            insertStatement.append(QStringLiteral(" LIMIT %1").arg(limit));
         }
         ContactsDatabase::Query insertQuery(cdb.prepare(insertStatement));
         bindValues(insertQuery, boundValues);
@@ -2844,7 +2844,7 @@ bool createTemporaryContactIdsTable(ContactsDatabase &cdb, QSqlDatabase &, const
                 quint32 remainder = (end - it);
                 QVariantList::const_iterator batchEnd = it + std::min<quint32>(remainder, 500);
 
-                const QString insertStatement = QString::fromLatin1("INSERT INTO temp.%1 (contactId) VALUES (:contactId)").arg(table);
+                const QString insertStatement = QStringLiteral("INSERT INTO temp.%1 (contactId) VALUES (:contactId)").arg(table);
                 ContactsDatabase::Query insertQuery(cdb.prepare(insertStatement));
 
                 QVariantList cids;
@@ -2870,12 +2870,12 @@ bool createTemporaryContactIdsTable(ContactsDatabase &cdb, QSqlDatabase &, const
 
 void dropOrDeleteTable(ContactsDatabase &cdb, QSqlDatabase &db, const QString &table)
 {
-    const QString dropTableStatement = QString::fromLatin1("DROP TABLE IF EXISTS temp.%1").arg(table);
+    const QString dropTableStatement = QStringLiteral("DROP TABLE IF EXISTS temp.%1").arg(table);
     ContactsDatabase::Query dropTableQuery(cdb.prepare(dropTableStatement));
     if (!ContactsDatabase::execute(dropTableQuery)) {
         // couldn't drop the table, just delete all entries instead.
         QSqlQuery deleteRecordsQuery(db);
-        const QString deleteRecordsStatement = QString::fromLatin1("DELETE FROM temp.%1").arg(table);
+        const QString deleteRecordsStatement = QStringLiteral("DELETE FROM temp.%1").arg(table);
         if (!deleteRecordsQuery.prepare(deleteRecordsStatement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare delete records query - the next query may return spurious results: %1\n%2")
                     .arg(deleteRecordsQuery.lastError().text())
@@ -2899,10 +2899,10 @@ void clearTemporaryContactIdsTable(ContactsDatabase &cdb, QSqlDatabase &db, cons
 
 bool createTemporaryContactTimestampTable(ContactsDatabase &cdb, QSqlDatabase &, const QString &table, const QList<QPair<quint32, QString> > &values)
 {
-    static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 ("
-                                                                 "contactId INTEGER PRIMARY KEY ASC,"
-                                                                 "modified DATETIME"
-                                                             ")"));
+    static const QString createStatement(QStringLiteral("CREATE TABLE IF NOT EXISTS temp.%1 ("
+                                                            "contactId INTEGER PRIMARY KEY ASC,"
+                                                            "modified DATETIME"
+                                                        ")"));
 
     // Create the temporary table (if we haven't already).
     {
@@ -2923,13 +2923,13 @@ bool createTemporaryContactTimestampTable(ContactsDatabase &cdb, QSqlDatabase &,
             quint32 count = std::min<quint32>(remainder, 250);
             QList<QPair<quint32, QString> >::const_iterator batchEnd = it + count;
 
-            QString insertStatement = QString::fromLatin1("INSERT INTO temp.%1 (contactId, modified) VALUES ").arg(table);
+            QString insertStatement = QStringLiteral("INSERT INTO temp.%1 (contactId, modified) VALUES ").arg(table);
             while (true) {
-                insertStatement.append(QString::fromLatin1("(?,?)"));
+                insertStatement.append(QStringLiteral("(?,?)"));
                 if (++it == batchEnd) {
                     break;
                 } else {
-                    insertStatement.append(QString::fromLatin1(","));
+                    insertStatement.append(QStringLiteral(","));
                 }
             }
 
@@ -2960,11 +2960,11 @@ void clearTemporaryContactTimestampTable(ContactsDatabase &cdb, QSqlDatabase &db
 
 bool createTemporaryContactPresenceTable(ContactsDatabase &cdb, QSqlDatabase &, const QString &table, const QList<QPair<quint32, qint64> > &values)
 {
-    static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 ("
-                                                                 "contactId INTEGER PRIMARY KEY ASC,"
-                                                                 "presenceState INTEGER,"
-                                                                 "isOnline BOOL"
-                                                             ")"));
+    static const QString createStatement(QStringLiteral("CREATE TABLE IF NOT EXISTS temp.%1 ("
+                                                            "contactId INTEGER PRIMARY KEY ASC,"
+                                                            "presenceState INTEGER,"
+                                                            "isOnline BOOL"
+                                                        ")"));
 
     // Create the temporary table (if we haven't already).
     {
@@ -2985,13 +2985,13 @@ bool createTemporaryContactPresenceTable(ContactsDatabase &cdb, QSqlDatabase &, 
             quint32 count = std::min<quint32>(remainder, 167);
             QList<QPair<quint32, qint64> >::const_iterator batchEnd = it + count;
 
-            QString insertStatement = QString::fromLatin1("INSERT INTO temp.%1 (contactId, presenceState, isOnline) VALUES ").arg(table);
+            QString insertStatement = QStringLiteral("INSERT INTO temp.%1 (contactId, presenceState, isOnline) VALUES ").arg(table);
             while (true) {
-                insertStatement.append(QString::fromLatin1("(?,?,?)"));
+                insertStatement.append(QStringLiteral("(?,?,?)"));
                 if (++it == batchEnd) {
                     break;
                 } else {
-                    insertStatement.append(QString::fromLatin1(","));
+                    insertStatement.append(QStringLiteral(","));
                 }
             }
 
@@ -3025,7 +3025,7 @@ void clearTemporaryContactPresenceTable(ContactsDatabase &cdb, QSqlDatabase &db,
 
 bool createTemporaryValuesTable(ContactsDatabase &cdb, QSqlDatabase &, const QString &table, const QVariantList &values)
 {
-    static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 (value BLOB)"));
+    static const QString createStatement(QStringLiteral("CREATE TABLE IF NOT EXISTS temp.%1 (value BLOB)"));
 
     // Create the temporary table (if we haven't already).
     {
@@ -3046,13 +3046,13 @@ bool createTemporaryValuesTable(ContactsDatabase &cdb, QSqlDatabase &, const QSt
             quint32 count = std::min<quint32>(remainder, 500);
             QVariantList::const_iterator batchEnd = it + count;
 
-            QString insertStatement = QString::fromLatin1("INSERT INTO temp.%1 (value) VALUES ").arg(table);
+            QString insertStatement = QStringLiteral("INSERT INTO temp.%1 (value) VALUES ").arg(table);
             while (true) {
-                insertStatement.append(QString::fromLatin1("(?)"));
+                insertStatement.append(QStringLiteral("(?)"));
                 if (++it == batchEnd) {
                     break;
                 } else {
-                    insertStatement.append(QString::fromLatin1(","));
+                    insertStatement.append(QStringLiteral(","));
                 }
             }
 
@@ -3078,14 +3078,14 @@ void clearTemporaryValuesTable(ContactsDatabase &cdb, QSqlDatabase &db, const QS
 
 static bool createTransientContactIdsTable(ContactsDatabase &cdb, QSqlDatabase &db, const QString &table, const QVariantList &ids, QString *transientTableName)
 {
-    static const QString createTableStatement(QString::fromLatin1("CREATE TABLE %1 (contactId INTEGER)"));
-    static const QString insertIdsStatement(QString::fromLatin1("INSERT INTO %1 (contactId) VALUES(:contactId)"));
+    static const QString createTableStatement(QStringLiteral("CREATE TABLE %1 (contactId INTEGER)"));
+    static const QString insertIdsStatement(QStringLiteral("INSERT INTO %1 (contactId) VALUES(:contactId)"));
 
     int existingTables = 0;
     if (!countTransientTables(cdb, db, table, &existingTables))
         return false;
 
-    const QString tableName(QString::fromLatin1("temp.%1_transient%2").arg(table).arg(existingTables));
+    const QString tableName(QStringLiteral("temp.%1_transient%2").arg(table).arg(existingTables));
 
     // Create the transient table (if we haven't already).
     {
@@ -3229,15 +3229,15 @@ ContactsDatabase::ProcessMutex::ProcessMutex(const QString &path)
     , m_initialProcess(false)
 {
     if (!m_semaphore.isValid()) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to create semaphore array!"));
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to create semaphore array!"));
     } else {
         if (!m_semaphore.decrement(databaseOwnershipIndex)) {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to determine database ownership!"));
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to determine database ownership!"));
         } else {
             // Only the first process to connect to the semaphore is the owner
             m_initialProcess = (m_semaphore.value(databaseConnectionsIndex) == 0);
             if (!m_semaphore.increment(databaseConnectionsIndex)) {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to increment database connections!"));
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to increment database connections!"));
             }
 
             m_semaphore.increment(databaseOwnershipIndex);
@@ -3272,7 +3272,7 @@ ContactsDatabase::Query::Query(const QSqlQuery &query)
 
 void ContactsDatabase::Query::reportError(const QString &text) const
 {
-    QString output(text + QString::fromLatin1("\n%1").arg(m_query.lastError().text()));
+    QString output(text + QStringLiteral("\n%1").arg(m_query.lastError().text()));
     QTCONTACTS_SQLITE_WARNING(output);
 }
 
@@ -3288,7 +3288,7 @@ ContactsDatabase::ContactsDatabase(ContactsEngine *engine)
     , m_localeName(QLocale().name())
     , m_defaultGenerator(new DefaultDlgGenerator)
 #ifdef HAS_MLITE
-    , m_groupPropertyConf(QLatin1String("/org/nemomobile/contacts/group_property"))
+    , m_groupPropertyConf(QStringLiteral("/org/nemomobile/contacts/group_property"))
 #endif // HAS_MLITE
 {
 #ifdef HAS_MLITE
@@ -3386,9 +3386,9 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
     const QString systemDataDirPath(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/system/");
     const QString privilegedDataDirPath(systemDataDirPath + QTCONTACTS_SQLITE_PRIVILEGED_DIR + "/");
 
-    QString databaseSubdir(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR));
+    QString databaseSubdir(QStringLiteral(QTCONTACTS_SQLITE_DATABASE_DIR));
     if (autoTest) {
-        databaseSubdir.append(QString::fromLatin1("-test"));
+        databaseSubdir.append(QStringLiteral("-test"));
     }
 
     QDir databaseDir;
@@ -3408,14 +3408,14 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
         m_nonprivileged = true;
     }
 
-    const QString databaseFile = databaseDir.absoluteFilePath(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_NAME));
+    const QString databaseFile = databaseDir.absoluteFilePath(QStringLiteral(QTCONTACTS_SQLITE_DATABASE_NAME));
     const bool databasePreexisting = QFile::exists(databaseFile);
     if (!databasePreexisting && secondaryConnection) {
         // The database must already be created/checked/opened by a primary connection
         return false;
     }
 
-    m_database = QSqlDatabase::addDatabase(QString::fromLatin1("QSQLITE"), connectionName);
+    m_database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
     m_database.setDatabaseName(databaseFile);
 
     if (!m_database.open()) {
@@ -3528,7 +3528,7 @@ bool ContactsDatabase::nonprivileged() const
 
 bool ContactsDatabase::localized() const
 {
-    return (m_localeName != QLatin1String("C"));
+    return (m_localeName != QStringLiteral("C"));
 }
 
 bool ContactsDatabase::aggregating() const
@@ -3716,7 +3716,7 @@ QString ContactsDatabase::expandQuery(const QString &queryString, const QMap<QSt
 
         QString valueText;
         if (value.type() == QVariant::String) {
-            valueText = QString::fromLatin1("'%1'").arg(value.toString());
+            valueText = QStringLiteral("'%1'").arg(value.toString());
         } else {
             valueText = value.toString();
         }
