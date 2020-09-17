@@ -308,7 +308,7 @@ static QContactManager::Error bindRelationships(
 QContactManager::Error ContactWriter::save(
         const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction, bool withinAggregateUpdate)
 {
-    QMutexLocker locker(m_database.accessMutex());
+    QMutexLocker locker(withinTransaction ? nullptr : m_database.accessMutex());
 
     if (relationships.isEmpty())
         return QContactManager::NoError;
@@ -479,7 +479,7 @@ QContactManager::Error ContactWriter::saveRelationships(
 QContactManager::Error ContactWriter::remove(
         const QList<QContactRelationship> &relationships, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction)
 {
-    QMutexLocker locker(m_database.accessMutex());
+    QMutexLocker locker(withinTransaction ? nullptr : m_database.accessMutex());
 
     if (relationships.isEmpty())
         return QContactManager::NoError;
@@ -644,7 +644,7 @@ QContactManager::Error ContactWriter::save(
 {
     Q_UNUSED(withinSyncUpdate) // TODO
 
-    QMutexLocker locker(m_database.accessMutex());
+    QMutexLocker locker(withinTransaction ? nullptr : m_database.accessMutex());
 
     if (!withinTransaction && !beginTransaction()) {
         // if we are not already within a transaction, create a transaction.
@@ -766,7 +766,7 @@ QContactManager::Error ContactWriter::remove(
         bool withinTransaction,
         bool withinSyncUpdate)
 {
-    QMutexLocker locker(m_database.accessMutex());
+    QMutexLocker locker(withinTransaction ? nullptr : m_database.accessMutex());
 
     if (!withinTransaction && !beginTransaction()) {
         // if we are not already within a transaction, create a transaction.
@@ -941,7 +941,7 @@ QContactManager::Error ContactWriter::deleteContacts(const QVariantList &ids, bo
 
 QContactManager::Error ContactWriter::remove(const QList<QContactId> &contactIds, QMap<int, QContactManager::Error> *errorMap, bool withinTransaction, bool withinSyncUpdate)
 {
-    QMutexLocker locker(m_database.accessMutex());
+    QMutexLocker locker(withinTransaction ? nullptr : m_database.accessMutex());
 
     if (contactIds.isEmpty())
         return QContactManager::NoError;
@@ -1350,7 +1350,7 @@ QVariant detailValue(const T &detail, F field)
 */
 QContactManager::Error ContactWriter::clearChangeFlags(const QList<QContactId> &contactIds, bool withinTransaction)
 {
-    QMutexLocker locker(m_database.accessMutex());
+    QMutexLocker locker(withinTransaction ? nullptr : m_database.accessMutex());
 
     QVariantList boundIds;
     for (const QContactId &id : contactIds) {
@@ -1431,7 +1431,7 @@ QContactManager::Error ContactWriter::clearChangeFlags(const QList<QContactId> &
  */
 QContactManager::Error ContactWriter::clearChangeFlags(const QContactCollectionId &collectionId, bool withinTransaction)
 {
-    QMutexLocker locker(m_database.accessMutex());
+    QMutexLocker locker(withinTransaction ? nullptr : m_database.accessMutex());
 
     if (!withinTransaction && !beginTransaction()) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to begin database transaction while clearing collection change flags"));
@@ -3442,7 +3442,7 @@ QContactManager::Error ContactWriter::save(
             bool withinAggregateUpdate,
             bool withinSyncUpdate)
 {
-    QMutexLocker locker(m_database.accessMutex());
+    QMutexLocker locker(withinTransaction ? nullptr : m_database.accessMutex());
 
     if (contacts->isEmpty())
         return QContactManager::NoError;
