@@ -96,20 +96,20 @@ namespace {
     }
 }
 
-static const QString aggregateSyncTarget(QString::fromLatin1("aggregate"));
-static const QString localSyncTarget(QString::fromLatin1("local"));
-static const QString wasLocalSyncTarget(QString::fromLatin1("was_local"));
-static const QString exportSyncTarget(QString::fromLatin1("export"));
+static const QString aggregateSyncTarget(QStringLiteral("aggregate"));
+static const QString localSyncTarget(QStringLiteral("local"));
+static const QString wasLocalSyncTarget(QStringLiteral("was_local"));
+static const QString exportSyncTarget(QStringLiteral("export"));
 
-static const QString aggregationIdsTable(QString::fromLatin1("aggregationIds"));
-static const QString modifiableContactsTable(QString::fromLatin1("modifiableContacts"));
-static const QString syncConstituentsTable(QString::fromLatin1("syncConstituents"));
-static const QString syncAggregatesTable(QString::fromLatin1("syncAggregates"));
+static const QString aggregationIdsTable(QStringLiteral("aggregationIds"));
+static const QString modifiableContactsTable(QStringLiteral("modifiableContacts"));
+static const QString syncConstituentsTable(QStringLiteral("syncConstituents"));
+static const QString syncAggregatesTable(QStringLiteral("syncAggregates"));
 
-static const QString possibleAggregatesTable(QString::fromLatin1("possibleAggregates"));
-static const QString matchEmailAddressesTable(QString::fromLatin1("matchEmailAddresses"));
-static const QString matchPhoneNumbersTable(QString::fromLatin1("matchPhoneNumbers"));
-static const QString matchOnlineAccountsTable(QString::fromLatin1("matchOnlineAccounts"));
+static const QString possibleAggregatesTable(QStringLiteral("possibleAggregates"));
+static const QString matchEmailAddressesTable(QStringLiteral("matchEmailAddresses"));
+static const QString matchPhoneNumbersTable(QStringLiteral("matchPhoneNumbers"));
+static const QString matchOnlineAccountsTable(QStringLiteral("matchOnlineAccounts"));
 
 ContactWriter::ContactWriter(ContactsEngine &engine, ContactsDatabase &database, ContactNotifier *notifier, ContactReader *reader)
     : m_engine(engine)
@@ -390,7 +390,7 @@ QContactManager::Error ContactWriter::saveRelationships(
     QSet<quint32> aggregatesAffected;
 
     QSqlQuery multiInsertQuery(m_database);
-    QString queryString = QLatin1String("INSERT INTO Relationships");
+    QString queryString = QStringLiteral("INSERT INTO Relationships");
     int realInsertions = 0;
     int invalidInsertions = 0;
     for (int i = 0; i < relationships.size(); ++i) {
@@ -423,11 +423,11 @@ QContactManager::Error ContactWriter::saveRelationships(
             continue;
         } else {
             if (realInsertions == 0) {
-                queryString += QString(QLatin1String("\n SELECT :firstId%1 as firstId, :secondId%1 as secondId, :type%1 as type"))
-                                      .arg(QString::number(realInsertions));
+                queryString += QStringLiteral("\n SELECT :firstId%1 as firstId, :secondId%1 as secondId, :type%1 as type")
+                                         .arg(QString::number(realInsertions));
             } else {
-                queryString += QString(QLatin1String("\n UNION SELECT :firstId%1, :secondId%1, :type%1"))
-                                      .arg(QString::number(realInsertions));
+                queryString += QStringLiteral("\n UNION SELECT :firstId%1, :secondId%1, :type%1")
+                                         .arg(QString::number(realInsertions));
             }
             firstIdsToBind.append(firstId);
             secondIdsToBind.append(secondId);
@@ -450,9 +450,9 @@ QContactManager::Error ContactWriter::saveRelationships(
     }
 
     for (int i = 0; i < realInsertions; ++i) {
-        multiInsertQuery.bindValue(QString(QLatin1String(":firstId%1")).arg(QString::number(i)), firstIdsToBind.at(i));
-        multiInsertQuery.bindValue(QString(QLatin1String(":secondId%1")).arg(QString::number(i)), secondIdsToBind.at(i));
-        multiInsertQuery.bindValue(QString(QLatin1String(":type%1")).arg(QString::number(i)), typesToBind.at(i));
+        multiInsertQuery.bindValue(QStringLiteral(":firstId%1").arg(QString::number(i)), firstIdsToBind.at(i));
+        multiInsertQuery.bindValue(QStringLiteral(":secondId%1").arg(QString::number(i)), secondIdsToBind.at(i));
+        multiInsertQuery.bindValue(QStringLiteral(":type%1").arg(QString::number(i)), typesToBind.at(i));
     }
 
     if (realInsertions > 0 && !ContactsDatabase::execute(multiInsertQuery)) {
@@ -665,7 +665,7 @@ QContactManager::Error ContactWriter::save(
                 " SELECT COUNT(*) FROM Collections WHERE collectionId = :collectionId"
             ));
             ContactsDatabase::Query query(m_database.prepare(queryCollectionExistence));
-            query.bindValue(QLatin1String(":collectionId"), ContactCollectionId::databaseId(collection.id()));
+            query.bindValue(QStringLiteral(":collectionId"), ContactCollectionId::databaseId(collection.id()));
             if (!ContactsDatabase::execute(query)) {
                 query.reportError("Failed to query collection existence");
                 saveError = QContactManager::UnspecifiedError;
@@ -722,7 +722,7 @@ QContactManager::Error ContactWriter::removeCollection(const QContactCollectionI
         " DELETE FROM Collections WHERE collectionId = :collectionId %1"
     ).arg(onlyIfFlagged ? QStringLiteral("AND changeFlags >= 4") : QString())); // ChangeFlags::IsDeleted
     ContactsDatabase::Query remove(m_database.prepare(removeCollectionStatement));
-    remove.bindValue(QLatin1String(":collectionId"), ContactCollectionId::databaseId(collectionId));
+    remove.bindValue(QStringLiteral(":collectionId"), ContactCollectionId::databaseId(collectionId));
     if (!ContactsDatabase::execute(remove)) {
         remove.reportError("Failed to remove collection");
         return QContactManager::UnspecifiedError;
@@ -738,7 +738,7 @@ QContactManager::Error ContactWriter::deleteCollection(const QContactCollectionI
         " WHERE collectionId = :collectionId"
     ));
     ContactsDatabase::Query deleteCollection(m_database.prepare(deleteCollectionStatement));
-    deleteCollection.bindValue(QLatin1String(":collectionId"), ContactCollectionId::databaseId(collectionId));
+    deleteCollection.bindValue(QStringLiteral(":collectionId"), ContactCollectionId::databaseId(collectionId));
     if (!ContactsDatabase::execute(deleteCollection)) {
         deleteCollection.reportError("Failed to delete collection");
         return QContactManager::UnspecifiedError;
@@ -751,7 +751,7 @@ QContactManager::Error ContactWriter::deleteCollection(const QContactCollectionI
         " WHERE collectionId = :collectionId"
     ));
     ContactsDatabase::Query deleteCollectionContacts(m_database.prepare(deleteCollectionContactsStatement));
-    deleteCollectionContacts.bindValue(QLatin1String(":collectionId"), ContactCollectionId::databaseId(collectionId));
+    deleteCollectionContacts.bindValue(QStringLiteral(":collectionId"), ContactCollectionId::databaseId(collectionId));
     if (!ContactsDatabase::execute(deleteCollectionContacts)) {
         deleteCollectionContacts.reportError("Failed to delete collection contacts");
         return QContactManager::UnspecifiedError;
@@ -791,7 +791,7 @@ QContactManager::Error ContactWriter::remove(
                 " SELECT ContactId FROM Contacts WHERE collectionId = :collectionId AND changeFlags < 4" // ChangeFlags::IsDeleted
             ));
             ContactsDatabase::Query query(m_database.prepare(queryContactIds));
-            query.bindValue(QLatin1String(":collectionId"), ContactCollectionId::databaseId(collectionId));
+            query.bindValue(QStringLiteral(":collectionId"), ContactCollectionId::databaseId(collectionId));
             if (!ContactsDatabase::execute(query)) {
                 query.reportError("Failed to query collection contacts");
                 removeError = QContactManager::UnspecifiedError;
@@ -857,7 +857,7 @@ QContactManager::Error ContactWriter::removeContacts(const QVariantList &ids, bo
     for (int i = 0; i < ids.size(); i += 167) {
         const QVariantList cids = ids.mid(i, qMin(ids.size() - i, 167));
         ContactsDatabase::Query query(m_database.prepare(removeContact));
-        query.bindValue(QLatin1String(":contactId"), cids);
+        query.bindValue(QStringLiteral(":contactId"), cids);
         if (!ContactsDatabase::executeBatch(query)) {
             query.reportError("Failed to remove contacts");
             return QContactManager::UnspecifiedError;
@@ -878,7 +878,7 @@ QContactManager::Error ContactWriter::removeDetails(const QVariantList &contactI
     for (int i = 0; i < contactIds.size(); i += 167) {
         const QVariantList cids = contactIds.mid(i, qMin(contactIds.size() - i, 167));
         ContactsDatabase::Query query(m_database.prepare(removeDetail));
-        query.bindValue(QLatin1String(":contactId"), cids);
+        query.bindValue(QStringLiteral(":contactId"), cids);
         if (!ContactsDatabase::executeBatch(query)) {
             query.reportError("Failed to remove details");
             return QContactManager::UnspecifiedError;
@@ -905,7 +905,7 @@ QContactManager::Error ContactWriter::undeleteContacts(const QVariantList &ids, 
     for (int i = 0; i < ids.size(); i += 167) {
         const QVariantList cids = ids.mid(i, qMin(ids.size() - i, 167));
         ContactsDatabase::Query query(m_database.prepare(undeleteContact));
-        query.bindValue(QLatin1String(":contactId"), cids);
+        query.bindValue(QStringLiteral(":contactId"), cids);
         if (!ContactsDatabase::executeBatch(query)) {
             query.reportError("Failed to undelete contact");
             return QContactManager::UnspecifiedError;
@@ -929,7 +929,7 @@ QContactManager::Error ContactWriter::deleteContacts(const QVariantList &ids, bo
     for (int i = 0; i < ids.size(); i += 167) {
         const QVariantList cids = ids.mid(i, qMin(ids.size() - i, 167));
         ContactsDatabase::Query query(m_database.prepare(deleteContact));
-        query.bindValue(QLatin1String(":contactId"), cids);
+        query.bindValue(QStringLiteral(":contactId"), cids);
         if (!ContactsDatabase::executeBatch(query)) {
             query.reportError("Failed to delete contacts");
             return QContactManager::UnspecifiedError;
@@ -1383,9 +1383,9 @@ QContactManager::Error ContactWriter::clearChangeFlags(const QList<QContactId> &
         const QVariantList cids = boundIds.mid(i, qMin(boundIds.size() - i, 167));
 
         // third, clear any added/modified change flags for contacts specified in the list.
-        const QString statement(QString::fromLatin1("UPDATE Contacts SET changeFlags = unhandledChangeFlags, unhandledChangeFlags = 0 WHERE contactId = :contactId"));
+        const QString statement(QStringLiteral("UPDATE Contacts SET changeFlags = unhandledChangeFlags, unhandledChangeFlags = 0 WHERE contactId = :contactId"));
         ContactsDatabase::Query query(m_database.prepare(statement));
-        query.bindValue(QLatin1String(":contactId"), cids);
+        query.bindValue(QStringLiteral(":contactId"), cids);
         if (!ContactsDatabase::executeBatch(query)) {
             query.reportError("Failed to clear contact change flags");
             if (!withinTransaction) {
@@ -1395,9 +1395,9 @@ QContactManager::Error ContactWriter::clearChangeFlags(const QList<QContactId> &
         }
 
         // fourth, clear any added/modified change flags for details of contacts specified in the list.
-        const QString detstatement(QString::fromLatin1("UPDATE Details SET changeFlags = unhandledChangeFlags, unhandledChangeFlags = 0 WHERE contactId = :contactId"));
+        const QString detstatement(QStringLiteral("UPDATE Details SET changeFlags = unhandledChangeFlags, unhandledChangeFlags = 0 WHERE contactId = :contactId"));
         ContactsDatabase::Query detquery(m_database.prepare(detstatement));
-        detquery.bindValue(QLatin1String(":contactId"), cids);
+        detquery.bindValue(QStringLiteral(":contactId"), cids);
         if (!ContactsDatabase::executeBatch(detquery)) {
             detquery.reportError("Failed to clear detail change flags");
             if (!withinTransaction) {
@@ -1438,9 +1438,9 @@ QContactManager::Error ContactWriter::clearChangeFlags(const QContactCollectionI
         return QContactManager::UnspecifiedError;
     }
 
-    const QString statement(QString::fromLatin1("SELECT contactId FROM Contacts WHERE collectionId = :collectionId"));
+    const QString statement(QStringLiteral("SELECT contactId FROM Contacts WHERE collectionId = :collectionId"));
     ContactsDatabase::Query query(m_database.prepare(statement));
-    query.bindValue(QLatin1String(":collectionId"), ContactCollectionId::databaseId(collectionId));
+    query.bindValue(QStringLiteral(":collectionId"), ContactCollectionId::databaseId(collectionId));
 
     QContactManager::Error err = QContactManager::NoError;
     QList<QContactId> contactIds;
@@ -1460,13 +1460,13 @@ QContactManager::Error ContactWriter::clearChangeFlags(const QContactCollectionI
     }
 
     if (err == QContactManager::NoError) {
-        const QString clearFlagsStatement(QString::fromLatin1(
+        const QString clearFlagsStatement(QStringLiteral(
                 " UPDATE Collections SET"
                   " changeFlags = 0"
                 " WHERE collectionId = :collectionId"
         ));
         ContactsDatabase::Query clearQuery(m_database.prepare(clearFlagsStatement));
-        clearQuery.bindValue(QLatin1String(":collectionId"), ContactCollectionId::databaseId(collectionId));
+        clearQuery.bindValue(QStringLiteral(":collectionId"), ContactCollectionId::databaseId(collectionId));
 
         if (!ContactsDatabase::execute(clearQuery)) {
             clearQuery.reportError("Failed to clear collection change flags");
@@ -1648,7 +1648,7 @@ QContactManager::Error ContactWriter::storeChanges(
             QContactCollection *collection = ait.key();
 
             if (!collection->id().isNull()) {
-                QTCONTACTS_SQLITE_DEBUG(QStringLiteral("Invalid attempt to add an already-existing collection %1 with id %2 within store changes")
+                QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Invalid attempt to add an already-existing collection %1 with id %2 within store changes")
                     .arg(collection->metaData(QContactCollection::KeyName).toString(), QString::fromLatin1(collection->id().localId())));
                 error = QContactManager::BadArgumentError;
                 break;
@@ -1658,7 +1658,7 @@ QContactManager::Error ContactWriter::storeChanges(
             collections.append(*collection);
             error = save(&collections, nullptr, true, true);
             if (error != QContactManager::NoError) {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to save added collection %1 within store changes")
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to save added collection %1 within store changes")
                     .arg(collection->metaData(QContactCollection::KeyName).toString()));
                 break;
             }
@@ -1674,7 +1674,7 @@ QContactManager::Error ContactWriter::storeChanges(
 
             error = save(addedContacts, QList<QContactDetail::DetailType>(), nullptr, nullptr, true, false, true);
             if (error != QContactManager::NoError) {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to save added contacts for added collection %1 within store changes")
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to save added contacts for added collection %1 within store changes")
                     .arg(collection->metaData(QContactCollection::KeyName).toString()));
                 break;
             }
@@ -1688,7 +1688,7 @@ QContactManager::Error ContactWriter::storeChanges(
             QContactCollection *collection = mit.key();
 
             if (collection->id().isNull()) {
-                QTCONTACTS_SQLITE_DEBUG(QStringLiteral("Invalid attempt to modify a non-added collection %1 within store changes")
+                QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Invalid attempt to modify a non-added collection %1 within store changes")
                     .arg(collection->metaData(QContactCollection::KeyName).toString()));
                 error = QContactManager::BadArgumentError;
                 break;
@@ -1700,7 +1700,7 @@ QContactManager::Error ContactWriter::storeChanges(
             collections.append(*collection);
             error = save(&collections, nullptr, true, true);
             if (error != QContactManager::NoError) {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to save modified collection %1 within store changes")
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to save modified collection %1 within store changes")
                     .arg(QString::fromLatin1(collection->id().localId())));
                 break;
             }
@@ -1725,7 +1725,7 @@ QContactManager::Error ContactWriter::storeChanges(
                     } else if (flags.testFlag(QContactStatusFlags::IsModified)) {
                         modifiedContacts.append(*mcit);
                     } else {
-                        QTCONTACTS_SQLITE_DEBUG(QStringLiteral("Ignoring unchanged contact %1 within modified collection %2 within store changes")
+                        QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Ignoring unchanged contact %1 within modified collection %2 within store changes")
                             .arg(QString::fromLatin1(mcit->id().localId()))
                             .arg(QString::fromLatin1(collection->id().localId())));
                     }
@@ -1741,7 +1741,7 @@ QContactManager::Error ContactWriter::storeChanges(
                 }
                 error = save(&addedContacts, QList<QContactDetail::DetailType>(), nullptr, nullptr, true, false, true);
                 if (error != QContactManager::NoError) {
-                    QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to save added contacts for modified collection %1 within store changes")
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to save added contacts for modified collection %1 within store changes")
                         .arg(QString::fromLatin1(collection->id().localId())));
                     break;
                 }
@@ -1755,7 +1755,7 @@ QContactManager::Error ContactWriter::storeChanges(
                 }
                 error = save(&modifiedContacts, QList<QContactDetail::DetailType>(), nullptr, nullptr, true, false, true);
                 if (error != QContactManager::NoError) {
-                    QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to save added contacts for modified collection %1 within store changes")
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to save added contacts for modified collection %1 within store changes")
                         .arg(QString::fromLatin1(collection->id().localId())));
                     break;
                 }
@@ -1765,7 +1765,7 @@ QContactManager::Error ContactWriter::storeChanges(
             if (deletedContactIds.size()) {
                 error = remove(deletedContactIds, nullptr, true, true);
                 if (error != QContactManager::NoError) {
-                    QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to delete deleted contacts for modified collection %1 within store changes")
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to delete deleted contacts for modified collection %1 within store changes")
                         .arg(QString::fromLatin1(collection->id().localId())));
                     break;
                 }
@@ -1821,7 +1821,7 @@ bool ContactWriter::storeOOB(const QString &scope, const QMap<QString, QVariant>
     QStringList tuples;
     QVariantList dataValues;
     const QChar colon(QChar::fromLatin1(':'));
-    const QString bindString(QString::fromLatin1("(?,?,?)"));
+    const QString bindString(QStringLiteral("(?,?,?)"));
 
     QMap<QString, QVariant>::const_iterator it = values.constBegin(), end = values.constEnd();
     for ( ; it != end; ++it) {
@@ -1854,7 +1854,7 @@ bool ContactWriter::storeOOB(const QString &scope, const QMap<QString, QVariant>
         dataValues.append(0);
     }
 
-    QString statement(QString::fromLatin1("INSERT OR REPLACE INTO OOB (name, value, compressed) VALUES %1").arg(tuples.join(",")));
+    QString statement(QStringLiteral("INSERT OR REPLACE INTO OOB (name, value, compressed) VALUES %1").arg(tuples.join(",")));
 
     QSqlQuery query(m_database);
     query.setForwardOnly(true);
@@ -1894,20 +1894,20 @@ bool ContactWriter::removeOOB(const QString &scope, const QStringList &keys)
 
     QVariantList keyNames;
 
-    QString statement(QString::fromLatin1("DELETE FROM OOB WHERE name "));
+    QString statement(QStringLiteral("DELETE FROM OOB WHERE name "));
 
     if (keys.isEmpty()) {
-        statement.append(QString::fromLatin1("LIKE '%1%%'").arg(scope));
+        statement.append(QStringLiteral("LIKE '%1%%'").arg(scope));
     } else {
         const QChar colon(QChar::fromLatin1(':'));
         QString keyList;
 
         foreach (const QString &key, keys) {
             keyNames.append(scope + colon + key);
-            keyList.append(QString::fromLatin1(keyList.isEmpty() ? "?" : ",?"));
+            keyList.append(keyList.isEmpty() ? QStringLiteral("?") : QStringLiteral(",?"));
         }
 
-        statement.append(QString::fromLatin1("IN (%1)").arg(keyList));
+        statement.append(QStringLiteral("IN (%1)").arg(keyList));
     }
 
     QSqlQuery query(m_database);
@@ -1942,9 +1942,9 @@ QMap<int, QString> contextTypes()
 {
     QMap<int, QString> rv;
 
-    rv.insert(QContactDetail::ContextHome, QString::fromLatin1("Home"));
-    rv.insert(QContactDetail::ContextWork, QString::fromLatin1("Work"));
-    rv.insert(QContactDetail::ContextOther, QString::fromLatin1("Other"));
+    rv.insert(QContactDetail::ContextHome, QStringLiteral("Home"));
+    rv.insert(QContactDetail::ContextWork, QStringLiteral("Work"));
+    rv.insert(QContactDetail::ContextOther, QStringLiteral("Other"));
 
     return rv;
 }
@@ -1962,7 +1962,7 @@ QString contextString(int type)
 
 QVariant detailContexts(const QContactDetail &detail)
 {
-    static const QString separator = QString::fromLatin1(";");
+    static const QString separator = QStringLiteral(";");
 
     QStringList contexts;
     foreach (int context, detail.contexts()) {
@@ -2299,7 +2299,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.bindValue(":locality", detail.value<QString>(T::FieldLocality).trimmed());
     query.bindValue(":postCode", detail.value<QString>(T::FieldPostcode).trimmed());
     query.bindValue(":country", detail.value<QString>(T::FieldCountry).trimmed());
-    query.bindValue(":subTypes", subTypeList(detail.subTypes()).join(QLatin1String(";")));
+    query.bindValue(":subTypes", subTypeList(detail.subTypes()).join(QStringLiteral(";")));
     return query;
 }
 
@@ -2502,7 +2502,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.bindValue(":detailId", detailId);
     query.bindValue(":contactId", contactId);
     query.bindValue(":spouse", detail.value<QString>(T::FieldSpouse).trimmed());
-    query.bindValue(":children", detail.value<QStringList>(T::FieldChildren).join(QLatin1String(";")));
+    query.bindValue(":children", detail.value<QStringList>(T::FieldChildren).join(QStringLiteral(";")));
     return query;
 }
 
@@ -2893,8 +2893,8 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.bindValue(":lowerAccountUri", uri.toLower());
     query.bindValue(":protocol", QString::number(detail.protocol()));
     query.bindValue(":serviceProvider", detailValue(detail, T::FieldServiceProvider));
-    query.bindValue(":capabilities", detailValue(detail, T::FieldCapabilities).value<QStringList>().join(QLatin1String(";")));
-    query.bindValue(":subTypes", subTypeList(detail.subTypes()).join(QLatin1String(";")));
+    query.bindValue(":capabilities", detailValue(detail, T::FieldCapabilities).value<QStringList>().join(QStringLiteral(";")));
+    query.bindValue(":subTypes", subTypeList(detail.subTypes()).join(QStringLiteral(";")));
     query.bindValue(":accountPath", detailValue(detail, QContactOnlineAccount__FieldAccountPath));
     query.bindValue(":accountIconPath", detailValue(detail, QContactOnlineAccount__FieldAccountIconPath));
     query.bindValue(":enabled", detailValue(detail, QContactOnlineAccount__FieldEnabled));
@@ -2948,7 +2948,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.bindValue(":role", detail.value<QString>(T::FieldRole).trimmed());
     query.bindValue(":title", detail.value<QString>(T::FieldTitle).trimmed());
     query.bindValue(":location", detail.value<QString>(T::FieldLocation).trimmed());
-    query.bindValue(":department", detail.department().join(QLatin1String(";")));
+    query.bindValue(":department", detail.department().join(QStringLiteral(";")));
     query.bindValue(":logoUrl", detail.value<QString>(T::FieldLogoUrl).trimmed());
     query.bindValue(":assistantName", detail.value<QString>(T::FieldAssistantName).trimmed());
     return query;
@@ -2984,7 +2984,7 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.bindValue(":detailId", detailId);
     query.bindValue(":contactId", contactId);
     query.bindValue(":phoneNumber", detail.value<QString>(T::FieldNumber).trimmed());
-    query.bindValue(":subTypes", subTypeList(detail.subTypes()).join(QLatin1String(";")));
+    query.bindValue(":subTypes", subTypeList(detail.subTypes()).join(QStringLiteral(";")));
     query.bindValue(":normalizedNumber", QVariant(ContactsEngine::normalizedPhoneNumber(detail.number())));
     return query;
 }
@@ -4049,7 +4049,7 @@ QContactManager::Error ContactWriter::updateOrCreateAggregate(QContact *contact,
         hint.setOptimizationHints(QContactFetchHint::NoRelationships);
 
         QList<QContact> readList;
-        QContactManager::Error readError = m_reader->readContacts(QLatin1String("CreateAggregate"), &readList, readIds, hint);
+        QContactManager::Error readError = m_reader->readContacts(QStringLiteral("CreateAggregate"), &readList, readIds, hint);
         if (readError != QContactManager::NoError || readList.size() < 1) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read aggregate contact %1 during regenerate").arg(existingAggregateId));
             return QContactManager::UnspecifiedError;
@@ -4189,7 +4189,7 @@ QContactManager::Error ContactWriter::regenerateAggregates(const QList<quint32> 
         hint.setOptimizationHints(QContactFetchHint::NoRelationships);
 
         QList<QContact> readList;
-        QContactManager::Error readError = m_reader->readContacts(QLatin1String("RegenerateAggregate"), &readList, readIds, hint);
+        QContactManager::Error readError = m_reader->readContacts(QStringLiteral("RegenerateAggregate"), &readList, readIds, hint);
         if (readError != QContactManager::NoError
                 || readList.size() <= 1
                 || ContactCollectionId::databaseId(readList.at(0).collectionId()) != ContactsDatabase::AggregateAddressbookCollectionId) {
@@ -4359,7 +4359,7 @@ QContactManager::Error ContactWriter::aggregateOrphanedContacts(bool withinTrans
         hint.setOptimizationHints(QContactFetchHint::NoRelationships);
 
         QList<QContact> readList;
-        QContactManager::Error readError = m_reader->readContacts(QLatin1String("AggregateOrphaned"), &readList, contactIds, hint);
+        QContactManager::Error readError = m_reader->readContacts(QStringLiteral("AggregateOrphaned"), &readList, contactIds, hint);
         if (readError != QContactManager::NoError || readList.size() != contactIds.size()) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read orphaned contacts for aggregation"));
             return QContactManager::UnspecifiedError;
@@ -4583,7 +4583,7 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
         QContactFetchHint hint;
         hint.setOptimizationHints(QContactFetchHint::NoRelationships);
         QList<QContact> undeletedList;
-        QContactManager::Error readError = m_reader->readContacts(QLatin1String("RegenerateUndeleted"), &undeletedList, QList<quint32>() << contactId, hint);
+        QContactManager::Error readError = m_reader->readContacts(QStringLiteral("RegenerateUndeleted"), &undeletedList, QList<quint32>() << contactId, hint);
         if (readError != QContactManager::NoError || undeletedList.size() != 1) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to read undeleted contact data for regenerate: %1").arg(contactId));
             return QContactManager::UnspecifiedError;

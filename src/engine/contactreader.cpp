@@ -87,9 +87,9 @@
 
 static const int ReportBatchSize = 50;
 
-static const QString aggregateSyncTarget(QString::fromLatin1("aggregate"));
-static const QString localSyncTarget(QString::fromLatin1("local"));
-static const QString wasLocalSyncTarget(QString::fromLatin1("was_local"));
+static const QString aggregateSyncTarget(QStringLiteral("aggregate"));
+static const QString localSyncTarget(QStringLiteral("local"));
+static const QString wasLocalSyncTarget(QStringLiteral("was_local"));
 
 enum FieldType {
     StringField = 0,
@@ -631,9 +631,9 @@ static QMap<QString, int> contextTypes()
 {
     QMap<QString, int> rv;
 
-    rv.insert(QString::fromLatin1("Home"), QContactDetail::ContextHome);
-    rv.insert(QString::fromLatin1("Work"), QContactDetail::ContextWork);
-    rv.insert(QString::fromLatin1("Other"), QContactDetail::ContextOther);
+    rv.insert(QStringLiteral("Home"), QContactDetail::ContextHome);
+    rv.insert(QStringLiteral("Work"), QContactDetail::ContextWork);
+    rv.insert(QStringLiteral("Other"), QContactDetail::ContextOther);
 
     return rv;
 }
@@ -771,8 +771,8 @@ struct DetailInfo
     QString where(bool queryContacts) const
     {
         return table && queryContacts
-                ? QString::fromLatin1("Contacts.contactId IN (SELECT contactId FROM %1 WHERE %2)").arg(QLatin1String(table))
-                : QLatin1String("%2");
+                ? QStringLiteral("Contacts.contactId IN (SELECT contactId FROM %1 WHERE %2)").arg(QLatin1String(table))
+                : QStringLiteral("%2");
     }
 
     QString whereExists(bool queryContacts) const
@@ -780,15 +780,15 @@ struct DetailInfo
         if (!queryContacts) {
             return QString();
         } else if (table) {
-            return QString::fromLatin1("EXISTS (SELECT contactId FROM %1 where contactId = Contacts.contactId)").arg(QLatin1String(table));
+            return QStringLiteral("EXISTS (SELECT contactId FROM %1 where contactId = Contacts.contactId)").arg(QLatin1String(table));
         } else {
-            return QString::fromLatin1("Contacts.contactId != 0");
+            return QStringLiteral("Contacts.contactId != 0");
         }
     }
 
     QString orderByExistence(bool asc) const
     {
-        return table ? QString::fromLatin1("CASE EXISTS (SELECT contactId FROM %1 where contactId = Contacts.contactId) WHEN 1 THEN %2 ELSE %3 END")
+        return table ? QStringLiteral("CASE EXISTS (SELECT contactId FROM %1 where contactId = Contacts.contactId) WHEN 1 THEN %2 ELSE %3 END")
                        .arg(QLatin1String(table)).arg(asc ? 0 : 1).arg(asc ? 1 : 0)
                      : QString();
     }
@@ -889,11 +889,11 @@ static QString fieldName(const char *table, const char *field)
 static QHash<QString, QString> getCaseInsensitiveColumnNames()
 {
     QHash<QString, QString> names;
-    names.insert(fieldName("Names", "firstName"), QString::fromLatin1("lowerFirstName"));
-    names.insert(fieldName("Names", "lastName"), QString::fromLatin1("lowerLastName"));
-    names.insert(fieldName("EmailAddresses", "emailAddress"), QString::fromLatin1("lowerEmailAddress"));
-    names.insert(fieldName("OnlineAccounts", "accountUri"), QString::fromLatin1("lowerAccountUri"));
-    names.insert(fieldName("Nicknames", "nickname"), QString::fromLatin1("lowerNickname"));
+    names.insert(fieldName("Names", "firstName"), QStringLiteral("lowerFirstName"));
+    names.insert(fieldName("Names", "lastName"), QStringLiteral("lowerLastName"));
+    names.insert(fieldName("EmailAddresses", "emailAddress"), QStringLiteral("lowerEmailAddress"));
+    names.insert(fieldName("OnlineAccounts", "accountUri"), QStringLiteral("lowerAccountUri"));
+    names.insert(fieldName("Nicknames", "nickname"), QStringLiteral("lowerNickname"));
     return names;
 }
 
@@ -979,19 +979,19 @@ static QString buildWhere(const QContactCollectionFilter &filter, QVariantList *
             dbIds.append(ContactCollectionId::databaseId(id));
         }
 
-        QString statement = QLatin1String("Contacts.collectionId IN (?");
+        QString statement = QStringLiteral("Contacts.collectionId IN (?");
         bindings->append(dbIds.first());
 
         for (int i = 1; i < dbIds.count(); ++i) {
-            statement += QLatin1String(",?");
+            statement += QStringLiteral(",?");
             bindings->append(dbIds.at(i));
         }
 
-        return statement + QLatin1String(")");
+        return statement + QStringLiteral(")");
     } else {
         *failed = true;
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with too large collection ID list"));
-        return QLatin1String("FALSE");
+        return QStringLiteral("FALSE");
     }
 }
 
@@ -1006,14 +1006,14 @@ static QString buildWhere(
     if (filter.matchFlags() & QContactFilter::MatchKeypadCollation) {
         *failed = true;
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with filter requiring keypad collation"));
-        return QLatin1String("FAILED");
+        return QStringLiteral("FAILED");
     }
 
     const DetailInfo &detail(detailInformation(filter.detailType()));
     if (detail.detailType == QContactDetail::TypeUndefined) {
         *failed = true;
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown detail type: %1").arg(filter.detailType()));
-        return QLatin1String("FAILED");
+        return QStringLiteral("FAILED");
     }
 
     if (filter.detailField() == invalidField) {
@@ -1025,13 +1025,13 @@ static QString buildWhere(
     if (field.field == invalidField) {
         *failed = true;
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown detail field: %1").arg(filter.detailField()));
-        return QLatin1String("FAILED");
+        return QStringLiteral("FAILED");
     }
 
     if (!filter.value().isValid()     // "match if detail and field exists, don't care about value" filter
         || (filterOnField<QContactSyncTarget>(filter, QContactSyncTarget::FieldSyncTarget) &&
             filter.value().toString().isEmpty())) { // match all sync targets if empty sync target filter
-        const QString comparison(QLatin1String("%1 IS NOT NULL"));
+        const QString comparison(QStringLiteral("%1 IS NOT NULL"));
         return detail.where(queryContacts).arg(comparison.arg(field.column));
     }
 
@@ -1096,7 +1096,7 @@ static QString buildWhere(
                                 // Use special case test to check changeFlags for deleted status
                                 clauses.append(QStringLiteral("%1 >= 4").arg(flagColumns[i])); // ChangeFlags::IsDeleted
                             } else {
-                                clauses.append(QString::fromLatin1("%1 = 1").arg(flagColumns[i]));
+                                clauses.append(QStringLiteral("%1 = 1").arg(flagColumns[i]));
                             }
                         }
                     }
@@ -1106,7 +1106,7 @@ static QString buildWhere(
                 }
 
                 if (!clauses.isEmpty()) {
-                    return detail.where(queryContacts).arg(clauses.join(QString::fromLatin1(" AND ")));
+                    return detail.where(queryContacts).arg(clauses.join(QStringLiteral(" AND ")));
                 }
                 break;
             }
@@ -1129,7 +1129,7 @@ static QString buildWhere(
         bool caseInsensitive = stringField && fixedString && ((filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0);
 
         QString clause(detail.where(queryContacts));
-        QString comparison = QLatin1String("%1");
+        QString comparison = QStringLiteral("%1");
         QString bindValue;
         QString column;
 
@@ -1138,7 +1138,7 @@ static QString buildWhere(
             if (!column.isEmpty()) {
                 // We don't need to use lower() on the values in this column
             } else {
-                comparison = QLatin1String("lower(%1)");
+                comparison = QStringLiteral("lower(%1)");
             }
         }
 
@@ -1158,15 +1158,15 @@ static QString buildWhere(
                 if (bindValue.isEmpty()) {
                     *failed = true;
                     QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed with invalid phone number: %1").arg(stringValue));
-                    return QLatin1String("FAILED");
+                    return QStringLiteral("FAILED");
                 }
                 if (caseInsensitive) {
                     bindValue = bindValue.toLower();
                 }
-                column = QString::fromLatin1("normalizedNumber");
+                column = QStringLiteral("normalizedNumber");
             } else {
                 // remove any non-digit characters from the column value when we do our comparison: +,-, ,#,(,) are removed.
-                comparison = QLatin1String("replace(replace(replace(replace(replace(replace(%1, '+', ''), '-', ''), '#', ''), '(', ''), ')', ''), ' ', '')");
+                comparison = QStringLiteral("replace(replace(replace(replace(replace(replace(%1, '+', ''), '-', ''), '#', ''), '(', ''), ')', ''), ' ', '')");
                 QString tempValue = caseInsensitive ? stringValue.toLower() : stringValue;
                 for (int i = 0; i < tempValue.size(); ++i) {
                     QChar current = tempValue.at(i).toLower();
@@ -1194,7 +1194,7 @@ static QString buildWhere(
 
                 if (filterOnField<QContactGlobalPresence>(filter, QContactGlobalPresence::FieldPresenceState)) {
                     // Special case: we need to include the transient data state in our comparison
-                    clause = QLatin1String("Contacts.contactId IN ("
+                    clause = QStringLiteral("Contacts.contactId IN ("
                                                "SELECT GlobalPresences.contactId FROM GlobalPresences "
                                                "LEFT JOIN temp.GlobalPresenceStates ON temp.GlobalPresenceStates.contactId = GlobalPresences.contactId "
                                                "WHERE %1)");
@@ -1206,33 +1206,33 @@ static QString buildWhere(
 
         if (stringField || fixedString) {
             if (globValue == QContactFilter::MatchStartsWith) {
-                bindValue = bindValue + QLatin1String("*");
-                comparison += QLatin1String(" GLOB ?");
+                bindValue = bindValue + QStringLiteral("*");
+                comparison += QStringLiteral(" GLOB ?");
                 bindings->append(bindValue);
             } else if (globValue == QContactFilter::MatchContains) {
-                bindValue = QLatin1String("*") + bindValue + QLatin1String("*");
-                comparison += QLatin1String(" GLOB ?");
+                bindValue = QStringLiteral("*") + bindValue + QStringLiteral("*");
+                comparison += QStringLiteral(" GLOB ?");
                 bindings->append(bindValue);
             } else if (globValue == QContactFilter::MatchEndsWith) {
-                bindValue = QLatin1String("*") + bindValue;
-                comparison += QLatin1String(" GLOB ?");
+                bindValue = QStringLiteral("*") + bindValue;
+                comparison += QStringLiteral(" GLOB ?");
                 bindings->append(bindValue);
             } else {
                 if (bindValue.isEmpty()) {
                     // An empty string test should match a NULL column also (no way to specify isNull from qtcontacts)
-                    comparison = QString::fromLatin1("COALESCE(%1,'') = ''").arg(comparison);
+                    comparison = QStringLiteral("COALESCE(%1,'') = ''").arg(comparison);
                 } else {
-                    comparison += QLatin1String(" = ?");
+                    comparison += QStringLiteral(" = ?");
                     bindings->append(bindValue);
                 }
             }
         } else {
             if (phoneNumberMatch && !useNormalizedNumber) {
-                bindValue = QLatin1String("*") + bindValue;
-                comparison += QLatin1String(" GLOB ?");
+                bindValue = QStringLiteral("*") + bindValue;
+                comparison += QStringLiteral(" GLOB ?");
                 bindings->append(bindValue);
             } else {
-                comparison += QLatin1String(" = ?");
+                comparison += QStringLiteral(" = ?");
                 bindings->append(bindValue);
             }
         }
@@ -1242,7 +1242,7 @@ static QString buildWhere(
 
     *failed = true;
     QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to buildWhere with DetailFilter detail: %1 field: %2").arg(filter.detailType()).arg(filter.detailField()));
-    return QLatin1String("FALSE");
+    return QStringLiteral("FALSE");
 }
 
 static QString buildWhere(const QContactDetailRangeFilter &filter, bool queryContacts, QVariantList *bindings, bool *failed)
@@ -1251,7 +1251,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, bool queryCon
     if (detail.detailType == QContactDetail::TypeUndefined) {
         *failed = true;
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown detail type: %1").arg(filter.detailType()));
-        return QLatin1String("FAILED");
+        return QStringLiteral("FAILED");
     }
 
     if (filter.detailField() == invalidField) {
@@ -1263,12 +1263,12 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, bool queryCon
     if (field.field == invalidField) {
         *failed = true;
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown detail field: %1").arg(filter.detailField()));
-        return QLatin1String("FAILED");
+        return QStringLiteral("FAILED");
     }
 
     if (!validFilterField(filter) || (!filter.minValue().isValid() && !filter.maxValue().isValid())) {
         // "match if detail exists, don't care about field or value" filter
-        return detail.where(queryContacts).arg(QString::fromLatin1("%1 IS NOT NULL").arg(field.column));
+        return detail.where(queryContacts).arg(QStringLiteral("%1 IS NOT NULL").arg(QLatin1String(field.column)));
     }
 
     // Our match query depends on the minValue/maxValue parameters
@@ -1288,19 +1288,19 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, bool queryCon
         }
         if (caseInsensitive) {
             comparison = (filter.rangeFlags() & QContactDetailRangeFilter::ExcludeLower)
-                    ? QString(QLatin1String("%1 > lower(?)"))
-                    : QString(QLatin1String("%1 >= lower(?)"));
+                    ? QStringLiteral("%1 > lower(?)")
+                    : QStringLiteral("%1 >= lower(?)");
         } else {
             comparison = (filter.rangeFlags() & QContactDetailRangeFilter::ExcludeLower)
-                    ? QString(QLatin1String("%1 > ?"))
-                    : QString(QLatin1String("%1 >= ?"));
+                    ? QStringLiteral("%1 > ?")
+                    : QStringLiteral("%1 >= ?");
         }
         needsAnd = true;
     }
 
     if (filter.maxValue().isValid()) {
         if (needsAnd)
-            comparison += QLatin1String(" AND ");
+            comparison += QStringLiteral(" AND ");
         if (dateField) {
             bindings->append(dateString(detail, filter.maxValue().toDateTime()));
         } else {
@@ -1308,12 +1308,12 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, bool queryCon
         }
         if (caseInsensitive) {
             comparison += (filter.rangeFlags() & QContactDetailRangeFilter::IncludeUpper)
-                    ? QString(QLatin1String("%1 <= lower(?)"))
-                    : QString(QLatin1String("%1 < lower(?)"));
+                    ? QStringLiteral("%1 <= lower(?)")
+                    : QStringLiteral("%1 < lower(?)");
         } else {
             comparison += (filter.rangeFlags() & QContactDetailRangeFilter::IncludeUpper)
-                    ? QString(QLatin1String("%1 <= ?"))
-                    : QString(QLatin1String("%1 < ?"));
+                    ? QStringLiteral("%1 <= ?")
+                    : QStringLiteral("%1 < ?");
         }
     }
 
@@ -1323,7 +1323,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, bool queryCon
         if (!comparisonArg.isEmpty()) {
             // We don't need to use lower() on the values in this column
         } else {
-            comparisonArg = QString::fromLatin1("lower(%1)").arg(field.column);
+            comparisonArg = QStringLiteral("lower(%1)").arg(QLatin1String(field.column));
         }
     }
     return detail.where(queryContacts).arg(comparison.arg(comparisonArg));
@@ -1335,7 +1335,7 @@ static QString buildWhere(const QContactIdFilter &filter, ContactsDatabase &db, 
     if (filterIds.isEmpty()) {
         *failed = true;
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with empty contact ID list"));
-        return QLatin1String("FALSE");
+        return QStringLiteral("FALSE");
     }
 
     QList<quint32> dbIds;
@@ -1359,20 +1359,20 @@ static QString buildWhere(const QContactIdFilter &filter, ContactsDatabase &db, 
         if (!db.createTransientContactIdsTable(table, varIds, &transientTable)) {
             *failed = true;
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere due to transient table failure"));
-            return QLatin1String("FALSE");
+            return QStringLiteral("FALSE");
         }
 
-        return QString::fromLatin1("Contacts.contactId IN (SELECT contactId FROM %1)").arg(transientTable);
+        return QStringLiteral("Contacts.contactId IN (SELECT contactId FROM %1)").arg(transientTable);
     }
 
-    QString statement = QLatin1String("Contacts.contactId IN (?");
+    QString statement = QStringLiteral("Contacts.contactId IN (?");
     bindings->append(dbIds.first());
 
     for (int i = 1; i < dbIds.count(); ++i) {
-        statement += QLatin1String(",?");
+        statement += QStringLiteral(",?");
         bindings->append(dbIds.at(i));
     }
-    return statement + QLatin1String(")");
+    return statement + QStringLiteral(")");
 }
 
 static QString buildWhere(const QContactRelationshipFilter &filter, QVariantList *bindings, bool *failed)
@@ -1384,106 +1384,106 @@ static QString buildWhere(const QContactRelationshipFilter &filter, QVariantList
 
     quint32 dbId = ContactId::databaseId(rci);
 
-    if (!rci.managerUri().isEmpty() && !rci.managerUri().startsWith(QString::fromLatin1("qtcontacts:org.nemomobile.contacts.sqlite"))) {
+    if (!rci.managerUri().isEmpty() && !rci.managerUri().startsWith(QStringLiteral("qtcontacts:org.nemomobile.contacts.sqlite"))) {
         *failed = true;
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with invalid manager URI: %1").arg(rci.managerUri()));
-        return QLatin1String("FALSE");
+        return QStringLiteral("FALSE");
     }
 
     bool needsId = dbId != 0;
     bool needsType = !rt.isEmpty();
-    QString statement = QLatin1String("Contacts.contactId IN (\n");
+    QString statement = QStringLiteral("Contacts.contactId IN (\n");
     if (!needsId && !needsType) {
         // return the id of every contact who is in a relationship
         if (rcr == QContactRelationship::First) { // where the other contact is the First
-            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships");
-            statement += QLatin1String(" WHERE firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(")");
+            statement += QStringLiteral(" SELECT DISTINCT secondId FROM Relationships");
+            statement += QStringLiteral(" WHERE firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(")");
         } else if (rcr == QContactRelationship::Second) { // where the other contact is the Second
-            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships");
-            statement += QLatin1String(" WHERE firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(")");
+            statement += QStringLiteral(" SELECT DISTINCT firstId FROM Relationships");
+            statement += QStringLiteral(" WHERE firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(")");
         } else { // where the other contact is either First or Second
-            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships");
-            statement += QLatin1String(" WHERE firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(" UNION ");
-            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships");
-            statement += QLatin1String(" WHERE firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(")");
+            statement += QStringLiteral(" SELECT DISTINCT secondId FROM Relationships");
+            statement += QStringLiteral(" WHERE firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(" UNION ");
+            statement += QStringLiteral(" SELECT DISTINCT firstId FROM Relationships");
+            statement += QStringLiteral(" WHERE firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(")");
         }
     } else if (!needsId && needsType) {
         // return the id of every contact who is in a relationship of the specified type
         if (rcr == QContactRelationship::First) { // where the other contact is the First
-            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships WHERE type = ?");
-            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(")");
+            statement += QStringLiteral(" SELECT DISTINCT secondId FROM Relationships WHERE type = ?");
+            statement += QStringLiteral(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(")");
             bindings->append(rt);
         } else if (rcr == QContactRelationship::Second) { // where the other contact is the Second
-            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships WHERE type = ?");
-            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(")");
+            statement += QStringLiteral(" SELECT DISTINCT firstId FROM Relationships WHERE type = ?");
+            statement += QStringLiteral(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(")");
             bindings->append(rt);
         } else { // where the other contact is either First or Second
-            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships WHERE type = ?");
-            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(" UNION ");
-            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships WHERE type = ?");
-            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(")");
+            statement += QStringLiteral(" SELECT DISTINCT secondId FROM Relationships WHERE type = ?");
+            statement += QStringLiteral(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(" UNION ");
+            statement += QStringLiteral(" SELECT DISTINCT firstId FROM Relationships WHERE type = ?");
+            statement += QStringLiteral(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(")");
             bindings->append(rt);
             bindings->append(rt);
         }
     } else if (needsId && !needsType) {
         // return the id of every contact who is in a relationship with the specified contact
         if (rcr == QContactRelationship::First) { // where the specified contact is the First
-            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships WHERE firstId = ?");
-            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(")");
+            statement += QStringLiteral(" SELECT DISTINCT secondId FROM Relationships WHERE firstId = ?");
+            statement += QStringLiteral(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(")");
             bindings->append(dbId);
         } else if (rcr == QContactRelationship::Second) { // where the specified contact is the Second
-            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships WHERE secondId = ?");
-            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(")");
+            statement += QStringLiteral(" SELECT DISTINCT firstId FROM Relationships WHERE secondId = ?");
+            statement += QStringLiteral(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(")");
             bindings->append(dbId);
         } else { // where the specified contact is either First or Second
-            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships WHERE firstId = ?");
-            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(" UNION ");
-            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships WHERE secondId = ?");
-            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(")");
+            statement += QStringLiteral(" SELECT DISTINCT secondId FROM Relationships WHERE firstId = ?");
+            statement += QStringLiteral(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(" UNION ");
+            statement += QStringLiteral(" SELECT DISTINCT firstId FROM Relationships WHERE secondId = ?");
+            statement += QStringLiteral(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(")");
             bindings->append(dbId);
             bindings->append(dbId);
         }
     } else if (needsId && needsType) {
         // return the id of every contact who is in a relationship of the specified type with the specified contact
         if (rcr == QContactRelationship::First) { // where the specified contact is the First
-            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships WHERE firstId = ? AND type = ?");
-            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(")");
+            statement += QStringLiteral(" SELECT DISTINCT secondId FROM Relationships WHERE firstId = ? AND type = ?");
+            statement += QStringLiteral(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(")");
             bindings->append(dbId);
             bindings->append(rt);
         } else if (rcr == QContactRelationship::Second) { // where the specified contact is the Second
-            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships WHERE secondId = ? AND type = ?");
-            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(")");
+            statement += QStringLiteral(" SELECT DISTINCT firstId FROM Relationships WHERE secondId = ? AND type = ?");
+            statement += QStringLiteral(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(")");
             bindings->append(dbId);
             bindings->append(rt);
         } else { // where the specified contact is either First or Second
-            statement += QLatin1String(" SELECT DISTINCT secondId FROM Relationships WHERE firstId = ? AND type = ?");
-            statement += QLatin1String(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(" UNION ");
-            statement += QLatin1String(" SELECT DISTINCT firstId FROM Relationships WHERE secondId = ? AND type = ?");
-            statement += QLatin1String(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
-            statement += QLatin1String(")");
+            statement += QStringLiteral(" SELECT DISTINCT secondId FROM Relationships WHERE firstId = ? AND type = ?");
+            statement += QStringLiteral(" AND secondId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(" UNION ");
+            statement += QStringLiteral(" SELECT DISTINCT firstId FROM Relationships WHERE secondId = ? AND type = ?");
+            statement += QStringLiteral(" AND firstId NOT IN (SELECT contactId FROM Contacts WHERE changeFlags >= 4)");
+            statement += QStringLiteral(")");
             bindings->append(dbId);
             bindings->append(rt);
             bindings->append(dbId);
@@ -1496,20 +1496,20 @@ static QString buildWhere(const QContactRelationshipFilter &filter, QVariantList
 
 static QString buildWhere(const QContactChangeLogFilter &filter, QVariantList *bindings, bool *failed, bool *transientModifiedRequired)
 {
-    static const QString statement(QLatin1String("%1 >= ?"));
+    static const QString statement(QStringLiteral("%1 >= ?"));
     bindings->append(ContactsDatabase::dateTimeString(filter.since().toUTC()));
     switch (filter.eventType()) {
         case QContactChangeLogFilter::EventAdded:
-            return statement.arg(QLatin1String("Contacts.created"));
+            return statement.arg(QStringLiteral("Contacts.created"));
         case QContactChangeLogFilter::EventChanged:
             *transientModifiedRequired = true;
-            return statement.arg(QLatin1String("COALESCE(temp.Timestamps.modified, Contacts.modified)"));
+            return statement.arg(QStringLiteral("COALESCE(temp.Timestamps.modified, Contacts.modified)"));
         default: break;
     }
 
     *failed = true;
     QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with changelog filter on removed timestamps"));
-    return QLatin1String("FALSE");
+    return QStringLiteral("FALSE");
 }
 
 typedef QString (*BuildFilterPart)(
@@ -1545,7 +1545,7 @@ static QString buildWhere(
         }
     }
 
-    return QString::fromLatin1("( %1 )").arg(fragments.join(QLatin1String(" OR ")));
+    return QStringLiteral("( %1 )").arg(fragments.join(QStringLiteral(" OR ")));
 }
 
 static QString buildWhere(
@@ -1568,11 +1568,11 @@ static QString buildWhere(
         const QString fragment = buildWhere(filter, db, table, detailType, bindings, failed, transientModifiedRequired, globalPresenceRequired);
         if (filter.type() != QContactFilter::DefaultFilter && !*failed) {
             // default filter gets special (permissive) treatment by the intersection filter.
-            fragments.append(fragment.isEmpty() ? QLatin1String("NULL") : fragment);
+            fragments.append(fragment.isEmpty() ? QStringLiteral("NULL") : fragment);
         }
     }
 
-    return fragments.join(QLatin1String(" AND "));
+    return fragments.join(QStringLiteral(" AND "));
 }
 
 static QString buildContactWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QContactDetail::DetailType detailType, QVariantList *bindings,
@@ -1604,7 +1604,7 @@ static QString buildContactWhere(const QContactFilter &filter, ContactsDatabase 
     default:
         *failed = true;
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown filter type: %1").arg(filter.type()));
-        return QLatin1String("FALSE");
+        return QStringLiteral("FALSE");
     }
 }
 
@@ -1639,7 +1639,7 @@ static QString buildDetailWhere(
         } else {
             *failed = true;
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot build detail query with mismatched details type: %1 %2").arg(detailType).arg(detailFilter.detailType()));
-            return QLatin1String("FALSE");
+            return QStringLiteral("FALSE");
         }
     }
     case QContactFilter::ContactDetailRangeFilter: {
@@ -1650,7 +1650,7 @@ static QString buildDetailWhere(
         } else {
             *failed = true;
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot build detail query with mismatched details type: %1 != %2").arg(detailType).arg(detailFilter.detailType()));
-            return QLatin1String("FALSE");
+            return QStringLiteral("FALSE");
         }
     }
     case QContactFilter::IntersectionFilter:
@@ -1680,11 +1680,11 @@ static QString buildDetailWhere(
     case QContactFilter::IdFilter:
         *failed = true;
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot build a detail query with a non-detail filter type: %1").arg(filter.type()));
-        return QLatin1String("FALSE");
+        return QStringLiteral("FALSE");
     default:
         *failed = true;
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown filter type: %1").arg(filter.type()));
-        return QLatin1String("FALSE");
+        return QStringLiteral("FALSE");
     }
 }
 
@@ -1769,8 +1769,8 @@ static QString buildOrderBy(
 
     if (sortBlanks) {
         QString blanksLocation = (order.blankPolicy() == QContactSortOrder::BlanksLast)
-                ? QLatin1String("CASE WHEN COALESCE(%1, '') = '' THEN 1 ELSE 0 END, ")
-                : QLatin1String("CASE WHEN COALESCE(%1, '') = '' THEN 0 ELSE 1 END, ");
+                ? QStringLiteral("CASE WHEN COALESCE(%1, '') = '' THEN 1 ELSE 0 END, ")
+                : QStringLiteral("CASE WHEN COALESCE(%1, '') = '' THEN 0 ELSE 1 END, ");
         result = blanksLocation.arg(sortExpression);
     }
 
@@ -1778,17 +1778,17 @@ static QString buildOrderBy(
 
     if (!isDisplayLabelGroup && collate) {
         if (localized && useLocale) {
-            result.append(QLatin1String(" COLLATE localeCollation"));
+            result.append(QStringLiteral(" COLLATE localeCollation"));
         } else {
-            result.append((order.caseSensitivity() == Qt::CaseSensitive) ? QLatin1String(" COLLATE RTRIM") : QLatin1String(" COLLATE NOCASE"));
+            result.append((order.caseSensitivity() == Qt::CaseSensitive) ? QStringLiteral(" COLLATE RTRIM") : QStringLiteral(" COLLATE NOCASE"));
         }
     }
 
-    result.append((order.direction() == Qt::AscendingOrder) ? QLatin1String(" ASC") : QLatin1String(" DESC"));
+    result.append((order.direction() == Qt::AscendingOrder) ? QStringLiteral(" ASC") : QStringLiteral(" DESC"));
 
     if (joinToSort ) {
-        QString join = QString(QLatin1String(
-                "LEFT JOIN %1 ON Contacts.contactId = %1.contactId"))
+        QString join = QStringLiteral(
+                "LEFT JOIN %1 ON Contacts.contactId = %1.contactId")
                 .arg(QLatin1String(detail.table));
 
         if (!joins->contains(join))
@@ -1831,11 +1831,11 @@ static QString buildOrderBy(
         }
     }
 
-    *join = joins.join(QLatin1String(" "));
+    *join = joins.join(QStringLiteral(" "));
 
     if (!finalOrder.isEmpty())
         fragments.append(finalOrder);
-    return fragments.join(QLatin1String(", "));
+    return fragments.join(QStringLiteral(", "));
 }
 
 static void debugFilterExpansion(const QString &description, const QString &query, const QVariantList &bindings)
@@ -2188,11 +2188,11 @@ QString expandWhere(const QString &where, const QContactFilter &filter, const bo
     if (emptyFilter && constraints.isEmpty())
         return QString();
 
-    QString whereClause(QString::fromLatin1("WHERE "));
+    QString whereClause(QStringLiteral("WHERE "));
     if (!constraints.isEmpty()) {
-        whereClause += constraints.join(QLatin1String("AND "));
+        whereClause += constraints.join(QStringLiteral("AND "));
         if (!emptyFilter) {
-            whereClause += QLatin1String("AND ");
+            whereClause += QStringLiteral("AND ");
         }
     }
     if (!emptyFilter) {
@@ -2390,7 +2390,7 @@ QContactManager::Error ContactReader::queryContacts(
 {
     QContactManager::Error err = QContactManager::NoError;
 
-    const QString dataQueryStatement(QString::fromLatin1(
+    const QString dataQueryStatement(QStringLiteral(
         "SELECT " // order and content can change due to schema upgrades, so list manually.
             "Contacts.contactId, "
             "Contacts.collectionId, "
@@ -2410,7 +2410,7 @@ QContactManager::Error ContactReader::queryContacts(
                                      .arg(ignoreDeleted ? QStringLiteral("WHERE Contacts.changeFlags < 4") // ChangeFlags::IsDeleted
                                                         : QString()));
 
-    const QString relationshipQueryStatement(QString::fromLatin1(
+    const QString relationshipQueryStatement(QStringLiteral(
         "SELECT "
             "temp.%1.contactId AS contactId,"
             "R1.type AS secondType,"
@@ -2512,11 +2512,11 @@ QContactManager::Error ContactReader::queryContacts(
         "%4 "
         "ORDER BY temp.%2.rowId ASC"));
 
-    const QString selectTemplate(QString::fromLatin1(
+    const QString selectTemplate(QStringLiteral(
         "%1.*"));
-    const QString joinTemplate(QString::fromLatin1(
+    const QString joinTemplate(QStringLiteral(
         "LEFT JOIN %1 ON %1.detailId = Details.detailId"));
-    const QString detailNameTemplate(QString::fromLatin1(
+    const QString detailNameTemplate(QStringLiteral(
         "WHERE Details.detail IN ('%1')"));
 
     QStringList selectSpec;
@@ -2556,7 +2556,7 @@ QContactManager::Error ContactReader::queryContacts(
     if (definitionMask.isEmpty())
         detailQueryStatement = detailQueryStatement.arg(QString());
     else
-        detailQueryStatement = detailQueryStatement.arg(detailNameTemplate.arg(detailNameSpec.join(QLatin1String("','"))));
+        detailQueryStatement = detailQueryStatement.arg(detailNameTemplate.arg(detailNameSpec.join(QStringLiteral("','"))));
 
     // If selectSpec is empty, all required details are in the Contacts table
     ContactsDatabase::Query detailQuery(m_database.prepare(detailQueryStatement));
@@ -2564,7 +2564,7 @@ QContactManager::Error ContactReader::queryContacts(
         // Read the details for these contacts
         detailQuery.setForwardOnly(true);
         if (!ContactsDatabase::execute(detailQuery)) {
-            detailQuery.reportError(QString::fromLatin1("Failed to prepare query for joined details"));
+            detailQuery.reportError(QStringLiteral("Failed to prepare query for joined details"));
             return QContactManager::UnspecifiedError;
         } else {
             // Move to the first row
@@ -2824,26 +2824,26 @@ QContactManager::Error ContactReader::readDeletedContactIds(
 
     QStringList restrictions;
     QVariantList bindings;
-    restrictions.append(QString::fromLatin1("changeFlags >= 4"));
+    restrictions.append(QStringLiteral("changeFlags >= 4"));
     if (!since.isNull()) {
-        restrictions.append(QString::fromLatin1("deleted >= ?"));
+        restrictions.append(QStringLiteral("deleted >= ?"));
         bindings.append(ContactsDatabase::dateTimeString(since.toUTC()));
     }
     if (!syncTarget.isNull()) {
-        restrictions.append(QString::fromLatin1("syncTarget = ?"));
+        restrictions.append(QStringLiteral("syncTarget = ?"));
         bindings.append(syncTarget);
     }
     if (!collectionIds.isEmpty()) {
-        restrictions.append(QString::fromLatin1("collectionId = ?"));
+        restrictions.append(QStringLiteral("collectionId = ?"));
         bindings.append(ContactCollectionId::databaseId(collectionIds.first()));
     }
 
-    QString queryStatement(QString::fromLatin1("SELECT contactId FROM Contacts"));
+    QString queryStatement(QStringLiteral("SELECT contactId FROM Contacts"));
     if (!restrictions.isEmpty()) {
-        queryStatement.append(QString::fromLatin1(" WHERE "));
+        queryStatement.append(QStringLiteral(" WHERE "));
         queryStatement.append(restrictions.takeFirst());
         while (!restrictions.isEmpty()) {
-            queryStatement.append(QString::fromLatin1(" AND "));
+            queryStatement.append(QStringLiteral(" AND "));
             queryStatement.append(restrictions.takeFirst());
         }
     }
@@ -2890,7 +2890,7 @@ QContactManager::Error ContactReader::readContactIds(
     }
 
     // Use a dummy table name to identify any temporary tables we create
-    const QString tableName(QString::fromLatin1("readContactIds"));
+    const QString tableName(QStringLiteral("readContactIds"));
 
     m_database.clearTransientContactIdsTable(tableName);
 
@@ -2923,12 +2923,12 @@ QContactManager::Error ContactReader::readContactIds(
         }
     }
 
-    QString queryString = QString(QLatin1String(
+    QString queryString = QStringLiteral(
                 "\n SELECT DISTINCT Contacts.contactId"
                 "\n FROM Contacts %1"
-                "\n %2")).arg(join).arg(where);
+                "\n %2").arg(join).arg(where);
     if (!orderBy.isEmpty()) {
-        queryString.append(QString::fromLatin1(" ORDER BY ") + orderBy);
+        queryString.append(QStringLiteral(" ORDER BY ") + orderBy);
     }
 
     QSqlQuery query(m_database);
@@ -3007,19 +3007,19 @@ QContactManager::Error ContactReader::readRelationships(
     QStringList whereStatements;
     QVariantList bindings;
     if (!type.isEmpty()) {
-        whereStatements.append(QLatin1String("type = ?"));
+        whereStatements.append(QStringLiteral("type = ?"));
         bindings.append(type);
     }
 
     quint32 firstId = ContactId::databaseId(first);
     if (firstId != 0) {
-        whereStatements.append(QLatin1String("firstId = ?"));
+        whereStatements.append(QStringLiteral("firstId = ?"));
         bindings.append(firstId);
     }
 
     quint32 secondId = ContactId::databaseId(second);
     if (secondId != 0) {
-        whereStatements.append(QLatin1String("secondId = ?"));
+        whereStatements.append(QStringLiteral("secondId = ?"));
         bindings.append(secondId);
     }
 
@@ -3030,12 +3030,12 @@ QContactManager::Error ContactReader::readRelationships(
                 "\n SELECT contactId FROM Contacts WHERE changeFlags >= 4)"); // ChangeFlags::IsDeleted
 
     const QString where = whereParticipantNotDeleted + (!whereStatements.isEmpty()
-                        ? (QStringLiteral(" AND ") + whereStatements.join(QLatin1String(" AND ")))
+                        ? (QStringLiteral(" AND ") + whereStatements.join(QStringLiteral(" AND ")))
                         : QString());
 
-    QString statement = QLatin1String(
+    QString statement = QStringLiteral(
             "\n SELECT type, firstId, secondId"
-            "\n FROM Relationships") + where + QLatin1String(";");
+            "\n FROM Relationships") + where + QStringLiteral(";");
 
     QSqlQuery query(m_database);
     query.setForwardOnly(true);
@@ -3133,10 +3133,10 @@ QContactManager::Error ContactReader::readDetails(
                     " GROUP BY %1"
                     "%4"        // ORDER BY
                     "%5").arg(  // LIMIT
-                fieldNames.join(QLatin1String(", ")),
+                fieldNames.join(QStringLiteral(", ")),
                 QLatin1String(info.table),
-                !where.isEmpty() ? QLatin1String(" WHERE ") + where : QString(),
-                !orderBy.isEmpty() ? QLatin1String(" ORDER BY ") + orderBy : QStringLiteral(" ORDER BY maxId DESC"), // If there's no sort order prioritize the most recent entries.
+                !where.isEmpty() ? QStringLiteral(" WHERE ") + where : QString(),
+                !orderBy.isEmpty() ? QStringLiteral(" ORDER BY ") + orderBy : QStringLiteral(" ORDER BY maxId DESC"), // If there's no sort order prioritize the most recent entries.
                 maximumCount > 0 ? QStringLiteral(" LIMIT %1").arg(maximumCount): QString());
 
     QSqlQuery query(m_database);
@@ -3270,7 +3270,7 @@ QContactManager::Error ContactReader::fetchCollections(
         collection.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, collectionsQuery.value(col++).toString());
         const int changeFlags = collectionsQuery.value(col++).toInt();
 
-        const QString metadataStatement(QString::fromLatin1(
+        const QString metadataStatement(QStringLiteral(
             "SELECT " // order and content can change due to schema upgrades, so list manually.
                 "collectionId, "
                 "key, "
@@ -3367,18 +3367,18 @@ bool ContactReader::fetchOOB(const QString &scope, const QStringList &keys, QMap
 {
     QVariantList keyNames;
 
-    QString statement(QString::fromLatin1("SELECT name, value, compressed FROM OOB WHERE name "));
+    QString statement(QStringLiteral("SELECT name, value, compressed FROM OOB WHERE name "));
     if (keys.isEmpty()) {
-        statement.append(QString::fromLatin1("LIKE '%1:%%'").arg(scope));
+        statement.append(QStringLiteral("LIKE '%1:%%'").arg(scope));
     } else {
         const QChar colon(QChar::fromLatin1(':'));
 
         QString keyList;
         foreach (const QString &key, keys) {
             keyNames.append(scope + colon + key);
-            keyList.append(QString::fromLatin1(keyList.isEmpty() ? "?" : ",?"));
+            keyList.append(keyList.isEmpty() ? QStringLiteral("?") : QStringLiteral(",?"));
         }
-        statement.append(QString::fromLatin1("IN (%1)").arg(keyList));
+        statement.append(QStringLiteral("IN (%1)").arg(keyList));
     }
 
     QSqlQuery query(m_database);
@@ -3428,7 +3428,7 @@ bool ContactReader::fetchOOB(const QString &scope, const QStringList &keys, QMap
 
 bool ContactReader::fetchOOBKeys(const QString &scope, QStringList *keys)
 {
-    QString statement(QString::fromLatin1("SELECT name FROM OOB WHERE name LIKE '%1:%%'").arg(scope));
+    QString statement(QStringLiteral("SELECT name FROM OOB WHERE name LIKE '%1:%%'").arg(scope));
 
     QSqlQuery query(m_database);
     query.setForwardOnly(true);
