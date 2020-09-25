@@ -88,10 +88,10 @@ static QMap<QString, int> subTypeValues()
 {
     QMap<QString, int> rv;
 
-    rv.insert(QString::fromLatin1("Sip"), QContactOnlineAccount::SubTypeSip);
-    rv.insert(QString::fromLatin1("SipVoip"), QContactOnlineAccount::SubTypeSipVoip);
-    rv.insert(QString::fromLatin1("Impp"), QContactOnlineAccount::SubTypeImpp);
-    rv.insert(QString::fromLatin1("VideoShare"), QContactOnlineAccount::SubTypeVideoShare);
+    rv.insert(QStringLiteral("Sip"), QContactOnlineAccount::SubTypeSip);
+    rv.insert(QStringLiteral("SipVoip"), QContactOnlineAccount::SubTypeSipVoip);
+    rv.insert(QStringLiteral("Impp"), QContactOnlineAccount::SubTypeImpp);
+    rv.insert(QStringLiteral("VideoShare"), QContactOnlineAccount::SubTypeVideoShare);
 
     return rv;
 }
@@ -100,10 +100,10 @@ static QMap<int, QString> subTypeNames()
 {
     QMap<int, QString> rv;
 
-    rv.insert(QContactOnlineAccount::SubTypeSip, QString::fromLatin1("Sip"));
-    rv.insert(QContactOnlineAccount::SubTypeSipVoip, QString::fromLatin1("SipVoip"));
-    rv.insert(QContactOnlineAccount::SubTypeImpp, QString::fromLatin1("Impp"));
-    rv.insert(QContactOnlineAccount::SubTypeVideoShare, QString::fromLatin1("VideoShare"));
+    rv.insert(QContactOnlineAccount::SubTypeSip, QStringLiteral("Sip"));
+    rv.insert(QContactOnlineAccount::SubTypeSipVoip, QStringLiteral("SipVoip"));
+    rv.insert(QContactOnlineAccount::SubTypeImpp, QStringLiteral("Impp"));
+    rv.insert(QContactOnlineAccount::SubTypeVideoShare, QStringLiteral("VideoShare"));
 
     return rv;
 }
@@ -112,15 +112,15 @@ static QMap<QString, int> protocolValues()
 {
     QMap<QString, int> rv;
 
-    rv.insert(QString::fromLatin1("Unknown"), QContactOnlineAccount::ProtocolUnknown);
-    rv.insert(QString::fromLatin1("Aim"), QContactOnlineAccount::ProtocolAim);
-    rv.insert(QString::fromLatin1("Icq"), QContactOnlineAccount::ProtocolIcq);
-    rv.insert(QString::fromLatin1("Irc"), QContactOnlineAccount::ProtocolIrc);
-    rv.insert(QString::fromLatin1("Jabber"), QContactOnlineAccount::ProtocolJabber);
-    rv.insert(QString::fromLatin1("Msn"), QContactOnlineAccount::ProtocolMsn);
-    rv.insert(QString::fromLatin1("Qq"), QContactOnlineAccount::ProtocolQq);
-    rv.insert(QString::fromLatin1("Skype"), QContactOnlineAccount::ProtocolSkype);
-    rv.insert(QString::fromLatin1("Yahoo"), QContactOnlineAccount::ProtocolYahoo);
+    rv.insert(QStringLiteral("Unknown"), QContactOnlineAccount::ProtocolUnknown);
+    rv.insert(QStringLiteral("Aim"), QContactOnlineAccount::ProtocolAim);
+    rv.insert(QStringLiteral("Icq"), QContactOnlineAccount::ProtocolIcq);
+    rv.insert(QStringLiteral("Irc"), QContactOnlineAccount::ProtocolIrc);
+    rv.insert(QStringLiteral("Jabber"), QContactOnlineAccount::ProtocolJabber);
+    rv.insert(QStringLiteral("Msn"), QContactOnlineAccount::ProtocolMsn);
+    rv.insert(QStringLiteral("Qq"), QContactOnlineAccount::ProtocolQq);
+    rv.insert(QStringLiteral("Skype"), QContactOnlineAccount::ProtocolSkype);
+    rv.insert(QStringLiteral("Yahoo"), QContactOnlineAccount::ProtocolYahoo);
 
     return rv;
 }
@@ -129,15 +129,15 @@ static QMap<int, QString> protocolNames()
 {
     QMap<int, QString> rv;
 
-    rv.insert(QContactOnlineAccount::ProtocolUnknown, QString::fromLatin1("Unknown"));
-    rv.insert(QContactOnlineAccount::ProtocolAim, QString::fromLatin1("Aim"));
-    rv.insert(QContactOnlineAccount::ProtocolIcq, QString::fromLatin1("Icq"));
-    rv.insert(QContactOnlineAccount::ProtocolIrc, QString::fromLatin1("Irc"));
-    rv.insert(QContactOnlineAccount::ProtocolJabber, QString::fromLatin1("Jabber"));
-    rv.insert(QContactOnlineAccount::ProtocolMsn, QString::fromLatin1("Msn"));
-    rv.insert(QContactOnlineAccount::ProtocolQq, QString::fromLatin1("Qq"));
-    rv.insert(QContactOnlineAccount::ProtocolSkype, QString::fromLatin1("Skype"));
-    rv.insert(QContactOnlineAccount::ProtocolYahoo, QString::fromLatin1("Yahoo"));
+    rv.insert(QContactOnlineAccount::ProtocolUnknown, QStringLiteral("Unknown"));
+    rv.insert(QContactOnlineAccount::ProtocolAim, QStringLiteral("Aim"));
+    rv.insert(QContactOnlineAccount::ProtocolIcq, QStringLiteral("Icq"));
+    rv.insert(QContactOnlineAccount::ProtocolIrc, QStringLiteral("Irc"));
+    rv.insert(QContactOnlineAccount::ProtocolJabber, QStringLiteral("Jabber"));
+    rv.insert(QContactOnlineAccount::ProtocolMsn, QStringLiteral("Msn"));
+    rv.insert(QContactOnlineAccount::ProtocolQq, QStringLiteral("Qq"));
+    rv.insert(QContactOnlineAccount::ProtocolSkype, QStringLiteral("Skype"));
+    rv.insert(QContactOnlineAccount::ProtocolYahoo, QStringLiteral("Yahoo"));
 
     return rv;
 }
@@ -178,18 +178,18 @@ static QMap<QString, int> subTypeValues()
 {
     QMap<QString, int> rv;
 
-    rv.insert(QString::fromLatin1("Landline"), QContactPhoneNumber::SubTypeLandline);
-    rv.insert(QString::fromLatin1("Mobile"), QContactPhoneNumber::SubTypeMobile);
-    rv.insert(QString::fromLatin1("Fax"), QContactPhoneNumber::SubTypeFax);
-    rv.insert(QString::fromLatin1("Pager"), QContactPhoneNumber::SubTypePager);
-    rv.insert(QString::fromLatin1("Voice"), QContactPhoneNumber::SubTypeVoice);
-    rv.insert(QString::fromLatin1("Modem"), QContactPhoneNumber::SubTypeModem);
-    rv.insert(QString::fromLatin1("Video"), QContactPhoneNumber::SubTypeVideo);
-    rv.insert(QString::fromLatin1("Car"), QContactPhoneNumber::SubTypeCar);
-    rv.insert(QString::fromLatin1("BulletinBoardSystem"), QContactPhoneNumber::SubTypeBulletinBoardSystem);
-    rv.insert(QString::fromLatin1("MessagingCapable"), QContactPhoneNumber::SubTypeMessagingCapable);
-    rv.insert(QString::fromLatin1("Assistant"), QContactPhoneNumber::SubTypeAssistant);
-    rv.insert(QString::fromLatin1("DtmfMenu"), QContactPhoneNumber::SubTypeDtmfMenu);
+    rv.insert(QStringLiteral("Landline"), QContactPhoneNumber::SubTypeLandline);
+    rv.insert(QStringLiteral("Mobile"), QContactPhoneNumber::SubTypeMobile);
+    rv.insert(QStringLiteral("Fax"), QContactPhoneNumber::SubTypeFax);
+    rv.insert(QStringLiteral("Pager"), QContactPhoneNumber::SubTypePager);
+    rv.insert(QStringLiteral("Voice"), QContactPhoneNumber::SubTypeVoice);
+    rv.insert(QStringLiteral("Modem"), QContactPhoneNumber::SubTypeModem);
+    rv.insert(QStringLiteral("Video"), QContactPhoneNumber::SubTypeVideo);
+    rv.insert(QStringLiteral("Car"), QContactPhoneNumber::SubTypeCar);
+    rv.insert(QStringLiteral("BulletinBoardSystem"), QContactPhoneNumber::SubTypeBulletinBoardSystem);
+    rv.insert(QStringLiteral("MessagingCapable"), QContactPhoneNumber::SubTypeMessagingCapable);
+    rv.insert(QStringLiteral("Assistant"), QContactPhoneNumber::SubTypeAssistant);
+    rv.insert(QStringLiteral("DtmfMenu"), QContactPhoneNumber::SubTypeDtmfMenu);
 
     return rv;
 }
@@ -198,18 +198,18 @@ static QMap<int, QString> subTypeNames()
 {
     QMap<int, QString> rv;
 
-    rv.insert(QContactPhoneNumber::SubTypeLandline, QString::fromLatin1("Landline"));
-    rv.insert(QContactPhoneNumber::SubTypeMobile, QString::fromLatin1("Mobile"));
-    rv.insert(QContactPhoneNumber::SubTypeFax, QString::fromLatin1("Fax"));
-    rv.insert(QContactPhoneNumber::SubTypePager, QString::fromLatin1("Pager"));
-    rv.insert(QContactPhoneNumber::SubTypeVoice, QString::fromLatin1("Voice"));
-    rv.insert(QContactPhoneNumber::SubTypeModem, QString::fromLatin1("Modem"));
-    rv.insert(QContactPhoneNumber::SubTypeVideo, QString::fromLatin1("Video"));
-    rv.insert(QContactPhoneNumber::SubTypeCar, QString::fromLatin1("Car"));
-    rv.insert(QContactPhoneNumber::SubTypeBulletinBoardSystem, QString::fromLatin1("BulletinBoardSystem"));
-    rv.insert(QContactPhoneNumber::SubTypeMessagingCapable, QString::fromLatin1("MessagingCapable"));
-    rv.insert(QContactPhoneNumber::SubTypeAssistant, QString::fromLatin1("Assistant"));
-    rv.insert(QContactPhoneNumber::SubTypeDtmfMenu, QString::fromLatin1("DtmfMenu"));
+    rv.insert(QContactPhoneNumber::SubTypeLandline, QStringLiteral("Landline"));
+    rv.insert(QContactPhoneNumber::SubTypeMobile, QStringLiteral("Mobile"));
+    rv.insert(QContactPhoneNumber::SubTypeFax, QStringLiteral("Fax"));
+    rv.insert(QContactPhoneNumber::SubTypePager, QStringLiteral("Pager"));
+    rv.insert(QContactPhoneNumber::SubTypeVoice, QStringLiteral("Voice"));
+    rv.insert(QContactPhoneNumber::SubTypeModem, QStringLiteral("Modem"));
+    rv.insert(QContactPhoneNumber::SubTypeVideo, QStringLiteral("Video"));
+    rv.insert(QContactPhoneNumber::SubTypeCar, QStringLiteral("Car"));
+    rv.insert(QContactPhoneNumber::SubTypeBulletinBoardSystem, QStringLiteral("BulletinBoardSystem"));
+    rv.insert(QContactPhoneNumber::SubTypeMessagingCapable, QStringLiteral("MessagingCapable"));
+    rv.insert(QContactPhoneNumber::SubTypeAssistant, QStringLiteral("Assistant"));
+    rv.insert(QContactPhoneNumber::SubTypeDtmfMenu, QStringLiteral("DtmfMenu"));
 
     return rv;
 }
@@ -236,10 +236,10 @@ static QMap<QString, int> subTypeValues()
 {
     QMap<QString, int> rv;
 
-    rv.insert(QString::fromLatin1("Parcel"), QContactAddress::SubTypeParcel);
-    rv.insert(QString::fromLatin1("Postal"), QContactAddress::SubTypePostal);
-    rv.insert(QString::fromLatin1("Domestic"), QContactAddress::SubTypeDomestic);
-    rv.insert(QString::fromLatin1("International"), QContactAddress::SubTypeInternational);
+    rv.insert(QStringLiteral("Parcel"), QContactAddress::SubTypeParcel);
+    rv.insert(QStringLiteral("Postal"), QContactAddress::SubTypePostal);
+    rv.insert(QStringLiteral("Domestic"), QContactAddress::SubTypeDomestic);
+    rv.insert(QStringLiteral("International"), QContactAddress::SubTypeInternational);
 
     return rv;
 }
@@ -248,10 +248,10 @@ static QMap<int, QString> subTypeNames()
 {
     QMap<int, QString> rv;
 
-    rv.insert(QContactAddress::SubTypeParcel, QString::fromLatin1("Parcel"));
-    rv.insert(QContactAddress::SubTypePostal, QString::fromLatin1("Postal"));
-    rv.insert(QContactAddress::SubTypeDomestic, QString::fromLatin1("Domestic"));
-    rv.insert(QContactAddress::SubTypeInternational, QString::fromLatin1("International"));
+    rv.insert(QContactAddress::SubTypeParcel, QStringLiteral("Parcel"));
+    rv.insert(QContactAddress::SubTypePostal, QStringLiteral("Postal"));
+    rv.insert(QContactAddress::SubTypeDomestic, QStringLiteral("Domestic"));
+    rv.insert(QContactAddress::SubTypeInternational, QStringLiteral("International"));
 
     return rv;
 }
@@ -278,11 +278,11 @@ static QMap<QString, int> subTypeValues()
 {
     QMap<QString, int> rv;
 
-    rv.insert(QString::fromLatin1("Wedding"), QContactAnniversary::SubTypeWedding);
-    rv.insert(QString::fromLatin1("Engagement"), QContactAnniversary::SubTypeEngagement);
-    rv.insert(QString::fromLatin1("House"), QContactAnniversary::SubTypeHouse);
-    rv.insert(QString::fromLatin1("Employment"), QContactAnniversary::SubTypeEmployment);
-    rv.insert(QString::fromLatin1("Memorial"), QContactAnniversary::SubTypeMemorial);
+    rv.insert(QStringLiteral("Wedding"), QContactAnniversary::SubTypeWedding);
+    rv.insert(QStringLiteral("Engagement"), QContactAnniversary::SubTypeEngagement);
+    rv.insert(QStringLiteral("House"), QContactAnniversary::SubTypeHouse);
+    rv.insert(QStringLiteral("Employment"), QContactAnniversary::SubTypeEmployment);
+    rv.insert(QStringLiteral("Memorial"), QContactAnniversary::SubTypeMemorial);
 
     return rv;
 }
@@ -291,11 +291,11 @@ static QMap<int, QString> subTypeNames()
 {
     QMap<int, QString> rv;
 
-    rv.insert(QContactAnniversary::SubTypeWedding, QString::fromLatin1("Wedding"));
-    rv.insert(QContactAnniversary::SubTypeEngagement, QString::fromLatin1("Engagement"));
-    rv.insert(QContactAnniversary::SubTypeHouse, QString::fromLatin1("House"));
-    rv.insert(QContactAnniversary::SubTypeEmployment, QString::fromLatin1("Employment"));
-    rv.insert(QContactAnniversary::SubTypeMemorial, QString::fromLatin1("Memorial"));
+    rv.insert(QContactAnniversary::SubTypeWedding, QStringLiteral("Wedding"));
+    rv.insert(QContactAnniversary::SubTypeEngagement, QStringLiteral("Engagement"));
+    rv.insert(QContactAnniversary::SubTypeHouse, QStringLiteral("House"));
+    rv.insert(QContactAnniversary::SubTypeEmployment, QStringLiteral("Employment"));
+    rv.insert(QContactAnniversary::SubTypeMemorial, QStringLiteral("Memorial"));
 
     return rv;
 }
@@ -322,9 +322,9 @@ static QMap<QString, int> subTypeValues()
 {
     QMap<QString, int> rv;
 
-    rv.insert(QString::fromLatin1("HomePage"), QContactUrl::SubTypeHomePage);
-    rv.insert(QString::fromLatin1("Blog"), QContactUrl::SubTypeBlog);
-    rv.insert(QString::fromLatin1("Favourite"), QContactUrl::SubTypeFavourite);
+    rv.insert(QStringLiteral("HomePage"), QContactUrl::SubTypeHomePage);
+    rv.insert(QStringLiteral("Blog"), QContactUrl::SubTypeBlog);
+    rv.insert(QStringLiteral("Favourite"), QContactUrl::SubTypeFavourite);
 
     return rv;
 }
@@ -333,9 +333,9 @@ static QMap<int, QString> subTypeNames()
 {
     QMap<int, QString> rv;
 
-    rv.insert(QContactUrl::SubTypeHomePage, QString::fromLatin1("HomePage"));
-    rv.insert(QContactUrl::SubTypeBlog, QString::fromLatin1("Blog"));
-    rv.insert(QContactUrl::SubTypeFavourite, QString::fromLatin1("Favourite"));
+    rv.insert(QContactUrl::SubTypeHomePage, QStringLiteral("HomePage"));
+    rv.insert(QContactUrl::SubTypeBlog, QStringLiteral("Blog"));
+    rv.insert(QContactUrl::SubTypeFavourite, QStringLiteral("Favourite"));
 
     return rv;
 }
@@ -362,9 +362,9 @@ static QMap<QString, int> genderValues()
 {
     QMap<QString, int> rv;
 
-    rv.insert(QString::fromLatin1("Male"), QContactGender::GenderMale);
-    rv.insert(QString::fromLatin1("Female"), QContactGender::GenderFemale);
-    rv.insert(QString::fromLatin1(""), QContactGender::GenderUnspecified);
+    rv.insert(QStringLiteral("Male"), QContactGender::GenderMale);
+    rv.insert(QStringLiteral("Female"), QContactGender::GenderFemale);
+    rv.insert(QStringLiteral(""), QContactGender::GenderUnspecified);
 
     return rv;
 }
@@ -373,9 +373,9 @@ static QMap<int, QString> genderNames()
 {
     QMap<int, QString> rv;
 
-    rv.insert(QContactGender::GenderMale, QString::fromLatin1("Male"));
-    rv.insert(QContactGender::GenderFemale, QString::fromLatin1("Female"));
-    rv.insert(QContactGender::GenderUnspecified, QString::fromLatin1(""));
+    rv.insert(QContactGender::GenderMale, QStringLiteral("Male"));
+    rv.insert(QContactGender::GenderFemale, QStringLiteral("Female"));
+    rv.insert(QContactGender::GenderUnspecified, QStringLiteral(""));
 
     return rv;
 }

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2013 - 2019 Jolla Ltd.
- * Copyright (c) 2019 Open Mobile Platform LLC.
+ * Copyright (c) 2019 - 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -46,7 +46,6 @@
 #include "contactnotifier.h"
 #include "contactreader.h"
 #include "contactwriter.h"
-#include "contactid_p.h"
 
 // QList<int> is widely used in qtpim
 Q_DECLARE_METATYPE(QList<int>)
@@ -68,9 +67,10 @@ public:
 
     QContactManager::Error open();
 
-    QString managerName() const;
-    QMap<QString, QString> managerParameters() const;
-    int managerVersion() const;
+    QString managerName() const override;
+    QMap<QString, QString> managerParameters() const override;
+    QMap<QString, QString> idInterpretationParameters() const override;
+    int managerVersion() const override;
 
     QList<QContactId> contactIds(
                 const QContactFilter &filter,
@@ -117,7 +117,7 @@ public:
 
     QList<QContactRelationship> relationships(
             const QString &relationshipType,
-            const QContact &participant,
+            const QContactId &participantId,
             QContactRelationship::Role role,
             QContactManager::Error *error) const override;
     bool saveRelationships(
@@ -129,10 +129,22 @@ public:
             QMap<int, QContactManager::Error> *errorMap,
             QContactManager::Error *error) override;
 
+    QContactCollectionId defaultCollectionId() const override;
+    QContactCollection collection(const QContactCollectionId &collectionId, QContactManager::Error *error) const override;
+    QList<QContactCollection> collections(QContactManager::Error *error) const override;
+    bool saveCollection(QContactCollection *collection, QContactManager::Error *error) override;
+    bool removeCollection(const QContactCollectionId &collectionId, QContactManager::Error *error) override;
+    bool saveCollections(QList<QContactCollection> *collections, QMap<int, QContactManager::Error> *errorMap, QContactManager::Error *error); // non-override.
+    bool removeCollections(const QList<QContactCollectionId> &collectionIds, QMap<int, QContactManager::Error> *errorMap, QContactManager::Error *error); // non-override.
+
     void requestDestroyed(QContactAbstractRequest* req) override;
     void requestDestroyed(QObject* request) override;
     bool startRequest(QContactAbstractRequest* req) override;
     bool startRequest(QContactDetailFetchRequest* request) override;
+    bool startRequest(QContactCollectionChangesFetchRequest* request) override;
+    bool startRequest(QContactChangesFetchRequest* request) override;
+    bool startRequest(QContactChangesSaveRequest* request) override;
+    bool startRequest(QContactClearChangeFlagsRequest* request) override;
     bool cancelRequest(QContactAbstractRequest* req) override;
     bool cancelRequest(QObject* request) override;
     bool waitForRequestFinished(QContactAbstractRequest* req, int msecs) override;
@@ -141,45 +153,59 @@ public:
     bool isRelationshipTypeSupported(const QString &relationshipType, QContactType::TypeValues contactType) const override;
     QList<QContactType::TypeValues> supportedContactTypes() const override;
 
-    void regenerateDisplayLabel(QContact &contact);
+    void regenerateDisplayLabel(QContact &contact, bool *emitDisplayLabelGroupChange);
 
-    bool fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
-                           QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
-                           QContactManager::Error *error);
-    bool fetchSyncContacts(const QString &syncTarget, const QDateTime &lastSync, const QList<QContactId> &exportedIds,
-                           QList<QContact> *syncContacts, QList<QContact> *addedContacts, QList<QContactId> *deletedContactIds,
-                           QDateTime *maxTimestamp, QContactManager::Error *error);
+    bool clearChangeFlags(const QList<QContactId> &contactIds, QContactManager::Error *error) override;
+    bool clearChangeFlags(const QContactCollectionId &collectionId, QContactManager::Error *error) override;
 
-    bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
-                           const QList<QPair<QContact, QContact> > &remoteChanges, QContactManager::Error *error);
-    bool storeSyncContacts(const QString &syncTarget, ConflictResolutionPolicy conflictPolicy,
-                           QList<QPair<QContact, QContact> > *remoteChanges, QContactManager::Error *error);
+    bool fetchCollectionChanges(int accountId,
+                                const QString &applicationName,
+                                QList<QContactCollection> *addedCollections,
+                                QList<QContactCollection> *modifiedCollections,
+                                QList<QContactCollection> *deletedCollections,
+                                QList<QContactCollection> *unmodifiedCollections,
+                                QContactManager::Error *error) override;
 
-    bool fetchOOB(const QString &scope, const QString &key, QVariant *value);
-    bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values);
-    bool fetchOOB(const QString &scope, QMap<QString, QVariant> *values);
+    bool fetchContactChanges(const QContactCollectionId &collectionId,
+                             QList<QContact> *addedContacts,
+                             QList<QContact> *modifiedContacts,
+                             QList<QContact> *deletedContacts,
+                             QList<QContact> *unmodifiedContacts,
+                             QContactManager::Error *error) override;
 
-    bool fetchOOBKeys(const QString &scope, QStringList *keys);
+    bool storeChanges(QHash<QContactCollection*, QList<QContact> * /* added contacts */> *addedCollections,
+                      QHash<QContactCollection*, QList<QContact> * /* added/modified/deleted contacts */> *modifiedCollections,
+                      const QList<QContactCollectionId> &deletedCollections,
+                      ConflictResolutionPolicy conflictResolutionPolicy,
+                      bool clearChangeFlags,
+                      QContactManager::Error *error) override;
 
-    bool storeOOB(const QString &scope, const QString &key, const QVariant &value);
-    bool storeOOB(const QString &scope, const QMap<QString, QVariant> &values);
+    bool fetchOOB(const QString &scope, const QString &key, QVariant *value) override;
+    bool fetchOOB(const QString &scope, const QStringList &keys, QMap<QString, QVariant> *values) override;
+    bool fetchOOB(const QString &scope, QMap<QString, QVariant> *values) override;
 
-    bool removeOOB(const QString &scope, const QString &key);
-    bool removeOOB(const QString &scope, const QStringList &keys);
-    bool removeOOB(const QString &scope);
+    bool fetchOOBKeys(const QString &scope, QStringList *keys) override;
 
-    static bool setContactDisplayLabel(QContact *contact, const QString &label, const QString &group);
+    bool storeOOB(const QString &scope, const QString &key, const QVariant &value) override;
+    bool storeOOB(const QString &scope, const QMap<QString, QVariant> &values) override;
 
-    static QString normalizedPhoneNumber(const QString &input);
-
-    QString synthesizedDisplayLabel(const QContact &contact, QContactManager::Error *error) const;
+    bool removeOOB(const QString &scope, const QString &key) override;
+    bool removeOOB(const QString &scope, const QStringList &keys) override;
+    bool removeOOB(const QString &scope) override;
 
     QStringList displayLabelGroups() override;
 
+    QString synthesizedDisplayLabel(const QContact &contact, QContactManager::Error *error) const;
+    static bool setContactDisplayLabel(QContact *contact, const QString &label, const QString &group, int sortOrder);
+    static QString normalizedPhoneNumber(const QString &input);
+
 private slots:
+    void _q_collectionsAdded(const QVector<quint32> &collectionIds);
+    void _q_collectionsChanged(const QVector<quint32> &collectionIds);
+    void _q_collectionsRemoved(const QVector<quint32> &collectionIds);
+    void _q_collectionContactsChanged(const QVector<quint32> &collectionIds);
     void _q_contactsChanged(const QVector<quint32> &contactIds);
     void _q_contactsPresenceChanged(const QVector<quint32> &contactIds);
-    void _q_syncContactsChanged(const QStringList &syncTargets);
     void _q_contactsAdded(const QVector<quint32> &contactIds);
     void _q_contactsRemoved(const QVector<quint32> &contactIds);
     void _q_selfContactIdChanged(quint32,quint32);
@@ -188,6 +214,7 @@ private slots:
     void _q_displayLabelGroupsChanged();
 
 private:
+    bool regenerateAggregatesIfNeeded();
     QString databaseUuid();
     ContactsDatabase &database();
 
@@ -197,6 +224,7 @@ private:
     QString m_databaseUuid;
     const QString m_name;
     QMap<QString, QString> m_parameters;
+    QString m_managerUri;
     QScopedPointer<ContactsDatabase> m_database;
     mutable QScopedPointer<ContactReader> m_synchronousReader;
     QScopedPointer<ContactWriter> m_synchronousWriter;

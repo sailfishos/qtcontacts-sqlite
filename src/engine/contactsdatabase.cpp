@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2013-2019 Jolla Ltd.
- * Copyright (c) 2019 Open Mobile Platform LLC.
+ * Copyright (c) 2013 - 2019 Jolla Ltd.
+ * Copyright (c) 2019 - 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -64,31 +64,42 @@ static const char *setupJournal =
 static const char *setupSynchronous =
         "\n PRAGMA synchronous = FULL;";
 
+static const char *createCollectionsTable =
+        "\n CREATE TABLE Collections ("
+        "\n collectionId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
+        "\n aggregable BOOL DEFAULT 1,"
+        "\n name TEXT,"
+        "\n description TEXT,"
+        "\n color TEXT,"
+        "\n secondaryColor TEXT,"
+        "\n image TEXT,"
+        "\n applicationName TEXT,"
+        "\n accountId INTEGER,"
+        "\n remotePath TEXT,"
+        "\n changeFlags INTEGER DEFAULT 0,"
+        "\n recordUnhandledChangeFlags BOOL DEFAULT 0)";
+
+static const char *createCollectionsMetadataTable =
+        "\n CREATE TABLE CollectionsMetadata ("
+        "\n collectionId INTEGER REFERENCES Collections (collectionId),"
+        "\n key TEXT,"
+        "\n value BLOB,"
+        "\n PRIMARY KEY (collectionId, key))";
+
 static const char *createContactsTable =
         "\n CREATE TABLE Contacts ("
         "\n contactId INTEGER PRIMARY KEY ASC AUTOINCREMENT,"
-        "\n displayLabel TEXT,"
-        "\n displayLabelGroup TEXT,"
-        "\n displayLabelGroupSortOrder INTEGER,"
-        "\n firstName TEXT,"
-        "\n lowerFirstName TEXT,"
-        "\n lastName TEXT,"
-        "\n lowerLastName TEXT,"
-        "\n middleName TEXT,"
-        "\n prefix TEXT,"
-        "\n suffix TEXT,"
-        "\n customLabel TEXT,"
-        "\n syncTarget TEXT NOT NULL,"
+        "\n collectionId INTEGER REFERENCES Collections (collectionId),"
         "\n created DATETIME,"
         "\n modified DATETIME,"
-        "\n gender TEXT,"               // Contains an INTEGER represented as TEXT
-        "\n isFavorite BOOL,"
+        "\n deleted DATETIME,"
         "\n hasPhoneNumber BOOL DEFAULT 0,"
         "\n hasEmailAddress BOOL DEFAULT 0,"
         "\n hasOnlineAccount BOOL DEFAULT 0,"
         "\n isOnline BOOL DEFAULT 0,"
         "\n isDeactivated BOOL DEFAULT 0,"
-        "\n isIncidental BOOL DEFAULT 0,"
+        "\n changeFlags INTEGER DEFAULT 0,"
+        "\n unhandledChangeFlags INTEGER DEFAULT 0,"
         "\n type INTEGER DEFAULT 0);"; // QContactType::TypeContact
 
 static const char *createAddressesTable =
@@ -127,6 +138,14 @@ static const char *createBirthdaysTable =
         "\n birthday DATETIME,"
         "\n calendarId TEXT);";
 
+static const char *createDisplayLabelsTable =
+        "\n CREATE TABLE DisplayLabels ("
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
+        "\n contactId INTEGER KEY UNIQUE," // only one display label detail per contact
+        "\n displayLabel TEXT,"
+        "\n displayLabelGroup TEXT,"
+        "\n displayLabelGroupSortOrder INTEGER)";
+
 static const char *createEmailAddressesTable =
         "\n CREATE TABLE EmailAddresses ("
         "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
@@ -140,6 +159,18 @@ static const char *createFamiliesTable =
         "\n contactId INTEGER KEY,"
         "\n spouse TEXT,"
         "\n children TEXT);";
+
+static const char *createFavoritesTable =
+        "\n CREATE TABLE Favorites ("
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
+        "\n contactId INTEGER KEY UNIQUE," // only one favorite detail per contact
+        "\n isFavorite BOOL)";
+
+static const char *createGendersTable =
+        "\n CREATE TABLE Genders ("
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
+        "\n contactId INTEGER KEY UNIQUE," // only one gender detail per contact
+        "\n gender TEXT)"; // Contains an INTEGER represented as TEXT
 
 static const char *createGeoLocationsTable =
         "\n CREATE TABLE GeoLocations ("
@@ -177,6 +208,19 @@ static const char *createHobbiesTable =
         "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
         "\n contactId INTEGER KEY,"
         "\n hobby TEXT);";
+
+static const char *createNamesTable =
+        "\n CREATE TABLE Names ("
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
+        "\n contactId INTEGER KEY UNIQUE," // only one name detail per contact
+        "\n firstName TEXT,"
+        "\n lowerFirstName TEXT,"
+        "\n lastName TEXT,"
+        "\n lowerLastName TEXT,"
+        "\n middleName TEXT,"
+        "\n prefix TEXT,"
+        "\n suffix TEXT,"
+        "\n customLabel TEXT)";
 
 static const char *createNicknamesTable =
         "\n CREATE TABLE Nicknames ("
@@ -246,6 +290,12 @@ static const char *createRingtonesTable =
         "\n videoRingtone TEXT,"
         "\n vibrationRingtone TEXT);";
 
+static const char *createSyncTargetsTable =
+        "\n CREATE TABLE SyncTargets ("
+        "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
+        "\n contactId INTEGER KEY UNIQUE," // only one sync target detail per contact
+        "\n syncTarget TEXT)";
+
 static const char *createTagsTable =
         "\n CREATE TABLE Tags ("
         "\n detailId INTEGER PRIMARY KEY ASC REFERENCES Details (detailId),"
@@ -285,53 +335,18 @@ static const char *createDetailsTable =
         "\n accessConstraints INTEGER,"
         "\n provenance TEXT,"
         "\n modifiable BOOL,"
-        "\n nonexportable BOOL);";
+        "\n nonexportable BOOL,"
+        "\n changeFlags INTEGER DEFAULT 0,"
+        "\n unhandledChangeFlags INTEGER DEFAULT 0);";
 
 static const char *createDetailsRemoveIndex =
         "\n CREATE INDEX DetailsRemoveIndex ON Details(contactId, detail);";
 
-static const char *createAddressesDetailsContactIdIndex =
-        "\n CREATE INDEX AddressesDetailsContactIdIndex ON Addresses(contactId);";
-static const char *createAnniversariesDetailsContactIdIndex =
-        "\n CREATE INDEX AnniversariesDetailsContactIdIndex ON Anniversaries(contactId);";
-static const char *createAvatarsDetailsContactIdIndex =
-        "\n CREATE INDEX AvatarsDetailsContactIdIndex ON Avatars(contactId);";
-static const char *createBirthdaysDetailsContactIdIndex =
-        "\n CREATE INDEX BirthdaysDetailsContactIdIndex ON Birthdays(contactId);";
-static const char *createEmailAddressesDetailsContactIdIndex =
-        "\n CREATE INDEX EmailAddressesDetailsContactIdIndex ON EmailAddresses(contactId);";
-static const char *createFamiliesDetailsContactIdIndex =
-        "\n CREATE INDEX FamiliesDetailsContactIdIndex ON Families(contactId);";
-static const char *createGeoLocationsDetailsContactIdIndex =
-        "\n CREATE INDEX GeoLocationsDetailsContactIdIndex ON GeoLocations(contactId);";
-static const char *createGlobalPresencesDetailsContactIdIndex =
-        "\n CREATE INDEX GlobalPresencesDetailsContactIdIndex ON GlobalPresences(contactId);";
-static const char *createGuidsDetailsContactIdIndex =
-        "\n CREATE INDEX GuidsDetailsContactIdIndex ON Guids(contactId);";
-static const char *createHobbiesDetailsContactIdIndex =
-        "\n CREATE INDEX HobbiesDetailsContactIdIndex ON Hobbies(contactId);";
-static const char *createNicknamesDetailsContactIdIndex =
-        "\n CREATE INDEX NicknamesDetailsContactIdIndex ON Nicknames(contactId);";
-static const char *createNotesDetailsContactIdIndex =
-        "\n CREATE INDEX NotesDetailsContactIdIndex ON Notes(contactId);";
-static const char *createOnlineAccountsDetailsContactIdIndex =
-        "\n CREATE INDEX OnlineAccountsDetailsContactIdIndex ON OnlineAccounts(contactId);";
-static const char *createOrganizationsDetailsContactIdIndex =
-        "\n CREATE INDEX OrganizationsDetailsContactIdIndex ON Organizations(contactId);";
-static const char *createPhoneNumbersDetailsContactIdIndex =
-        "\n CREATE INDEX PhoneNumbersDetailsContactIdIndex ON PhoneNumbers(contactId);";
-static const char *createPresencesDetailsContactIdIndex =
-        "\n CREATE INDEX PresencesDetailsContactIdIndex ON Presences(contactId);";
-static const char *createRingtonesDetailsContactIdIndex =
-        "\n CREATE INDEX RingtonesDetailsContactIdIndex ON Ringtones(contactId);";
-static const char *createTagsDetailsContactIdIndex =
-        "\n CREATE INDEX TagsDetailsContactIdIndex ON Tags(contactId);";
-static const char *createUrlsDetailsContactIdIndex =
-        "\n CREATE INDEX UrlsDetailsContactIdIndex ON Urls(contactId);";
-static const char *createOriginMetadataDetailsContactIdIndex =
-        "\n CREATE INDEX OriginMetadataDetailsContactIdIndex ON OriginMetadata(contactId);";
-static const char *createExtendedDetailsContactIdIndex =
-        "\n CREATE INDEX ExtendedDetailsContactIdIndex ON ExtendedDetails(contactId);";
+static const char *createDetailsChangeFlagsIndex =
+        "\n CREATE INDEX DetailsChangeFlagsIndex ON Details(changeFlags);";
+
+static const char *createDetailsContactIdIndex =
+        "\n CREATE INDEX DetailsContactIdIndex ON Details(contactId);";
 
 static const char *createIdentitiesTable =
         "\n CREATE Table Identities ("
@@ -348,7 +363,7 @@ static const char *createRelationshipsTable =
 static const char *createDeletedContactsTable =
         "\n CREATE TABLE DeletedContacts ("
         "\n contactId INTEGER PRIMARY KEY,"
-        "\n syncTarget TEXT,"
+        "\n collectionId INTEGER NOT NULL,"
         "\n deleted DATETIME);";
 
 static const char *createOOBTable =
@@ -362,12 +377,109 @@ static const char *createDbSettingsTable =
         "\n name TEXT PRIMARY KEY,"
         "\n value TEXT );";
 
-static const char *createRemoveTrigger =
+// as at b8084fa7
+static const char *createRemoveTrigger_0 =
         "\n CREATE TRIGGER RemoveContactDetails"
         "\n BEFORE DELETE"
         "\n ON Contacts"
         "\n BEGIN"
-        "\n  INSERT INTO DeletedContacts (contactId, syncTarget, deleted) VALUES (old.contactId, old.syncTarget, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));"
+        "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Birthdays WHERE contactId = old.contactId;"
+        "\n  DELETE FROM EmailAddresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM GlobalPresences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Guids WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Hobbies WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Nicknames WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Notes WHERE contactId = old.contactId;"
+        "\n  DELETE FROM OnlineAccounts WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Organizations WHERE contactId = old.contactId;"
+        "\n  DELETE FROM PhoneNumbers WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Presences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Ringtones WHERE contactId = old.contactId;"
+        "\n  DELETE FROM SyncTargets WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Tags WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Urls WHERE contactId = old.contactId;"
+        "\n  DELETE FROM TpMetadata WHERE contactId = old.contactId;"
+        "\n  DELETE FROM ExtendedDetails WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Details WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Identities WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
+        "\n END;";
+
+// as at 2c818a05
+static const char *createRemoveTrigger_1 = createRemoveTrigger_0;
+
+// as at a18a1884
+static const char *createRemoveTrigger_2 =
+        "\n CREATE TRIGGER RemoveContactDetails"
+        "\n BEFORE DELETE"
+        "\n ON Contacts"
+        "\n BEGIN"
+        "\n  INSERT INTO DeletedContacts (contactId, syncTarget, deleted) VALUES (old.contactId, old.syncTarget, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));"
+        "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Birthdays WHERE contactId = old.contactId;"
+        "\n  DELETE FROM EmailAddresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM GlobalPresences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Guids WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Hobbies WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Nicknames WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Notes WHERE contactId = old.contactId;"
+        "\n  DELETE FROM OnlineAccounts WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Organizations WHERE contactId = old.contactId;"
+        "\n  DELETE FROM PhoneNumbers WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Presences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Ringtones WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Tags WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Urls WHERE contactId = old.contactId;"
+        "\n  DELETE FROM TpMetadata WHERE contactId = old.contactId;"
+        "\n  DELETE FROM ExtendedDetails WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Details WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Identities WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
+        "\n END;";
+
+// as at 78256437
+static const char *createRemoveTrigger_11 =
+        "\n CREATE TRIGGER RemoveContactDetails"
+        "\n BEFORE DELETE"
+        "\n ON Contacts"
+        "\n BEGIN"
+        "\n  INSERT INTO DeletedContacts (contactId, syncTarget, deleted) VALUES (old.contactId, old.syncTarget, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));"
+        "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Birthdays WHERE contactId = old.contactId;"
+        "\n  DELETE FROM EmailAddresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM GlobalPresences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Guids WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Hobbies WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Nicknames WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Notes WHERE contactId = old.contactId;"
+        "\n  DELETE FROM OnlineAccounts WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Organizations WHERE contactId = old.contactId;"
+        "\n  DELETE FROM PhoneNumbers WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Presences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Ringtones WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Tags WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Urls WHERE contactId = old.contactId;"
+        "\n  DELETE FROM OriginMetadata WHERE contactId = old.contactId;"
+        "\n  DELETE FROM ExtendedDetails WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Details WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Identities WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
+        "\n END;";
+
+// as at 8e0fb5e5
+static const char *createRemoveTrigger_12 =
+        "\n CREATE TRIGGER RemoveContactDetails"
+        "\n BEFORE DELETE"
+        "\n ON Contacts"
+        "\n BEGIN"
+        "\n  INSERT INTO DeletedContacts (contactId, syncTarget, deleted) VALUES (old.contactId, old.syncTarget, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));"
         "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
         "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
         "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
@@ -394,117 +506,162 @@ static const char *createRemoveTrigger =
         "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
         "\n END;";
 
+static const char *createRemoveTrigger_21 =
+        "\n CREATE TRIGGER RemoveContactDetails"
+        "\n BEFORE DELETE"
+        "\n ON Contacts"
+        "\n BEGIN"
+        "\n  DELETE FROM Addresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Anniversaries WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Avatars WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Birthdays WHERE contactId = old.contactId;"
+        "\n  DELETE FROM DisplayLabels WHERE contactId = old.contactId;"
+        "\n  DELETE FROM EmailAddresses WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Families WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Favorites WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Genders WHERE contactId = old.contactId;"
+        "\n  DELETE FROM GeoLocations WHERE contactId = old.contactId;"
+        "\n  DELETE FROM GlobalPresences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Guids WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Hobbies WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Names WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Nicknames WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Notes WHERE contactId = old.contactId;"
+        "\n  DELETE FROM OnlineAccounts WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Organizations WHERE contactId = old.contactId;"
+        "\n  DELETE FROM PhoneNumbers WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Presences WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Ringtones WHERE contactId = old.contactId;"
+        "\n  DELETE FROM SyncTargets WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Tags WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Urls WHERE contactId = old.contactId;"
+        "\n  DELETE FROM OriginMetadata WHERE contactId = old.contactId;"
+        "\n  DELETE FROM ExtendedDetails WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Details WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Identities WHERE contactId = old.contactId;"
+        "\n  DELETE FROM Relationships WHERE firstId = old.contactId OR secondId = old.contactId;"
+        "\n END;";
+
+static const char *createRemoveTrigger = createRemoveTrigger_21;
+
+// better if we had used foreign key constraints with cascade delete...
+static const char *createRemoveDetailsTrigger_21 =
+        "\n CREATE TRIGGER CascadeRemoveSpecificDetails"
+        "\n BEFORE DELETE"
+        "\n ON Details"
+        "\n BEGIN"
+        "\n  DELETE FROM Addresses WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Anniversaries WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Avatars WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Birthdays WHERE detailId = old.detailId;"
+        "\n  DELETE FROM DisplayLabels WHERE detailId = old.detailId;"
+        "\n  DELETE FROM EmailAddresses WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Families WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Favorites WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Genders WHERE detailId = old.detailId;"
+        "\n  DELETE FROM GeoLocations WHERE detailId = old.detailId;"
+        "\n  DELETE FROM GlobalPresences WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Guids WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Hobbies WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Names WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Nicknames WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Notes WHERE detailId = old.detailId;"
+        "\n  DELETE FROM OnlineAccounts WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Organizations WHERE detailId = old.detailId;"
+        "\n  DELETE FROM PhoneNumbers WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Presences WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Ringtones WHERE detailId = old.detailId;"
+        "\n  DELETE FROM SyncTargets WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Tags WHERE detailId = old.detailId;"
+        "\n  DELETE FROM Urls WHERE detailId = old.detailId;"
+        "\n  DELETE FROM OriginMetadata WHERE detailId = old.detailId;"
+        "\n  DELETE FROM ExtendedDetails WHERE detailId = old.detailId;"
+        "\n END;";
+
+static const char *createRemoveDetailsTrigger = createRemoveDetailsTrigger_21;
+
 static const char *createLocalSelfContact =
         "\n INSERT INTO Contacts ("
         "\n contactId,"
-        "\n displayLabel,"
-        "\n firstName,"
-        "\n lowerFirstName,"
-        "\n lastName,"
-        "\n lowerLastName,"
-        "\n middleName,"
-        "\n prefix,"
-        "\n suffix,"
-        "\n customLabel,"
-        "\n syncTarget,"
-        "\n created,"
-        "\n modified,"
-        "\n gender,"
-        "\n isFavorite)"
+        "\n collectionId)"
         "\n VALUES ("
         "\n 1,"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n 'local',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n 0);";
+        "\n 2);";
 static const char *createAggregateSelfContact =
         "\n INSERT INTO Contacts ("
         "\n contactId,"
-        "\n displayLabel,"
-        "\n firstName,"
-        "\n lowerFirstName,"
-        "\n lastName,"
-        "\n lowerLastName,"
-        "\n middleName,"
-        "\n prefix,"
-        "\n suffix,"
-        "\n customLabel,"
-        "\n syncTarget,"
-        "\n created,"
-        "\n modified,"
-        "\n gender,"
-        "\n isFavorite)"
+        "\n collectionId)"
         "\n VALUES ("
         "\n 2,"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n 'aggregate',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n 0);";
+        "\n 1);";
 static const char *createSelfContactRelationship =
         "\n INSERT INTO Relationships (firstId, secondId, type) VALUES (2, 1, 'Aggregates');";
 
 static const char *createSelfContact =
         "\n INSERT INTO Contacts ("
         "\n contactId,"
-        "\n displayLabel,"
-        "\n firstName,"
-        "\n lowerFirstName,"
-        "\n lastName,"
-        "\n lowerLastName,"
-        "\n middleName,"
-        "\n prefix,"
-        "\n suffix,"
-        "\n customLabel,"
-        "\n syncTarget,"
-        "\n created,"
-        "\n modified,"
-        "\n gender,"
-        "\n isFavorite)"
+        "\n collectionId)"
         "\n VALUES ("
         "\n 2,"
+        "\n 2);";
+
+static const char *createAggregateAddressbookCollection =
+        "\n INSERT INTO Collections("
+        "\n collectionId,"
+        "\n aggregable,"
+        "\n name,"
+        "\n description,"
+        "\n color,"
+        "\n secondaryColor,"
+        "\n image,"
+        "\n accountId,"
+        "\n remotePath)"
+        "\n VALUES ("
+        "\n 1,"
+        "\n 0,"
+        "\n 'aggregate',"
+        "\n 'Aggregate contacts whose data is merged from constituent (facet) contacts',"
+        "\n 'blue',"
+        "\n 'lightsteelblue',"
         "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n '',"
+        "\n 0,"
+        "\n '')";
+static const char *createLocalAddressbookCollection =
+        "\n INSERT INTO Collections("
+        "\n collectionId,"
+        "\n aggregable,"
+        "\n name,"
+        "\n description,"
+        "\n color,"
+        "\n secondaryColor,"
+        "\n image,"
+        "\n accountId,"
+        "\n remotePath)"
+        "\n VALUES ("
+        "\n 2,"
+        "\n 1,"
         "\n 'local',"
+        "\n 'Device-storage addressbook',"
+        "\n 'red',"
+        "\n 'pink',"
         "\n '',"
-        "\n '',"
-        "\n '',"
-        "\n 0);";
+        "\n 0,"
+        "\n '')";
 
-static const char *createContactsSyncTargetIndex =
-        "\n CREATE INDEX ContactsSyncTargetIndex ON Contacts(syncTarget);";
+static const char *createContactsCollectionIdIndex =
+        "\n CREATE INDEX ContactsCollectionIdIndex ON Contacts(collectionId);";
 
-static const char *createContactsFirstNameIndex =
-        "\n CREATE INDEX ContactsFirstNameIndex ON Contacts(lowerFirstName);";
+static const char *createCollectionsChangeFlagsIndex =
+        "\n CREATE INDEX CollectionsChangeFlagsIndex ON Collections(changeFlags);";
 
-static const char *createContactsLastNameIndex =
-        "\n CREATE INDEX ContactsLastNameIndex ON Contacts(lowerLastName);";
+static const char *createContactsChangeFlagsIndex =
+        "\n CREATE INDEX ContactsChangeFlagsIndex ON Contacts(changeFlags);";
+
+static const char *createFirstNameIndex =
+        "\n CREATE INDEX FirstNameIndex ON Names(lowerFirstName);";
+
+static const char *createLastNameIndex =
+        "\n CREATE INDEX LastNameIndex ON Names(lowerLastName);";
 
 static const char *createContactsModifiedIndex =
         "\n CREATE INDEX ContactsModifiedIndex ON Contacts(modified);";
@@ -517,9 +674,6 @@ static const char *createRelationshipsFirstIdIndex =
 
 static const char *createRelationshipsSecondIdIndex =
         "\n CREATE INDEX RelationshipsSecondIdIndex ON Relationships(secondId);";
-
-static const char *createDeletedContactsDeletedIndex =
-        "\n CREATE INDEX DeletedContactsDeletedIndex ON DeletedContacts(deleted);";
 
 static const char *createPhoneNumbersIndex =
         "\n CREATE INDEX PhoneNumbersIndex ON PhoneNumbers(normalizedNumber);";
@@ -564,51 +718,49 @@ static const char *createAnalyzeData2 =
         "\n DELETE FROM sqlite_stat1;";
 static const char *createAnalyzeData3 =
         "\n INSERT INTO sqlite_stat1 VALUES"
-        "\n   ('Details', 'DetailsRemoveIndex', '25000 6 2'),"
-        "\n   ('Presences','PresencesDetailsContactIdIndex','1000 2'),"
-        "\n   ('OnlineAccounts','OnlineAccountsIndex','1000 3'),"
-        "\n   ('OnlineAccounts','OnlineAccountsDetailsContactIdIndex','1000 2'),"
-        "\n   ('Nicknames','NicknamesIndex','2000 4'),"
-        "\n   ('Nicknames','NicknamesDetailsContactIdIndex','2000 2'),"
-        "\n   ('Urls','UrlsDetailsContactIdIndex','1500 2'),"
-        "\n   ('Guids','GuidsDetailsContactIdIndex','3000 2'),"
-        "\n   ('OriginMetadata','OriginMetadataGroupIdIndex','2500 500'),"
-        "\n   ('OriginMetadata','OriginMetadataIdIndex','2500 6'),"
-        "\n   ('OriginMetadata','OriginMetadataDetailsContactIdIndex','2500 1'),"
-        "\n   ('GlobalPresences','GlobalPresencesDetailsContactIdIndex','500 1'),"
-        "\n   ('Contacts','ContactsTypeIndex','5000 5000'),"
-        "\n   ('Contacts','ContactsModifiedIndex','5000 3'),"
-        "\n   ('Contacts','ContactsLastNameIndex','5000 7'),"
-        "\n   ('Contacts','ContactsFirstNameIndex','5000 6'),"
-        "\n   ('Contacts','ContactsSyncTargetIndex','5000 500'),"
-        "\n   ('Birthdays','BirthdaysDetailsContactIdIndex','500 1'),"
-        "\n   ('PhoneNumbers','PhoneNumbersIndex','4500 7'),"
-        "\n   ('PhoneNumbers','PhoneNumbersDetailsContactIdIndex','4500 3'),"
-        "\n   ('Notes','NotesDetailsContactIdIndex','2000 2'),"
+        "\n   ('DbSettings','sqlite_autoindex_DbSettings_1','2 1'),"
+        "\n   ('Collections','','12'),"
         "\n   ('Relationships','RelationshipsSecondIdIndex','3000 2'),"
         "\n   ('Relationships','RelationshipsFirstIdIndex','3000 2'),"
         "\n   ('Relationships','sqlite_autoindex_Relationships_1','3000 2 2 1'),"
-        "\n   ('Avatars','AvatarsDetailsContactIdIndex','3000 3'),"
-        "\n   ('DeletedContacts','DeletedContactsDeletedIndex','6000 2'),"
-        "\n   ('Organizations','OrganizationsDetailsContactIdIndex','500 2'),"
+        "\n   ('Contacts','ContactsTypeIndex','5000 5000'),"
+        "\n   ('Contacts','ContactsModifiedIndex','5000 30'),"
+        "\n   ('Contacts','ContactsChangeFlagsIndex','5000 200'),"
+        "\n   ('Contacts','ContactsCollectionIdIndex','5000 500'),"
+        "\n   ('Details', 'DetailsRemoveIndex', '25000 6 2'),"
+        "\n   ('Details', 'DetailsContactIdIndex', '25000 6 2'),"
+        "\n   ('Favorites','sqlite_autoindex_Favorites_1','100 2'),"
+        "\n   ('Names','LastNameIndex','3000 50'),"
+        "\n   ('Names','FirstNameIndex','3000 80'),"
+        "\n   ('Names','sqlite_autoindex_Names_1','3000 1'),"
+        "\n   ('DisplayLabels','sqlite_autoindex_DisplayLabels_1','5000 1'),"
+        "\n   ('OnlineAccounts','OnlineAccountsIndex','1000 3'),"
+        "\n   ('Nicknames','NicknamesIndex','2000 4'),"
+        "\n   ('OriginMetadata','OriginMetadataGroupIdIndex','2500 500'),"
+        "\n   ('OriginMetadata','OriginMetadataIdIndex','2500 6'),"
+        "\n   ('PhoneNumbers','PhoneNumbersIndex','4500 7'),"
         "\n   ('EmailAddresses','EmailAddressesIndex','4000 5'),"
-        "\n   ('EmailAddresses','EmailAddressesDetailsContactIdIndex','4000 2'),"
-        "\n   ('Addresses','AddressesDetailsContactIdIndex','500 2'),"
         "\n   ('OOB','sqlite_autoindex_OOB_1','29 1');";
 
 static const char *createStatements[] =
 {
+    createCollectionsTable,
+    createCollectionsMetadataTable,
     createContactsTable,
     createAddressesTable,
     createAnniversariesTable,
     createAvatarsTable,
     createBirthdaysTable,
+    createDisplayLabelsTable,
     createEmailAddressesTable,
     createFamiliesTable,
+    createFavoritesTable,
+    createGendersTable,
     createGeoLocationsTable,
     createGlobalPresencesTable,
     createGuidsTable,
     createHobbiesTable,
+    createNamesTable,
     createNicknamesTable,
     createNotesTable,
     createOnlineAccountsTable,
@@ -616,45 +768,26 @@ static const char *createStatements[] =
     createPhoneNumbersTable,
     createPresencesTable,
     createRingtonesTable,
+    createSyncTargetsTable,
     createTagsTable,
     createUrlsTable,
     createOriginMetadataTable,
     createExtendedDetailsTable,
     createDetailsTable,
     createDetailsRemoveIndex,
-    createAddressesDetailsContactIdIndex,
-    createAnniversariesDetailsContactIdIndex,
-    createAvatarsDetailsContactIdIndex,
-    createBirthdaysDetailsContactIdIndex,
-    createEmailAddressesDetailsContactIdIndex,
-    createFamiliesDetailsContactIdIndex,
-    createGeoLocationsDetailsContactIdIndex,
-    createGlobalPresencesDetailsContactIdIndex,
-    createGuidsDetailsContactIdIndex,
-    createHobbiesDetailsContactIdIndex,
-    createNicknamesDetailsContactIdIndex,
-    createNotesDetailsContactIdIndex,
-    createOnlineAccountsDetailsContactIdIndex,
-    createOrganizationsDetailsContactIdIndex,
-    createPhoneNumbersDetailsContactIdIndex,
-    createPresencesDetailsContactIdIndex,
-    createRingtonesDetailsContactIdIndex,
-    createTagsDetailsContactIdIndex,
-    createUrlsDetailsContactIdIndex,
-    createOriginMetadataDetailsContactIdIndex,
-    createExtendedDetailsContactIdIndex,
+    createDetailsChangeFlagsIndex,
+    createDetailsContactIdIndex,
     createIdentitiesTable,
     createRelationshipsTable,
-    createDeletedContactsTable,
     createOOBTable,
     createDbSettingsTable,
     createRemoveTrigger,
-    createContactsSyncTargetIndex,
-    createContactsFirstNameIndex,
-    createContactsLastNameIndex,
+    createContactsCollectionIdIndex,
+    createContactsChangeFlagsIndex,
+    createFirstNameIndex,
+    createLastNameIndex,
     createRelationshipsFirstIdIndex,
     createRelationshipsSecondIdIndex,
-    createDeletedContactsDeletedIndex,
     createPhoneNumbersIndex,
     createEmailAddressesIndex,
     createOnlineAccountsIndex,
@@ -676,9 +809,8 @@ static const char *upgradeVersion0[] = {
 };
 static const char *upgradeVersion1[] = {
     createDeletedContactsTable,
-    createDeletedContactsDeletedIndex,
     "DROP TRIGGER RemoveContactDetails",
-    createRemoveTrigger,
+    createRemoveTrigger_2,
     "PRAGMA user_version=2",
     0 // NULL-terminated
 };
@@ -811,25 +943,25 @@ static const char *upgradeVersion10[] = {
     "DROP INDEX DetailsRemoveIndex",
     "DROP TABLE OldDetails",
     // Drop all indexes for tables we are rebuilding
-    "DROP INDEX createAddressesDetailsContactIdIndex",
-    "DROP INDEX createAnniversariesDetailsContactIdIndex",
-    "DROP INDEX createAvatarsDetailsContactIdIndex",
-    "DROP INDEX createBirthdaysDetailsContactIdIndex",
-    "DROP INDEX createEmailAddressesDetailsContactIdIndex",
-    "DROP INDEX createGlobalPresencesDetailsContactIdIndex",
-    "DROP INDEX createGuidsDetailsContactIdIndex",
-    "DROP INDEX createHobbiesDetailsContactIdIndex",
-    "DROP INDEX createNicknamesDetailsContactIdIndex",
-    "DROP INDEX createNotesDetailsContactIdIndex",
-    "DROP INDEX createOnlineAccountsDetailsContactIdIndex",
-    "DROP INDEX createOrganizationsDetailsContactIdIndex",
-    "DROP INDEX createPhoneNumbersDetailsContactIdIndex",
-    "DROP INDEX createPresencesDetailsContactIdIndex",
-    "DROP INDEX createRingtonesDetailsContactIdIndex",
-    "DROP INDEX createTagsDetailsContactIdIndex",
-    "DROP INDEX createUrlsDetailsContactIdIndex",
-    "DROP INDEX createTpMetadataDetailsContactIdIndex",
-    "DROP INDEX createExtendedDetailsContactIdIndex",
+    "DROP INDEX AddressesDetailsContactIdIndex",
+    "DROP INDEX AnniversariesDetailsContactIdIndex",
+    "DROP INDEX AvatarsDetailsContactIdIndex",
+    "DROP INDEX BirthdaysDetailsContactIdIndex",
+    "DROP INDEX EmailAddressesDetailsContactIdIndex",
+    "DROP INDEX GlobalPresencesDetailsContactIdIndex",
+    "DROP INDEX GuidsDetailsContactIdIndex",
+    "DROP INDEX HobbiesDetailsContactIdIndex",
+    "DROP INDEX NicknamesDetailsContactIdIndex",
+    "DROP INDEX NotesDetailsContactIdIndex",
+    "DROP INDEX OnlineAccountsDetailsContactIdIndex",
+    "DROP INDEX OrganizationsDetailsContactIdIndex",
+    "DROP INDEX PhoneNumbersDetailsContactIdIndex",
+    "DROP INDEX PresencesDetailsContactIdIndex",
+    "DROP INDEX RingtonesDetailsContactIdIndex",
+    "DROP INDEX TagsDetailsContactIdIndex",
+    "DROP INDEX UrlsDetailsContactIdIndex",
+    "DROP INDEX TpMetadataDetailsContactIdIndex",
+    "DROP INDEX ExtendedDetailsContactIdIndex",
     "DROP INDEX PhoneNumbersIndex",
     "DROP INDEX EmailAddressesIndex",
     "DROP INDEX OnlineAccountsIndex",
@@ -1189,25 +1321,6 @@ static const char *upgradeVersion10[] = {
     "DROP TABLE DetailsIndexing",
     // Rebuild the indexes we dropped
     createDetailsRemoveIndex,
-    createAddressesDetailsContactIdIndex,
-    createAnniversariesDetailsContactIdIndex,
-    createAvatarsDetailsContactIdIndex,
-    createBirthdaysDetailsContactIdIndex,
-    createEmailAddressesDetailsContactIdIndex,
-    createGlobalPresencesDetailsContactIdIndex,
-    createGuidsDetailsContactIdIndex,
-    createHobbiesDetailsContactIdIndex,
-    createNicknamesDetailsContactIdIndex,
-    createNotesDetailsContactIdIndex,
-    createOnlineAccountsDetailsContactIdIndex,
-    createOrganizationsDetailsContactIdIndex,
-    createPhoneNumbersDetailsContactIdIndex,
-    createPresencesDetailsContactIdIndex,
-    createRingtonesDetailsContactIdIndex,
-    createTagsDetailsContactIdIndex,
-    createUrlsDetailsContactIdIndex,
-    createOriginMetadataDetailsContactIdIndex,
-    createExtendedDetailsContactIdIndex,
     createPhoneNumbersIndex,
     createEmailAddressesIndex,
     createOnlineAccountsIndex,
@@ -1215,7 +1328,7 @@ static const char *upgradeVersion10[] = {
     createOriginMetadataIdIndex,
     createOriginMetadataGroupIdIndex,
     // Recreate the remove trigger
-    createRemoveTrigger,
+    createRemoveTrigger_11,
     // Finished
     "PRAGMA user_version=11",
     0 // NULL-terminated
@@ -1225,7 +1338,7 @@ static const char *upgradeVersion11[] = {
     createGeoLocationsTable,
     // Recreate the remove trigger to include these details
     "DROP TRIGGER RemoveContactDetails",
-    createRemoveTrigger,
+    createRemoveTrigger_12,
     "PRAGMA user_version=12",
     0 // NULL-terminated
 };
@@ -1310,6 +1423,182 @@ static const char *upgradeVersion18[] = {
 };
 static const char *upgradeVersion19[] = {
     "PRAGMA user_version=20",
+    0 // NULL-terminated
+};
+static const char *upgradeVersion20[] = {
+    // create the collections table and the built-in collections.
+    createCollectionsTable,
+    createCollectionsMetadataTable,
+    createAggregateAddressbookCollection,
+    createLocalAddressbookCollection,
+    // we need to recreate the contacts table
+    // but avoid deleting all detail data
+    // so we drop the trigger and re-create it later.
+    "DROP TRIGGER RemoveContactDetails",
+    // also recreate the deleted contacts table with new schema
+    // sync plugins need to re-sync anyway...
+    "DROP TABLE DeletedContacts", // this table is no longer used.
+    // drop a bunch of indexes which we will need to recreate
+    "DROP INDEX DetailsRemoveIndex",
+    "DROP INDEX AddressesDetailsContactIdIndex",
+    "DROP INDEX AnniversariesDetailsContactIdIndex",
+    "DROP INDEX AvatarsDetailsContactIdIndex",
+    "DROP INDEX BirthdaysDetailsContactIdIndex",
+    "DROP INDEX EmailAddressesDetailsContactIdIndex",
+    "DROP INDEX FamiliesDetailsContactIdIndex",
+    "DROP INDEX GeoLocationsDetailsContactIdIndex",
+    "DROP INDEX GlobalPresencesDetailsContactIdIndex",
+    "DROP INDEX GuidsDetailsContactIdIndex",
+    "DROP INDEX HobbiesDetailsContactIdIndex",
+    "DROP INDEX NicknamesDetailsContactIdIndex",
+    "DROP INDEX NotesDetailsContactIdIndex",
+    "DROP INDEX OnlineAccountsDetailsContactIdIndex",
+    "DROP INDEX OrganizationsDetailsContactIdIndex",
+    "DROP INDEX PhoneNumbersDetailsContactIdIndex",
+    "DROP INDEX PresencesDetailsContactIdIndex",
+    "DROP INDEX RingtonesDetailsContactIdIndex",
+    "DROP INDEX TagsDetailsContactIdIndex",
+    "DROP INDEX UrlsDetailsContactIdIndex",
+    "DROP INDEX OriginMetadataDetailsContactIdIndex",
+    "DROP INDEX ExtendedDetailsContactIdIndex",
+    "DROP INDEX PhoneNumbersIndex",
+    "DROP INDEX EmailAddressesIndex",
+    "DROP INDEX OnlineAccountsIndex",
+    "DROP INDEX NicknamesIndex",
+    "DROP INDEX OriginMetadataIdIndex",
+    "DROP INDEX OriginMetadataGroupIdIndex",
+    // cannot alter a table to add a foreign key
+    // instead, rename the existing table and recreate it with the foreign key.
+    // we only keep "local" and "aggregate" contacts.
+    "ALTER TABLE Contacts RENAME TO OldContacts",
+    createContactsTable,
+    "INSERT INTO Contacts ("
+            "contactId, "
+            "collectionId, "
+            "created, "
+            "modified, "
+            "deleted, "
+            "hasPhoneNumber, "
+            "hasEmailAddress, "
+            "hasOnlineAccount, "
+            "isOnline, "
+            "isDeactivated, "
+            "changeFlags, "
+            "unhandledChangeFlags, "
+            "type "
+        ") "
+        "SELECT "
+            "OC.contactId, "
+            "CASE "
+                "WHEN OC.syncTarget LIKE '%aggregate%' THEN 1 " // AggregateAddressbookCollectionId
+                "ELSE 2 " // LocalAddressbookCollectionId
+                "END, "
+            "OC.created, "
+            "OC.modified, "
+            "NULL, " // not deleted if it exists currently in the old table.
+            "OC.hasPhoneNumber, "
+            "OC.hasEmailAddress, "
+            "OC.hasOnlineAccount, "
+            "OC.isOnline, "
+            "OC.isDeactivated, "
+            "0, " // no changes recorded currently.
+            "0, " // no unhandled changes recorded currently.
+            "OC.type "
+        "FROM OldContacts AS OC "
+        "WHERE OC.syncTarget IN ('aggregate', 'local', 'was_local')",
+    // Now delete any details of contacts we didn't keep (i.e. not local or aggregate)
+    "DELETE FROM Addresses WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Anniversaries WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Avatars WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Birthdays WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM EmailAddresses WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Families WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM GeoLocations WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM GlobalPresences WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Guids WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Hobbies WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Nicknames WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Notes WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM OnlineAccounts WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Organizations WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM PhoneNumbers WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Presences WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Ringtones WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Tags WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Urls WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM OriginMetadata WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM ExtendedDetails WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Details WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Identities WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Relationships WHERE firstId NOT IN (SELECT contactId FROM Contacts) OR secondId NOT IN (SELECT contactId FROM Contacts)",
+    // add the changeFlags and unhandledChangeFlags columns to the Details table
+    "ALTER TABLE Details ADD COLUMN changeFlags INTEGER DEFAULT 0",
+    "ALTER TABLE Details ADD COLUMN unhandledChangeFlags INTEGER DEFAULT 0",
+    // create the unique-detail tables we added
+    createDisplayLabelsTable,
+    createFavoritesTable,
+    createGendersTable,
+    createNamesTable,
+    createSyncTargetsTable,
+    // and fill them with data from the old contacts table
+    // note: local contacts have no sync target field, so no need to set those.
+    "INSERT INTO Details (contactId, detail) SELECT ContactId, 'DisplayLabel' FROM OldContacts",
+    "INSERT INTO DisplayLabels (detailId, contactId, displayLabel, displayLabelGroup, displayLabelGroupSortOrder)"
+        " SELECT Details.detailId, Details.contactId, displayLabel, displayLabelGroup, displayLabelGroupSortOrder"
+        " FROM Details"
+        " INNER JOIN OldContacts ON OldContacts.contactId = Details.contactId"
+        " WHERE Details.detail = 'DisplayLabel'",
+    "INSERT INTO Details (contactId, detail) SELECT ContactId, 'Favorite' FROM OldContacts WHERE OldContacts.isFavorite NOT NULL",
+    "INSERT INTO Favorites (detailId, contactId, isFavorite)"
+        " SELECT Details.detailId, Details.contactId, isFavorite"
+        " FROM Details"
+        " INNER JOIN OldContacts ON OldContacts.contactId = Details.contactId"
+        " WHERE Details.detail = 'Favorite'",
+    "INSERT INTO Details (contactId, detail) SELECT ContactId, 'Gender' FROM OldContacts WHERE OldContacts.gender NOT NULL",
+    "INSERT INTO Genders (detailId, contactId, gender)"
+        " SELECT Details.detailId, Details.contactId, gender"
+        " FROM Details"
+        " INNER JOIN OldContacts ON OldContacts.contactId = Details.contactId"
+        " WHERE Details.detail = 'Gender'",
+    "INSERT INTO Details (contactId, detail)"
+        " SELECT ContactId, 'Name'"
+        " FROM OldContacts"
+        " WHERE firstName NOT NULL"
+        " OR lastName NOT NULL"
+        " OR middleName NOT NULL"
+        " OR prefix NOT NULL"
+        " OR suffix NOT NULL"
+        " OR customLabel NOT NULL",
+    "INSERT INTO Names (detailId, contactId, firstName, lowerFirstName, lastName, lowerLastName, middleName, prefix, suffix, customLabel)"
+        " SELECT Details.detailId, Details.contactId, firstName, lowerFirstName, lastName, lowerLastName, middleName, prefix, suffix, customLabel"
+        " FROM Details"
+        " INNER JOIN OldContacts ON OldContacts.contactId = Details.contactId"
+        " WHERE Details.detail = 'Name'",
+    // delete the old contacts table
+    "DROP TABLE OldContacts",
+    // we need to regenerate aggregates, but cannot do it via a query.
+    // instead, we do it manually from C++ after the schema upgrade is complete.
+    // we also need to drop and recreate OOB as it will have stale
+    // sync data in it.
+    "DROP TABLE OOB",
+    createOOBTable,
+    // rebuild the indexes we dropped
+    createDetailsRemoveIndex,
+    createPhoneNumbersIndex,
+    createEmailAddressesIndex,
+    createOnlineAccountsIndex,
+    createNicknamesIndex,
+    createOriginMetadataIdIndex,
+    createOriginMetadataGroupIdIndex,
+    // create the new indexes
+    createCollectionsChangeFlagsIndex,
+    createContactsCollectionIdIndex,
+    createContactsChangeFlagsIndex,
+    createDetailsChangeFlagsIndex,
+    createDetailsContactIdIndex,
+    // recreate the remove trigger.
+    createRemoveTrigger_21,
+    "PRAGMA user_version=21",
     0 // NULL-terminated
 };
 
@@ -1831,9 +2120,10 @@ static UpgradeOperation upgradeVersions[] = {
     { addDisplayLabelGroup,         upgradeVersion17 },
     { forceRegenDisplayLabelGroups, upgradeVersion18 },
     { forceRegenDisplayLabelGroups, upgradeVersion19 },
+    { 0,                            upgradeVersion20 },
 };
 
-static const int currentSchemaVersion = 20;
+static const int currentSchemaVersion = 21;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
@@ -1852,17 +2142,17 @@ static bool beginTransaction(QSqlDatabase &database)
 {
     // Use immediate lock acquisition; we should already have an IPC lock, so
     // there will be no lock contention with other writing processes
-    return execute(database, QString::fromLatin1("BEGIN IMMEDIATE TRANSACTION"));
+    return execute(database, QStringLiteral("BEGIN IMMEDIATE TRANSACTION"));
 }
 
 static bool commitTransaction(QSqlDatabase &database)
 {
-    return execute(database, QString::fromLatin1("COMMIT TRANSACTION"));
+    return execute(database, QStringLiteral("COMMIT TRANSACTION"));
 }
 
 static bool rollbackTransaction(QSqlDatabase &database)
 {
-    return execute(database, QString::fromLatin1("ROLLBACK TRANSACTION"));
+    return execute(database, QStringLiteral("ROLLBACK TRANSACTION"));
 }
 
 static bool finalizeTransaction(QSqlDatabase &database, bool success)
@@ -2000,7 +2290,11 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
     {
         QSqlQuery selectQuery(database);
         selectQuery.setForwardOnly(true);
-        const QString statement = QStringLiteral("SELECT contactId, firstName, lastName, displayLabel FROM Contacts");
+        const QString statement = QStringLiteral(
+                " SELECT c.contactId, n.firstName, n.lastName, d.displayLabel"
+                " FROM Contacts c"
+                  " LEFT JOIN Names n ON c.contactId = n.contactId"
+                  " LEFT JOIN DisplayLabels d ON c.contactId = d.contactId");
         if (!selectQuery.prepare(statement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare display label groups data selection query: %1\n%2")
                     .arg(selectQuery.lastError().text())
@@ -2045,7 +2339,7 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
             const QVariantList ids = contactIds.mid(i, qMin(displayLabelGroups.size() - i, 167));
 
             QSqlQuery updateQuery(database);
-            const QString statement = QStringLiteral("UPDATE Contacts SET displayLabelGroup = ?, displayLabelGroupSortOrder = ? WHERE contactId = ?");
+            const QString statement = QStringLiteral("UPDATE DisplayLabels SET displayLabelGroup = ?, displayLabelGroupSortOrder = ? WHERE contactId = ?");
             if (!updateQuery.prepare(statement)) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare update display label groups query: %1\n%2")
                         .arg(updateQuery.lastError().text())
@@ -2131,10 +2425,10 @@ static bool executeUpgradeStatements(QSqlDatabase &database)
 static bool checkDatabase(QSqlDatabase &database)
 {
     QSqlQuery query(database);
-    if (query.exec(QLatin1String("PRAGMA quick_check"))) {
+    if (query.exec(QStringLiteral("PRAGMA quick_check"))) {
         while (query.next()) {
             const QString result(query.value(0).toString());
-            if (result == QLatin1String("ok")) {
+            if (result == QStringLiteral("ok")) {
                 return true;
             }
             qWarning() << "Integrity problem:" << result;
@@ -2167,10 +2461,10 @@ static bool configureDatabase(QSqlDatabase &database, QString &localeName)
                 .arg(database.lastError().text()));
         return false;
     } else {
-        const QString cLocaleName(QString::fromLatin1("C"));
+        const QString cLocaleName(QStringLiteral("C"));
         if (localeName != cLocaleName) {
             // Create a collation for sorting by the current locale
-            const QString statement(QString::fromLatin1("SELECT icu_load_collation('%1', 'localeCollation')"));
+            const QString statement(QStringLiteral("SELECT icu_load_collation('%1', 'localeCollation')"));
             if (!execute(database, statement.arg(localeName))) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to configure collation for locale %1: %2")
                         .arg(localeName).arg(database.lastError().text()));
@@ -2197,8 +2491,34 @@ static bool executeCreationStatements(QSqlDatabase &database)
         }
     }
 
-    if (!execute(database, QString::fromLatin1("PRAGMA user_version=%1").arg(currentSchemaVersion))) {
+    if (!execute(database, QStringLiteral("PRAGMA user_version=%1").arg(currentSchemaVersion))) {
         return false;
+    }
+
+    return true;
+}
+
+static bool executeBuiltInCollectionsStatements(QSqlDatabase &database, const bool aggregating)
+{
+    const char *createStatements[] = {
+        createLocalAddressbookCollection,
+        0
+    };
+    const char *aggregatingCreateStatements[] = {
+        createAggregateAddressbookCollection,
+        createLocalAddressbookCollection,
+        0
+    };
+
+    const char **statement = (aggregating ? aggregatingCreateStatements : createStatements);
+    for ( ; *statement != 0; ++statement) {
+        QSqlQuery query(database);
+        if (!query.exec(QString::fromLatin1(*statement))) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Create built-in collection query failed: %1\n%2")
+                    .arg(query.lastError().text())
+                    .arg(*statement));
+            return false;
+        }
     }
 
     return true;
@@ -2221,7 +2541,7 @@ static bool executeSelfContactStatements(QSqlDatabase &database, const bool aggr
     for ( ; *statement != 0; ++statement) {
         QSqlQuery query(database);
         if (!query.exec(QString::fromLatin1(*statement))) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Database creation failed: %1\n%2")
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Create self contact query failed: %1\n%2")
                     .arg(query.lastError().text())
                     .arg(*statement));
             return false;
@@ -2240,6 +2560,9 @@ static bool prepareDatabase(QSqlDatabase &database, ContactsDatabase *cdb, const
         return false;
 
     bool success = executeCreationStatements(database);
+    if (success) {
+        success = executeBuiltInCollectionsStatements(database, aggregating);
+    }
     if (success) {
         success = executeSelfContactStatements(database, aggregating);
     }
@@ -2267,7 +2590,7 @@ static void bindValues(QSqlQuery &query, const QVariantList &values)
     }
 }
 
-static void bindValues(QSqlQuery &query, const QMap<QString, QVariant> &values)
+static void bindValues(ContactsDatabase::Query &query, const QMap<QString, QVariant> &values)
 {
     QMap<QString, QVariant>::const_iterator it = values.constBegin(), end = values.constEnd();
     for ( ; it != end; ++it) {
@@ -2275,9 +2598,9 @@ static void bindValues(QSqlQuery &query, const QMap<QString, QVariant> &values)
     }
 }
 
-static bool countTransientTables(QSqlDatabase &db, const QString &table, int *count)
+static bool countTransientTables(ContactsDatabase &, QSqlDatabase &db, const QString &table, int *count)
 {
-    static const QString sql(QString::fromLatin1("SELECT COUNT(*) FROM sqlite_temp_master WHERE type = 'table' and name LIKE '%1_transient%'"));
+    static const QString sql(QStringLiteral("SELECT COUNT(*) FROM sqlite_temp_master WHERE type = 'table' and name LIKE '%1_transient%'"));
 
     *count = 0;
 
@@ -2292,9 +2615,9 @@ static bool countTransientTables(QSqlDatabase &db, const QString &table, int *co
     return true;
 }
 
-static bool findTransientTables(QSqlDatabase &db, const QString &table, QStringList *tableNames)
+static bool findTransientTables(ContactsDatabase &, QSqlDatabase &db, const QString &table, QStringList *tableNames)
 {
-    static const QString sql(QString::fromLatin1("SELECT name FROM sqlite_temp_master WHERE type = 'table' and name LIKE '%1_transient%'"));
+    static const QString sql(QStringLiteral("SELECT name FROM sqlite_temp_master WHERE type = 'table' and name LIKE '%1_transient%'"));
 
     QSqlQuery query(db);
     if (!query.prepare(sql.arg(table)) || !ContactsDatabase::execute(query)) {
@@ -2307,12 +2630,12 @@ static bool findTransientTables(QSqlDatabase &db, const QString &table, QStringL
     return true;
 }
 
-static bool dropTransientTables(QSqlDatabase &db, const QString &table)
+static bool dropTransientTables(ContactsDatabase &cdb, QSqlDatabase &db, const QString &table)
 {
-    static const QString dropTableStatement = QString::fromLatin1("DROP TABLE temp.%1");
+    static const QString dropTableStatement = QStringLiteral("DROP TABLE temp.%1");
 
     QStringList tableNames;
-    if (!findTransientTables(db, table, &tableNames))
+    if (!findTransientTables(cdb, db, table, &tableNames))
         return false;
 
     foreach (const QString tableName, tableNames) {
@@ -2336,56 +2659,40 @@ static bool dropTransientTables(QSqlDatabase &db, const QString &table)
 }
 
 template<typename ValueContainer>
-bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool filter, const QVariantList &boundIds, 
+bool createTemporaryContactIdsTable(ContactsDatabase &cdb, QSqlDatabase &, const QString &table, bool filter, const QVariantList &boundIds,
                                     const QString &join, const QString &where, const QString &orderBy, const ValueContainer &boundValues, int limit)
 {
-    static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 (contactId INTEGER)"));
-    static const QString insertFilterStatement(QString::fromLatin1("INSERT INTO temp.%1 (contactId) SELECT Contacts.contactId FROM Contacts %2 %3"));
+    static const QString createStatement(QStringLiteral("CREATE TABLE IF NOT EXISTS temp.%1 (contactId INTEGER)"));
+    static const QString insertFilterStatement(QStringLiteral("INSERT INTO temp.%1 (contactId) SELECT Contacts.contactId FROM Contacts %2 %3"));
 
     // Create the temporary table (if we haven't already).
-    QSqlQuery tableQuery(db);
-    if (!tableQuery.prepare(createStatement.arg(table))) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary table query: %1\n%2")
-                .arg(tableQuery.lastError().text())
-                .arg(createStatement));
-        return false;
+    {
+        ContactsDatabase::Query tableQuery(cdb.prepare(createStatement.arg(table)));
+        if (!ContactsDatabase::execute(tableQuery)) {
+            tableQuery.reportError(QString::fromLatin1("Failed to create temporary contact ids table %1").arg(table));
+            return false;
+        }
     }
-    if (!ContactsDatabase::execute(tableQuery)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create temporary table: %1\n%2")
-                .arg(tableQuery.lastError().text())
-                .arg(createStatement));
-        return false;
-    }
-    tableQuery.finish();
 
     // insert into the temporary table, all of the ids
     // which will be specified either by id list, or by filter.
-    QSqlQuery insertQuery(db);
     if (filter) {
         // specified by filter
         QString insertStatement = insertFilterStatement.arg(table).arg(join).arg(where);
         if (!orderBy.isEmpty()) {
-            insertStatement.append(QString::fromLatin1(" ORDER BY ") + orderBy);
+            insertStatement.append(QStringLiteral(" ORDER BY ") + orderBy);
         }
         if (limit > 0) {
-            insertStatement.append(QString::fromLatin1(" LIMIT %1").arg(limit));
+            insertStatement.append(QStringLiteral(" LIMIT %1").arg(limit));
         }
-        if (!insertQuery.prepare(insertStatement)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary contact ids: %1\n%2")
-                    .arg(insertQuery.lastError().text())
-                    .arg(insertStatement));
-            return false;
-        }
+        ContactsDatabase::Query insertQuery(cdb.prepare(insertStatement));
         bindValues(insertQuery, boundValues);
         if (!ContactsDatabase::execute(insertQuery)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary contact ids: %1\n%2")
-                    .arg(insertQuery.lastError().text())
-                    .arg(insertStatement));
+            insertQuery.reportError(QString::fromLatin1("Failed to insert temporary contact ids into table %1").arg(table));
             return false;
         } else {
             debugFilterExpansion("Contacts selection:", insertStatement, boundValues);
         }
-        insertQuery.finish();
     } else {
         // specified by id list
         // NOTE: we must preserve the order of the bound ids being
@@ -2402,31 +2709,23 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
                 quint32 remainder = (end - it);
                 QVariantList::const_iterator batchEnd = it + std::min<quint32>(remainder, 500);
 
-                QString insertStatement = QString::fromLatin1("INSERT INTO temp.%1 (contactId) VALUES ").arg(table);
+                const QString insertStatement = QStringLiteral("INSERT INTO temp.%1 (contactId) VALUES (:contactId)").arg(table);
+                ContactsDatabase::Query insertQuery(cdb.prepare(insertStatement));
+
+                QVariantList cids;
                 while (true) {
                     const QVariant &v(*it);
                     const quint32 dbId(v.value<quint32>());
-                    insertStatement.append(QString::fromLatin1("(%1)").arg(dbId));
+                    cids.append(dbId);
                     if (++it == batchEnd) {
                         break;
-                    } else {
-                        insertStatement.append(QString::fromLatin1(","));
                     }
                 }
-
-                if (!insertQuery.prepare(insertStatement)) {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary contact ids: %1\n%2")
-                            .arg(insertQuery.lastError().text())
-                            .arg(insertStatement));
+                insertQuery.bindValue(QStringLiteral(":contactId"), cids);
+                if (!ContactsDatabase::executeBatch(insertQuery)) {
+                    insertQuery.reportError(QString::fromLatin1("Failed to insert temporary contact ids list into table %1").arg(table));
                     return false;
                 }
-                if (!ContactsDatabase::execute(insertQuery)) {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary contact ids: %1\n%2")
-                            .arg(insertQuery.lastError().text())
-                            .arg(insertStatement));
-                    return false;
-                }
-                insertQuery.finish();
             }
         }
     }
@@ -2434,14 +2733,14 @@ bool createTemporaryContactIdsTable(QSqlDatabase &db, const QString &table, bool
     return true;
 }
 
-void dropOrDeleteTable(QSqlDatabase &db, const QString &table)
+void dropOrDeleteTable(ContactsDatabase &cdb, QSqlDatabase &db, const QString &table)
 {
-    QSqlQuery dropTableQuery(db);
-    const QString dropTableStatement = QString::fromLatin1("DROP TABLE IF EXISTS temp.%1").arg(table);
-    if (!dropTableQuery.prepare(dropTableStatement) || !ContactsDatabase::execute(dropTableQuery)) {
+    const QString dropTableStatement = QStringLiteral("DROP TABLE IF EXISTS temp.%1").arg(table);
+    ContactsDatabase::Query dropTableQuery(cdb.prepare(dropTableStatement));
+    if (!ContactsDatabase::execute(dropTableQuery)) {
         // couldn't drop the table, just delete all entries instead.
         QSqlQuery deleteRecordsQuery(db);
-        const QString deleteRecordsStatement = QString::fromLatin1("DELETE FROM temp.%1").arg(table);
+        const QString deleteRecordsStatement = QStringLiteral("DELETE FROM temp.%1").arg(table);
         if (!deleteRecordsQuery.prepare(deleteRecordsStatement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare delete records query - the next query may return spurious results: %1\n%2")
                     .arg(deleteRecordsQuery.lastError().text())
@@ -2455,40 +2754,32 @@ void dropOrDeleteTable(QSqlDatabase &db, const QString &table)
     }
 }
 
-void clearTemporaryContactIdsTable(QSqlDatabase &db, const QString &table)
+void clearTemporaryContactIdsTable(ContactsDatabase &cdb, QSqlDatabase &db, const QString &table)
 {
     // Drop any transient tables associated with this table
-    dropTransientTables(db, table);
+    dropTransientTables(cdb, db, table);
 
-    dropOrDeleteTable(db, table);
+    dropOrDeleteTable(cdb, db, table);
 }
 
-bool createTemporaryContactTimestampTable(QSqlDatabase &db, const QString &table, const QList<QPair<quint32, QString> > &values)
+bool createTemporaryContactTimestampTable(ContactsDatabase &cdb, QSqlDatabase &, const QString &table, const QList<QPair<quint32, QString> > &values)
 {
-    static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 ("
-                                                                 "contactId INTEGER PRIMARY KEY ASC,"
-                                                                 "modified DATETIME"
-                                                             ")"));
+    static const QString createStatement(QStringLiteral("CREATE TABLE IF NOT EXISTS temp.%1 ("
+                                                            "contactId INTEGER PRIMARY KEY ASC,"
+                                                            "modified DATETIME"
+                                                        ")"));
 
     // Create the temporary table (if we haven't already).
-    QSqlQuery tableQuery(db);
-    if (!tableQuery.prepare(createStatement.arg(table))) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary timestamp table query: %1\n%2")
-                .arg(tableQuery.lastError().text())
-                .arg(createStatement.arg(table)));
-        return false;
+    {
+        ContactsDatabase::Query tableQuery(cdb.prepare(createStatement.arg(table)));
+        if (!ContactsDatabase::execute(tableQuery)) {
+            tableQuery.reportError(QString::fromLatin1("Failed to create temporary contact timestamp table %1").arg(table));
+            return false;
+        }
     }
-    if (!ContactsDatabase::execute(tableQuery)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create temporary timestamp table: %1\n%2")
-                .arg(tableQuery.lastError().text())
-                .arg(createStatement.arg(table)));
-        return false;
-    }
-    tableQuery.finish();
 
     // insert into the temporary table, all of the values
     if (!values.isEmpty()) {
-        QSqlQuery insertQuery(db);
         QList<QPair<quint32, QString> >::const_iterator it = values.constBegin(), end = values.constEnd();
         while (it != end) {
             // SQLite/QtSql limits the amount of data we can insert per individual query
@@ -2497,23 +2788,17 @@ bool createTemporaryContactTimestampTable(QSqlDatabase &db, const QString &table
             quint32 count = std::min<quint32>(remainder, 250);
             QList<QPair<quint32, QString> >::const_iterator batchEnd = it + count;
 
-            QString insertStatement = QString::fromLatin1("INSERT INTO temp.%1 (contactId, modified) VALUES ").arg(table);
+            QString insertStatement = QStringLiteral("INSERT INTO temp.%1 (contactId, modified) VALUES ").arg(table);
             while (true) {
-                insertStatement.append(QString::fromLatin1("(?,?)"));
+                insertStatement.append(QStringLiteral("(?,?)"));
                 if (++it == batchEnd) {
                     break;
                 } else {
-                    insertStatement.append(QString::fromLatin1(","));
+                    insertStatement.append(QStringLiteral(","));
                 }
             }
 
-            if (!insertQuery.prepare(insertStatement)) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary timestamp values: %1\n%2")
-                        .arg(insertQuery.lastError().text())
-                        .arg(insertStatement));
-                return false;
-            }
-
+            ContactsDatabase::Query insertQuery(cdb.prepare(insertStatement));
             QList<QPair<quint32, QString> >::const_iterator vit = values.constBegin() + first, vend = vit + count;
             while (vit != vend) {
                 const QPair<quint32, QString> &pair(*vit);
@@ -2524,50 +2809,39 @@ bool createTemporaryContactTimestampTable(QSqlDatabase &db, const QString &table
             }
 
             if (!ContactsDatabase::execute(insertQuery)) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary timestamp values: %1\n%2")
-                        .arg(insertQuery.lastError().text())
-                        .arg(insertStatement));
+                insertQuery.reportError(QString::fromLatin1("Failed to insert temporary contact timestamp values into table %1").arg(table));
                 return false;
             }
-            insertQuery.finish();
         }
     }
 
     return true;
 }
 
-void clearTemporaryContactTimestampTable(QSqlDatabase &db, const QString &table)
+void clearTemporaryContactTimestampTable(ContactsDatabase &cdb, QSqlDatabase &db, const QString &table)
 {
-    dropOrDeleteTable(db, table);
+    dropOrDeleteTable(cdb, db, table);
 }
 
-bool createTemporaryContactPresenceTable(QSqlDatabase &db, const QString &table, const QList<QPair<quint32, qint64> > &values)
+bool createTemporaryContactPresenceTable(ContactsDatabase &cdb, QSqlDatabase &, const QString &table, const QList<QPair<quint32, qint64> > &values)
 {
-    static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 ("
-                                                                 "contactId INTEGER PRIMARY KEY ASC,"
-                                                                 "presenceState INTEGER,"
-                                                                 "isOnline BOOL"
-                                                             ")"));
+    static const QString createStatement(QStringLiteral("CREATE TABLE IF NOT EXISTS temp.%1 ("
+                                                            "contactId INTEGER PRIMARY KEY ASC,"
+                                                            "presenceState INTEGER,"
+                                                            "isOnline BOOL"
+                                                        ")"));
 
     // Create the temporary table (if we haven't already).
-    QSqlQuery tableQuery(db);
-    if (!tableQuery.prepare(createStatement.arg(table))) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary presence table query: %1\n%2")
-                .arg(tableQuery.lastError().text())
-                .arg(createStatement.arg(table)));
-        return false;
+    {
+        ContactsDatabase::Query tableQuery(cdb.prepare(createStatement.arg(table)));
+        if (!ContactsDatabase::execute(tableQuery)) {
+            tableQuery.reportError(QString::fromLatin1("Failed to create temporary contact presence table %1").arg(table));
+            return false;
+        }
     }
-    if (!ContactsDatabase::execute(tableQuery)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create temporary presence table: %1\n%2")
-                .arg(tableQuery.lastError().text())
-                .arg(createStatement.arg(table)));
-        return false;
-    }
-    tableQuery.finish();
 
     // insert into the temporary table, all of the values
     if (!values.isEmpty()) {
-        QSqlQuery insertQuery(db);
         QList<QPair<quint32, qint64> >::const_iterator it = values.constBegin(), end = values.constEnd();
         while (it != end) {
             // SQLite/QtSql limits the amount of data we can insert per individual query
@@ -2576,23 +2850,17 @@ bool createTemporaryContactPresenceTable(QSqlDatabase &db, const QString &table,
             quint32 count = std::min<quint32>(remainder, 167);
             QList<QPair<quint32, qint64> >::const_iterator batchEnd = it + count;
 
-            QString insertStatement = QString::fromLatin1("INSERT INTO temp.%1 (contactId, presenceState, isOnline) VALUES ").arg(table);
+            QString insertStatement = QStringLiteral("INSERT INTO temp.%1 (contactId, presenceState, isOnline) VALUES ").arg(table);
             while (true) {
-                insertStatement.append(QString::fromLatin1("(?,?,?)"));
+                insertStatement.append(QStringLiteral("(?,?,?)"));
                 if (++it == batchEnd) {
                     break;
                 } else {
-                    insertStatement.append(QString::fromLatin1(","));
+                    insertStatement.append(QStringLiteral(","));
                 }
             }
 
-            if (!insertQuery.prepare(insertStatement)) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary presence values: %1\n%2")
-                        .arg(insertQuery.lastError().text())
-                        .arg(insertStatement));
-                return false;
-            }
-
+            ContactsDatabase::Query insertQuery(cdb.prepare(insertStatement));
             QList<QPair<quint32, qint64> >::const_iterator vit = values.constBegin() + first, vend = vit + count;
             while (vit != vend) {
                 const QPair<quint32, qint64> &pair(*vit);
@@ -2606,46 +2874,35 @@ bool createTemporaryContactPresenceTable(QSqlDatabase &db, const QString &table,
             }
 
             if (!ContactsDatabase::execute(insertQuery)) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary presence values: %1\n%2")
-                        .arg(insertQuery.lastError().text())
-                        .arg(insertStatement));
+                insertQuery.reportError(QString::fromLatin1("Failed to insert temporary contact presence values into table %1").arg(table));
                 return false;
             }
-            insertQuery.finish();
         }
     }
 
     return true;
 }
 
-void clearTemporaryContactPresenceTable(QSqlDatabase &db, const QString &table)
+void clearTemporaryContactPresenceTable(ContactsDatabase &cdb, QSqlDatabase &db, const QString &table)
 {
-    dropOrDeleteTable(db, table);
+    dropOrDeleteTable(cdb, db, table);
 }
 
-bool createTemporaryValuesTable(QSqlDatabase &db, const QString &table, const QVariantList &values)
+bool createTemporaryValuesTable(ContactsDatabase &cdb, QSqlDatabase &, const QString &table, const QVariantList &values)
 {
-    static const QString createStatement(QString::fromLatin1("CREATE TABLE IF NOT EXISTS temp.%1 (value BLOB)"));
+    static const QString createStatement(QStringLiteral("CREATE TABLE IF NOT EXISTS temp.%1 (value BLOB)"));
 
     // Create the temporary table (if we haven't already).
-    QSqlQuery tableQuery(db);
-    if (!tableQuery.prepare(createStatement.arg(table))) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary table query: %1\n%2")
-                .arg(tableQuery.lastError().text())
-                .arg(createStatement));
-        return false;
+    {
+        ContactsDatabase::Query tableQuery(cdb.prepare(createStatement.arg(table)));
+        if (!ContactsDatabase::execute(tableQuery)) {
+            tableQuery.reportError(QString::fromLatin1("Failed to create temporary table %1").arg(table));
+            return false;
+        }
     }
-    if (!ContactsDatabase::execute(tableQuery)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create temporary table: %1\n%2")
-                .arg(tableQuery.lastError().text())
-                .arg(createStatement));
-        return false;
-    }
-    tableQuery.finish();
 
     // insert into the temporary table, all of the values
     if (!values.isEmpty()) {
-        QSqlQuery insertQuery(db);
         QVariantList::const_iterator it = values.constBegin(), end = values.constEnd();
         while (it != end) {
             // SQLite/QtSql limits the amount of data we can insert per individual query
@@ -2654,105 +2911,78 @@ bool createTemporaryValuesTable(QSqlDatabase &db, const QString &table, const QV
             quint32 count = std::min<quint32>(remainder, 500);
             QVariantList::const_iterator batchEnd = it + count;
 
-            QString insertStatement = QString::fromLatin1("INSERT INTO temp.%1 (value) VALUES ").arg(table);
+            QString insertStatement = QStringLiteral("INSERT INTO temp.%1 (value) VALUES ").arg(table);
             while (true) {
-                insertStatement.append(QString::fromLatin1("(?)"));
+                insertStatement.append(QStringLiteral("(?)"));
                 if (++it == batchEnd) {
                     break;
                 } else {
-                    insertStatement.append(QString::fromLatin1(","));
+                    insertStatement.append(QStringLiteral(","));
                 }
             }
 
-            if (!insertQuery.prepare(insertStatement)) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare temporary values: %1\n%2")
-                        .arg(insertQuery.lastError().text())
-                        .arg(insertStatement));
-                return false;
-            }
-
+            ContactsDatabase::Query insertQuery(cdb.prepare(insertStatement));
             foreach (const QVariant &v, values.mid(first, count)) {
                 insertQuery.addBindValue(v);
             }
 
             if (!ContactsDatabase::execute(insertQuery)) {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert temporary values: %1\n%2")
-                        .arg(insertQuery.lastError().text())
-                        .arg(insertStatement));
+                insertQuery.reportError(QString::fromLatin1("Failed to insert temporary values into table %1").arg(table));
                 return false;
             }
-            insertQuery.finish();
         }
     }
 
     return true;
 }
 
-void clearTemporaryValuesTable(QSqlDatabase &db, const QString &table)
+void clearTemporaryValuesTable(ContactsDatabase &cdb, QSqlDatabase &db, const QString &table)
 {
-    dropOrDeleteTable(db, table);
+    dropOrDeleteTable(cdb, db, table);
 }
 
-static bool createTransientContactIdsTable(QSqlDatabase &db, const QString &table, const QVariantList &ids, QString *transientTableName)
+static bool createTransientContactIdsTable(ContactsDatabase &cdb, QSqlDatabase &db, const QString &table, const QVariantList &ids, QString *transientTableName)
 {
-    static const QString createTableStatement(QString::fromLatin1("CREATE TABLE %1 (contactId INTEGER)"));
-    static const QString insertIdsStatement(QString::fromLatin1("INSERT INTO %1 (contactId) VALUES(:contactId)"));
+    static const QString createTableStatement(QStringLiteral("CREATE TABLE %1 (contactId INTEGER)"));
+    static const QString insertIdsStatement(QStringLiteral("INSERT INTO %1 (contactId) VALUES(:contactId)"));
 
     int existingTables = 0;
-    if (!countTransientTables(db, table, &existingTables))
+    if (!countTransientTables(cdb, db, table, &existingTables))
         return false;
 
-    QString tableName(QString::fromLatin1("temp.%1_transient%2").arg(table).arg(existingTables));
+    const QString tableName(QStringLiteral("temp.%1_transient%2").arg(table).arg(existingTables));
 
-    QSqlQuery tableQuery(db);
-    const QString createStatement(createTableStatement.arg(tableName));
-    if (!tableQuery.prepare(createStatement)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare transient table query: %1\n%2")
-                .arg(tableQuery.lastError().text())
-                .arg(createStatement));
-        return false;
+    // Create the transient table (if we haven't already).
+    {
+        ContactsDatabase::Query tableQuery(cdb.prepare(createTableStatement.arg(tableName)));
+        if (!ContactsDatabase::execute(tableQuery)) {
+            tableQuery.reportError(QString::fromLatin1("Failed to create transient table %1").arg(table));
+            return false;
+        }
     }
-    if (!ContactsDatabase::execute(tableQuery)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create transient table: %1\n%2")
-                .arg(tableQuery.lastError().text())
-                .arg(createStatement));
-        return false;
-    }
-    tableQuery.finish();
 
-    QSqlQuery insertQuery(db);
-
+    // insert into the transient table, all of the values
     QVariantList::const_iterator it = ids.constBegin(), end = ids.constEnd();
     while (it != end) {
         // SQLite allows up to 500 rows per insert
         quint32 remainder = (end - it);
         QVariantList::const_iterator batchEnd = it + std::min<quint32>(remainder, 500);
 
-        QString insertStatement = QString::fromLatin1("INSERT INTO %1 (contactId) VALUES ").arg(tableName);
+        ContactsDatabase::Query insertQuery(cdb.prepare(insertIdsStatement.arg(tableName)));
+        QVariantList cids;
         while (true) {
             const QVariant &v(*it);
             const quint32 dbId(v.value<quint32>());
-            insertStatement.append(QString::fromLatin1("(%1)").arg(dbId));
+            cids.append(dbId);
             if (++it == batchEnd) {
                 break;
-            } else {
-                insertStatement.append(QString::fromLatin1(","));
             }
         }
-
-        if (!insertQuery.prepare(insertStatement)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare transient contact ids: %1\n%2")
-                    .arg(insertQuery.lastError().text())
-                    .arg(insertStatement));
+        insertQuery.bindValue(QStringLiteral(":contactId"), cids);
+        if (!ContactsDatabase::executeBatch(insertQuery)) {
+            insertQuery.reportError(QString::fromLatin1("Failed to insert transient contact ids into table %1").arg(table));
             return false;
         }
-        if (!ContactsDatabase::execute(insertQuery)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to insert transient contact ids: %1\n%2")
-                    .arg(insertQuery.lastError().text())
-                    .arg(insertStatement));
-            return false;
-        }
-        insertQuery.finish();
     }
 
     *transientTableName = tableName;
@@ -2833,7 +3063,7 @@ static qint32 displayLabelGroupSortValue(const QString &group, const QMap<QStrin
                 // 65 default display label groups, and thus the
                 // letter 'A' (whose unicode value is 65) would overlap.
                 int lastContiguousSortValue = -1;
-                for (int sortValue : knownDisplayLabelGroups) {
+                for (const int sortValue : knownDisplayLabelGroups) {
                     if (sortValue != (lastContiguousSortValue + 1)) {
                         break;
                     }
@@ -2864,15 +3094,15 @@ ContactsDatabase::ProcessMutex::ProcessMutex(const QString &path)
     , m_initialProcess(false)
 {
     if (!m_semaphore.isValid()) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to create semaphore array!"));
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to create semaphore array!"));
     } else {
         if (!m_semaphore.decrement(databaseOwnershipIndex)) {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to determine database ownership!"));
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to determine database ownership!"));
         } else {
             // Only the first process to connect to the semaphore is the owner
             m_initialProcess = (m_semaphore.value(databaseConnectionsIndex) == 0);
             if (!m_semaphore.increment(databaseConnectionsIndex)) {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Unable to increment database connections!"));
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to increment database connections!"));
             }
 
             m_semaphore.increment(databaseOwnershipIndex);
@@ -2907,7 +3137,7 @@ ContactsDatabase::Query::Query(const QSqlQuery &query)
 
 void ContactsDatabase::Query::reportError(const QString &text) const
 {
-    QString output(text + QString::fromLatin1("\n%1").arg(m_query.lastError().text()));
+    QString output(text + QStringLiteral("\n%1").arg(m_query.lastError().text()));
     QTCONTACTS_SQLITE_WARNING(output);
 }
 
@@ -2923,7 +3153,7 @@ ContactsDatabase::ContactsDatabase(ContactsEngine *engine)
     , m_localeName(QLocale().name())
     , m_defaultGenerator(new DefaultDlgGenerator)
 #ifdef HAS_MLITE
-    , m_groupPropertyConf(QLatin1String("/org/nemomobile/contacts/group_property"))
+    , m_groupPropertyConf(QStringLiteral("/org/nemomobile/contacts/group_property"))
 #endif // HAS_MLITE
 {
 #ifdef HAS_MLITE
@@ -2940,6 +3170,17 @@ ContactsDatabase::ContactsDatabase(ContactsEngine *engine)
 
 ContactsDatabase::~ContactsDatabase()
 {
+    if (m_database.isOpen()) {
+        QSqlQuery optimizeQuery(m_database);
+        const QString statement = QStringLiteral("PRAGMA optimize");
+        if (!optimizeQuery.prepare(statement)) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to prepare OPTIMIZE query"));
+        } else if (!optimizeQuery.exec()) {
+            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to execute OPTIMIZE query"));
+        } else {
+            QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Successfully executed OPTIMIZE query"));
+        }
+    }
     m_database.close();
 }
 
@@ -3021,9 +3262,9 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
     const QString systemDataDirPath(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/system/");
     const QString privilegedDataDirPath(systemDataDirPath + QTCONTACTS_SQLITE_PRIVILEGED_DIR + "/");
 
-    QString databaseSubdir(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_DIR));
+    QString databaseSubdir(QStringLiteral(QTCONTACTS_SQLITE_DATABASE_DIR));
     if (autoTest) {
-        databaseSubdir.append(QString::fromLatin1("-test"));
+        databaseSubdir.append(QStringLiteral("-test"));
     }
 
     QDir databaseDir;
@@ -3043,14 +3284,14 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
         m_nonprivileged = true;
     }
 
-    const QString databaseFile = databaseDir.absoluteFilePath(QString::fromLatin1(QTCONTACTS_SQLITE_DATABASE_NAME));
+    const QString databaseFile = databaseDir.absoluteFilePath(QStringLiteral(QTCONTACTS_SQLITE_DATABASE_NAME));
     const bool databasePreexisting = QFile::exists(databaseFile);
     if (!databasePreexisting && secondaryConnection) {
         // The database must already be created/checked/opened by a primary connection
         return false;
     }
 
-    m_database = QSqlDatabase::addDatabase(QString::fromLatin1("QSQLITE"), connectionName);
+    m_database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
     m_database.setDatabaseName(databaseFile);
 
     if (!m_database.open()) {
@@ -3163,7 +3404,7 @@ bool ContactsDatabase::nonprivileged() const
 
 bool ContactsDatabase::localized() const
 {
-    return (m_localeName != QLatin1String("C"));
+    return (m_localeName != QStringLiteral("C"));
 }
 
 bool ContactsDatabase::aggregating() const
@@ -3278,11 +3519,12 @@ bool ContactsDatabase::execute(QSqlQuery &query)
     QElapsedTimer t;
     t.start();
 
-    bool rv = query.exec();
+    const bool rv = query.exec();
     if (debugSql && rv) {
+        const qint64 elapsed = t.elapsed();
         const int n = query.isSelect() ? query.size() : query.numRowsAffected();
         const QString s(expandQuery(query));
-        qDebug().nospace() << "Query in " << t.elapsed() << "ms " << n << ": " << qPrintable(s);
+        qDebug().nospace() << "Query in " << elapsed << "ms, affecting " << n << " rows: " << qPrintable(s);
     }
 
     return rv;
@@ -3295,11 +3537,12 @@ bool ContactsDatabase::executeBatch(QSqlQuery &query, QSqlQuery::BatchExecutionM
     QElapsedTimer t;
     t.start();
 
-    bool rv = query.execBatch(mode);
+    const bool rv = query.execBatch(mode);
     if (debugSql && rv) {
+        const qint64 elapsed = t.elapsed();
         const int n = query.isSelect() ? query.size() : query.numRowsAffected();
         const QString s(expandQuery(query));
-        qDebug().nospace() << "Batch query in " << t.elapsed() << "ms " << n << ": " << qPrintable(s);
+        qDebug().nospace() << "Batch query in " << elapsed << "ms, affecting " << n << " rows: " << qPrintable(s);
     }
 
     return rv;
@@ -3349,7 +3592,7 @@ QString ContactsDatabase::expandQuery(const QString &queryString, const QMap<QSt
 
         QString valueText;
         if (value.type() == QVariant::String) {
-            valueText = QString::fromLatin1("'%1'").arg(value.toString());
+            valueText = QStringLiteral("'%1'").arg(value.toString());
         } else {
             valueText = value.toString();
         }
@@ -3369,49 +3612,49 @@ QString ContactsDatabase::expandQuery(const QSqlQuery &query)
 bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QVariantList &boundIds, int limit)
 {
     QMutexLocker locker(accessMutex());
-    return ::createTemporaryContactIdsTable(m_database, table, false, boundIds, QString(), QString(), QString(), QVariantList(), limit);
+    return ::createTemporaryContactIdsTable(*this, m_database, table, false, boundIds, QString(), QString(), QString(), QVariantList(), limit);
 }
 
 bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QVariantList &boundValues, int limit)
 {
     QMutexLocker locker(accessMutex());
-    return ::createTemporaryContactIdsTable(m_database, table, true, QVariantList(), join, where, orderBy, boundValues, limit);
+    return ::createTemporaryContactIdsTable(*this, m_database, table, true, QVariantList(), join, where, orderBy, boundValues, limit);
 }
 
 bool ContactsDatabase::createTemporaryContactIdsTable(const QString &table, const QString &join, const QString &where, const QString &orderBy, const QMap<QString, QVariant> &boundValues, int limit)
 {
     QMutexLocker locker(accessMutex());
-    return ::createTemporaryContactIdsTable(m_database, table, true, QVariantList(), join, where, orderBy, boundValues, limit);
+    return ::createTemporaryContactIdsTable(*this, m_database, table, true, QVariantList(), join, where, orderBy, boundValues, limit);
 }
 
 void ContactsDatabase::clearTemporaryContactIdsTable(const QString &table)
 {
     QMutexLocker locker(accessMutex());
-    ::clearTemporaryContactIdsTable(m_database, table);
+    ::clearTemporaryContactIdsTable(*this, m_database, table);
 }
 
 bool ContactsDatabase::createTemporaryValuesTable(const QString &table, const QVariantList &values)
 {
     QMutexLocker locker(accessMutex());
-    return ::createTemporaryValuesTable(m_database, table, values);
+    return ::createTemporaryValuesTable(*this, m_database, table, values);
 }
 
 void ContactsDatabase::clearTemporaryValuesTable(const QString &table)
 {
     QMutexLocker locker(accessMutex());
-    ::clearTemporaryValuesTable(m_database, table);
+    ::clearTemporaryValuesTable(*this, m_database, table);
 }
 
 bool ContactsDatabase::createTransientContactIdsTable(const QString &table, const QVariantList &ids, QString *transientTableName)
 {
     QMutexLocker locker(accessMutex());
-    return ::createTransientContactIdsTable(m_database, table, ids, transientTableName);
+    return ::createTransientContactIdsTable(*this, m_database, table, ids, transientTableName);
 }
 
 void ContactsDatabase::clearTransientContactIdsTable(const QString &table)
 {
     QMutexLocker locker(accessMutex());
-    ::dropTransientTables(m_database, table);
+    ::dropTransientTables(*this, m_database, table);
 }
 
 bool ContactsDatabase::populateTemporaryTransientState(bool timestamps, bool globalPresence)
@@ -3422,10 +3665,10 @@ bool ContactsDatabase::populateTemporaryTransientState(bool timestamps, bool glo
     QMutexLocker locker(accessMutex());
 
     if (timestamps) {
-        ::clearTemporaryContactTimestampTable(m_database, timestampTable);
+        ::clearTemporaryContactTimestampTable(*this, m_database, timestampTable);
     }
     if (globalPresence) {
-        ::clearTemporaryContactPresenceTable(m_database, presenceTable);
+        ::clearTemporaryContactPresenceTable(*this, m_database, presenceTable);
     }
 
     // Find the current temporary states from transient storage
@@ -3456,9 +3699,9 @@ bool ContactsDatabase::populateTemporaryTransientState(bool timestamps, bool glo
     }
 
     bool rv = true;
-    if (timestamps && !::createTemporaryContactTimestampTable(m_database, timestampTable, timestampValues)) {
+    if (timestamps && !::createTemporaryContactTimestampTable(*this, m_database, timestampTable, timestampValues)) {
         rv = false;
-    } else if (globalPresence && !::createTemporaryContactPresenceTable(m_database, presenceTable, presenceValues)) {
+    } else if (globalPresence && !::createTemporaryContactPresenceTable(*this, m_database, presenceTable, presenceValues)) {
         rv = false;
     }
     return rv;
@@ -3662,7 +3905,9 @@ QStringList ContactsDatabase::displayLabelGroups() const
         QMutexLocker locker(accessMutex());
         QSqlQuery selectQuery(m_database);
         selectQuery.setForwardOnly(true);
-        const QString statement = QStringLiteral("SELECT DISTINCT DisplayLabelGroup FROM Contacts ORDER BY DisplayLabelGroupSortOrder ASC");
+        const QString statement = QStringLiteral(" SELECT DISTINCT DisplayLabelGroup"
+                                                 " FROM DisplayLabels"
+                                                 " ORDER BY DisplayLabelGroupSortOrder ASC");
         if (!selectQuery.prepare(statement)) {
             QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare distinct display label group selection query: %1\n%2")
                     .arg(selectQuery.lastError().text())
@@ -3688,6 +3933,7 @@ QStringList ContactsDatabase::displayLabelGroups() const
 
     groups.append("#");
     groups.append("?");
+
     return groups;
 }
 
@@ -3699,6 +3945,6 @@ int ContactsDatabase::displayLabelGroupSortValue(const QString &group) const
 }
 
 #include "../extensions/qcontactdeactivated_impl.h"
-#include "../extensions/qcontactincidental_impl.h"
+#include "../extensions/qcontactundelete_impl.h"
 #include "../extensions/qcontactoriginmetadata_impl.h"
 #include "../extensions/qcontactstatusflags_impl.h"

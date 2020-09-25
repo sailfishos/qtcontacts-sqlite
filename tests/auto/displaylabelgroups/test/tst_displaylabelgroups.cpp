@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2019 Jolla Ltd. <chris.adams@jollamobile.com>
+ * Copyright (C) 2019 Jolla Ltd.
+ * Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -144,6 +145,12 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
 #endif
     // this test relies on the display label grouping
     // semantics provided by the testdlggplugin.
+    // it also relies on the displayLabelGroupPreferredProperty()
+    // being the value: QContactName::LastName.
+    // `dconf read /org/nemomobile/contacts/group_property`
+    // should return 'lastName' rather than 'firstName'.
+    // set with:
+    // `dconf write /org/nemomobile/contacts/group_property "'lastName'"`
 
     // create some contacts
     QContact c1, c2, c3, c4, c5, c6, c7, c8, c9;
@@ -254,6 +261,7 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
     QCOMPARE(actualOrder,  QStringLiteral("615824333"));
     QCOMPARE(actualGroups, QStringLiteral("Z1345OEEE"));
 
+
     // Now sort by display label group followed by last name.
     // We expect the same sorting as display-group-only sorting,
     // except that contact 9's last name causes it to be sorted before contact 7.
@@ -289,7 +297,7 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
 
     // Now add a contact which has a special name such that the test
     // display label group generator plugin will generate a group
-    // for it which was previously "unknown".
+    // for it which was previously "unknown", i.e. dynamic group.
     // We expect that group to be added before '#' but after other groups.
     QtContactsSqliteExtensions::ContactManagerEngine *cme =
         QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
@@ -309,7 +317,7 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
     c10.saveDetail(&d10);
     c10.saveDetail(&p10);
 
-    n11.setLastName("tst_displaylabelgroups_unknown_dlg"); // special case, group &.
+    n11.setLastName("tst_displaylabelgroups_unknown_dlg"); // special case, dynamic group &.
     n11.setFirstName("Eleven");
     d11.setLabel("Test K Contact");
     p11.setNumber("K");
@@ -330,7 +338,7 @@ void tst_DisplayLabelGroups::testDisplayLabelGroups()
     QTest::qWait(250);
     QCOMPARE(dlgcSpy.count(), 1);
     QStringList expected(oldContactDisplayLabelGroups);
-    expected.insert(expected.size() - 1, QStringLiteral("&")); // & group should have been inserted before #.
+    expected.insert(expected.indexOf(QStringLiteral("#")), QStringLiteral("&")); // & group should have been inserted before #.
     QList<QVariant> data = dlgcSpy.takeFirst();
     QCOMPARE(data.first().value<QStringList>(), expected);
 }

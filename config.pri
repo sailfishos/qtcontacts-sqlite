@@ -1,3 +1,6 @@
+# Try to optimise for code size a bit
+QMAKE_CXXFLAGS += -ffunction-sections -fdata-sections -Wl,--gc-sections -flto
+
 CONFIG += \
     c++11 \
     link_pkgconfig

@@ -1,5 +1,7 @@
 TEMPLATE = subdirs
-SUBDIRS = auto benchmarks
+SUBDIRS = \
+    auto \
+    benchmarks
 
 tests_xml.path = /opt/tests/qtcontacts-sqlite-qt5/
 tests_xml.files = tests.xml

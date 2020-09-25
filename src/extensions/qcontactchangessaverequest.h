@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Open Mobile Platform LLC.
+ * Copyright (c) 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -29,8 +29,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QCONTACTDETAILFETCHREQUEST_H
-#define QCONTACTDETAILFETCHREQUEST_H
+#ifndef QCONTACTCHANGESSAVEREQUEST_H
+#define QCONTACTCHANGESSAVEREQUEST_H
 
 #include <qcontactabstractrequest.h>
 #include <qcontactdetail.h>
@@ -40,38 +40,42 @@
 
 QT_BEGIN_NAMESPACE_CONTACTS
 
-class QContactDetailFetchRequestPrivate;
-class QContactDetailFetchRequest : public QObject
+class QContactChangesSaveRequestPrivate;
+class QContactChangesSaveRequest : public QObject
 {
     Q_OBJECT
-    Q_DISABLE_COPY(QContactDetailFetchRequest)
-    Q_DECLARE_PRIVATE(QContactDetailFetchRequest)
+    Q_DISABLE_COPY(QContactChangesSaveRequest)
+    Q_DECLARE_PRIVATE(QContactChangesSaveRequest)
 public:
-    QContactDetailFetchRequest(QObject *parent = nullptr);
-    ~QContactDetailFetchRequest() override;
+    enum ConflictResolutionPolicy {
+        PreserveLocalChanges,
+        PreserveRemoteChanges
+    };
+    Q_ENUM(ConflictResolutionPolicy)
+
+    QContactChangesSaveRequest(QObject *parent = nullptr);
+    ~QContactChangesSaveRequest() override;
 
     QContactManager *manager() const;
     void setManager(QContactManager *manager);
 
-    QContactDetail::DetailType type() const;
-    void setType(QContactDetail::DetailType type);
+    ConflictResolutionPolicy conflictResolutionPolicy() const;
+    void setConflictResolutionPolicy(ConflictResolutionPolicy policy);
 
-    QList<int> fields() const;
-    void setFields(const QList<int> fields);
+    bool clearChangeFlags() const;
+    void setClearChangeFlags(bool clear);
 
-    QContactFilter filter() const;
-    void setFilter(const QContactFilter &filter);
+    QHash<QContactCollection, QList<QContact> > addedCollections() const;
+    void setAddedCollections(const QHash<QContactCollection, QList<QContact> > &added);
 
-    QList<QContactSortOrder> sorting() const;
-    void setSorting(const QList<QContactSortOrder> &sorting);
+    QHash<QContactCollection, QList<QContact> > modifiedCollections() const;
+    void setModifiedCollections(const QHash<QContactCollection, QList<QContact> > &modified);
 
-    QContactFetchHint fetchHint() const;
-    void setFetchHint(const QContactFetchHint &hint);
+    QList<QContactCollectionId> removedCollections() const;
+    void setRemovedCollections(const QList<QContactCollectionId> &removed);
 
     QContactAbstractRequest::State state() const;
     QContactManager::Error error() const;
-
-    QList<QContactDetail> details() const;
 
 public Q_SLOTS:
     bool start();
@@ -84,9 +88,9 @@ Q_SIGNALS:
     void resultsAvailable();
 
 private:
-    QScopedPointer<QContactDetailFetchRequestPrivate> d_ptr;
+    QScopedPointer<QContactChangesSaveRequestPrivate> d_ptr;
 };
 
 QT_END_NAMESPACE_CONTACTS
 
-#endif
+#endif // QCONTACTCHANGESSAVEREQUEST_H

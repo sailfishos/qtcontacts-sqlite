@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2013 Jolla Ltd.
- * Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
+ * Copyright (c) 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -30,38 +29,41 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QTCONTACTSSQLITE_CONTACTNOTIFIER_H
-#define QTCONTACTSSQLITE_CONTACTNOTIFIER_H
+#ifndef QCONTACTCLEARCHANGEFLAGSREQUEST_P_H
+#define QCONTACTCLEARCHANGEFLAGSREQUEST_P_H
 
-#include "contactid_p.h"
+#include "./qcontactclearchangeflagsrequest.h"
 
-#include <QContact>
-#include <QObject>
-#include <QSet>
+#include <QPointer>
 
-QTCONTACTS_USE_NAMESPACE
+QT_BEGIN_NAMESPACE_CONTACTS
 
-class ContactNotifier
+class QContactClearChangeFlagsRequestPrivate
 {
-    bool m_nonprivileged;
-
 public:
-    ContactNotifier(bool nonprivileged);
+    static QContactClearChangeFlagsRequestPrivate *get(QContactClearChangeFlagsRequest *request) { return request->d_func(); }
 
-    void collectionsAdded(const QList<QContactCollectionId> &collectionIds);
-    void collectionsChanged(const QList<QContactCollectionId> &collectionIds);
-    void collectionsRemoved(const QList<QContactCollectionId> &collectionIds);
-    void collectionContactsChanged(const QList<QContactCollectionId> &collectionIds);
-    void contactsAdded(const QList<QContactId> &contactIds);
-    void contactsChanged(const QList<QContactId> &contactIds);
-    void contactsPresenceChanged(const QList<QContactId> &contactIds);
-    void contactsRemoved(const QList<QContactId> &contactIds);
-    void selfContactIdChanged(QContactId oldId, QContactId newId);
-    void relationshipsAdded(const QSet<QContactId> &contactIds);
-    void relationshipsRemoved(const QSet<QContactId> &contactIds);
-    void displayLabelGroupsChanged();
+    QContactClearChangeFlagsRequestPrivate(
+            QContactClearChangeFlagsRequest *q,
+            void (QContactClearChangeFlagsRequest::*stateChanged)(QContactAbstractRequest::State state),
+            void (QContactClearChangeFlagsRequest::*resultsAvailable)())
+        : q_ptr(q)
+        , stateChanged(stateChanged)
+        , resultsAvailable(resultsAvailable)
+    {
+    }
 
-    bool connect(const char *name, const char *signature, QObject *receiver, const char *slot);
+    QContactClearChangeFlagsRequest * const q_ptr;
+    void (QContactClearChangeFlagsRequest::* const stateChanged)(QContactAbstractRequest::State state);
+    void (QContactClearChangeFlagsRequest::* const resultsAvailable)();
+
+    QContactCollectionId collectionId;
+    QList<QContactId> contactIds;
+    QPointer<QContactManager> manager;
+    QContactAbstractRequest::State state = QContactAbstractRequest::InactiveState;
+    QContactManager::Error error = QContactManager::NoError;
 };
 
-#endif
+QT_END_NAMESPACE_CONTACTS
+
+#endif // QCONTACTCLEARCHANGEFLAGSREQUEST_P_H

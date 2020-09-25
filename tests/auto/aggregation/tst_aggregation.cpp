@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <chris.adams@jollamobile.com>
+ * Copyright (C) 2013 - 2019 Jolla Ltd.
+ * Copyright (C) 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -32,7 +33,7 @@
 #define QT_STATICPLUGIN
 
 #include "../../util.h"
-#include "testsyncadapter.h"
+#include "qtcontacts-extensions.h"
 
 #include <QLocale>
 
@@ -40,13 +41,16 @@ static const QString aggregatesRelationship(relationshipString(QContactRelations
 
 namespace {
 
+static const char *addedColAccumulationSlot = SLOT(addColAccumulationSlot(QList<QContactCollectionId>));
+static const char *changedColAccumulationSlot = SLOT(chgColAccumulationSlot(QList<QContactCollectionId>));
+static const char *removedColAccumulationSlot = SLOT(remColAccumulationSlot(QList<QContactCollectionId>));
 static const char *addedAccumulationSlot = SLOT(addAccumulationSlot(QList<QContactId>));
 static const char *changedAccumulationSlot = SLOT(chgAccumulationSlot(QList<QContactId>));
 static const char *removedAccumulationSlot = SLOT(remAccumulationSlot(QList<QContactId>));
 
 QString detailProvenance(const QContactDetail &detail)
 {
-    return detail.value<QString>(QContactDetail__FieldProvenance);
+    return detail.value<QString>(QContactDetail::FieldProvenance);
 }
 
 QString detailProvenanceContact(const QContactDetail &detail)
@@ -73,6 +77,9 @@ public slots:
     void cleanup();
 
 public slots:
+    void addColAccumulationSlot(const QList<QContactCollectionId> &ids);
+    void chgColAccumulationSlot(const QList<QContactCollectionId> &ids);
+    void remColAccumulationSlot(const QList<QContactCollectionId> &ids);
     void addAccumulationSlot(const QList<QContactId> &ids);
     void chgAccumulationSlot(const QList<QContactId> &ids);
     void remAccumulationSlot(const QList<QContactId> &ids);
@@ -81,6 +88,7 @@ private slots:
     void createSingleLocal();
     void createMultipleLocal();
     void createSingleLocalAndSingleSync();
+    void createNonAggregable();
 
     void updateSingleLocal();
     void updateSingleAggregate();
@@ -88,17 +96,12 @@ private slots:
     void updateAggregateOfLocalAndModifiableSync();
 
     void compositionPrefersLocal();
-
-    void promotionToSingleLocal();
     void uniquenessConstraints();
 
     void removeSingleLocal();
     void removeSingleAggregate();
 
     void alterRelationships();
-
-    void wasLocalUpdate();
-    void wasLocalCreation();
 
     void aggregationHeuristic_data();
     void aggregationHeuristic();
@@ -118,20 +121,38 @@ private slots:
     void deactivationSingle();
     void deactivationMultiple();
 
-    void fetchSyncContacts();
-    void storeSyncContacts();
+    void deletionSingle();
+    void deletionMultiple();
+    void deletionCollections();
+
+/*
+    void testSyncAdapter();
+*/
 
     void testOOB();
-    void testSyncAdapter();
 
 private:
     void waitForSignalPropagation();
 
     QContactManager *m_cm;
+    QSet<QContactCollectionId> m_addColAccumulatedIds;
+    QSet<QContactCollectionId> m_chgColAccumulatedIds;
+    QSet<QContactCollectionId> m_remColAccumulatedIds;
+    QSet<QContactCollectionId> m_createdColIds;
     QSet<QContactId> m_addAccumulatedIds;
     QSet<QContactId> m_chgAccumulatedIds;
     QSet<QContactId> m_remAccumulatedIds;
     QSet<QContactId> m_createdIds;
+
+    QByteArray aggregateAddressbookId()
+    {
+        return QtContactsSqliteExtensions::aggregateCollectionId(m_cm->managerUri()).localId();
+    }
+
+    QByteArray localAddressbookId()
+    {
+        return QtContactsSqliteExtensions::localCollectionId(m_cm->managerUri()).localId();
+    }
 };
 
 tst_Aggregation::tst_Aggregation()
@@ -143,6 +164,9 @@ tst_Aggregation::tst_Aggregation()
     m_cm = new QContactManager(QString::fromLatin1("org.nemomobile.contacts.sqlite"), parameters);
 
     QTest::qWait(250); // creating self contact etc will cause some signals to be emitted.  ignore them.
+    connect(m_cm, collectionsAddedSignal, this, addedColAccumulationSlot);
+    connect(m_cm, collectionsChangedSignal, this, changedColAccumulationSlot);
+    connect(m_cm, collectionsRemovedSignal, this, removedColAccumulationSlot);
     connect(m_cm, contactsAddedSignal, this, addedAccumulationSlot);
     connect(m_cm, contactsChangedSignal, this, changedAccumulationSlot);
     connect(m_cm, contactsRemovedSignal, this, removedAccumulationSlot);
@@ -157,14 +181,17 @@ void tst_Aggregation::initTestCase()
     registerIdType();
 
     /* Make sure the DB is empty */
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
-    m_cm->removeContacts(m_cm->contactIds(allSyncTargets));
+    QContactCollectionFilter allCollections;
+    m_cm->removeContacts(m_cm->contactIds(allCollections));
     waitForSignalPropagation();
 }
 
 void tst_Aggregation::init()
 {
+    m_addColAccumulatedIds.clear();
+    m_chgColAccumulatedIds.clear();
+    m_remColAccumulatedIds.clear();
+    m_createdColIds.clear();
     m_addAccumulatedIds.clear();
     m_chgAccumulatedIds.clear();
     m_remAccumulatedIds.clear();
@@ -177,11 +204,31 @@ void tst_Aggregation::cleanupTestCase()
 
 void tst_Aggregation::cleanup()
 {
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
+    QContactManager::Error err = QContactManager::NoError;
+
     waitForSignalPropagation();
     if (!m_createdIds.isEmpty()) {
-        m_cm->removeContacts(m_createdIds.toList());
+        // purge them one at a time, to avoid "contacts from different collections in single batch" errors.
+        for (const QContactId &cid : m_createdIds) {
+            QContact doomed = m_cm->contact(cid);
+            if (!doomed.id().isNull() && doomed.collectionId().localId() != aggregateAddressbookId()) {
+                if (!m_cm->removeContact(cid)) {
+                    qWarning() << "Failed to cleanup:" << QString::fromLatin1(cid.localId());
+                }
+                cme->clearChangeFlags(QList<QContactId>() << cid, &err);
+            }
+        }
         m_createdIds.clear();
     }
+    if (!m_createdColIds.isEmpty()) {
+        for (const QContactCollectionId &colId : m_createdColIds.toList()) {
+            m_cm->removeCollection(colId);
+            cme->clearChangeFlags(colId, &err);
+        }
+        m_createdColIds.clear();
+    }
+    cme->clearChangeFlags(QContactCollectionId(m_cm->managerUri(), localAddressbookId()), &err);
     waitForSignalPropagation();
 }
 
@@ -189,6 +236,28 @@ void tst_Aggregation::waitForSignalPropagation()
 {
     // Signals are routed via DBUS, so we need to wait for them to arrive
     QTest::qWait(50);
+}
+
+void tst_Aggregation::addColAccumulationSlot(const QList<QContactCollectionId> &ids)
+{
+    foreach (const QContactCollectionId &id, ids) {
+        m_addColAccumulatedIds.insert(id);
+        m_createdColIds.insert(id);
+    }
+}
+
+void tst_Aggregation::chgColAccumulationSlot(const QList<QContactCollectionId> &ids)
+{
+    foreach (const QContactCollectionId &id, ids) {
+        m_chgColAccumulatedIds.insert(id);
+    }
+}
+
+void tst_Aggregation::remColAccumulationSlot(const QList<QContactCollectionId> &ids)
+{
+    foreach (const QContactCollectionId &id, ids) {
+        m_remColAccumulatedIds.insert(id);
+    }
 }
 
 void tst_Aggregation::addAccumulationSlot(const QList<QContactId> &ids)
@@ -215,17 +284,16 @@ void tst_Aggregation::remAccumulationSlot(const QList<QContactId> &ids)
 
 void tst_Aggregation::createSingleLocal()
 {
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
 
     int aggCount = m_cm->contactIds().size();
-    int allCount = m_cm->contactIds(allSyncTargets).size();
+    int allCount = m_cm->contactIds(allCollections).size();
 
     // set up some signal spies
     QSignalSpy addSpy(m_cm, contactsAddedSignal);
     int addSpyCount = 0;
 
-    // now add a new local contact (no synctarget specified == automatically local)
+    // now add a new local contact (no collection specified == automatically local)
     QContact alice;
 
     QContactName an;
@@ -243,6 +311,7 @@ void tst_Aggregation::createSingleLocal()
     alice.saveDetail(&ag);
 
     m_addAccumulatedIds.clear();
+
     QVERIFY(m_cm->saveContact(&alice));
     QTRY_VERIFY(addSpy.count() > addSpyCount);
     QTRY_COMPARE(m_addAccumulatedIds.size(), 2); // should have added local + aggregate
@@ -251,28 +320,27 @@ void tst_Aggregation::createSingleLocal()
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
     aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 2); // should have added local + aggregate
-    allCount = m_cm->contactIds(allSyncTargets).size();
+    QCOMPARE(m_cm->contactIds(allCollections).size(), allCount + 2); // should have added local + aggregate
+    allCount = m_cm->contactIds(allCollections).size();
 
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
     QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
     QContact localAlice;
     QContact aggregateAlice;
     bool foundLocalAlice = false;
     bool foundAggregateAlice = false;
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Alice")
                 && currName.middleName() == QLatin1String("In")
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("1234567")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 localAlice = curr;
                 foundLocalAlice = true;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -281,8 +349,8 @@ void tst_Aggregation::createSingleLocal()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
 
     // Test the provenance of details
     QContactPhoneNumber localDetail(localAlice.detail<QContactPhoneNumber>());
@@ -301,17 +369,16 @@ void tst_Aggregation::createSingleLocal()
 
 void tst_Aggregation::createMultipleLocal()
 {
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
 
     int aggCount = m_cm->contactIds().size();
-    int allCount = m_cm->contactIds(allSyncTargets).size();
+    int allCount = m_cm->contactIds(allCollections).size();
 
     // set up some signal spies
     QSignalSpy addSpy(m_cm, contactsAddedSignal);
     int addSpyCount = 0;
 
-    // now add two new local contacts (no synctarget specified == automatically local)
+    // now add two new local contacts (no collectionId specified == automatically local)
     QContact alice;
     QContact bob;
 
@@ -350,10 +417,10 @@ void tst_Aggregation::createMultipleLocal()
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 2); // 2 extra aggregate contacts
     aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 4); // should have added local + aggregate for each
-    allCount = m_cm->contactIds(allSyncTargets).size();
+    QCOMPARE(m_cm->contactIds(allCollections).size(), allCount + 4); // should have added local + aggregate for each
+    allCount = m_cm->contactIds(allCollections).size();
 
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
     QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
     QContact localAlice;
     QContact localBob;
@@ -364,18 +431,17 @@ void tst_Aggregation::createMultipleLocal()
     bool foundLocalBob = false;
     bool foundAggregateBob = false;
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Alice2")
                 && currName.middleName() == QLatin1String("In")
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("234567")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 localAlice = curr;
                 foundLocalAlice = true;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -383,11 +449,11 @@ void tst_Aggregation::createMultipleLocal()
                 && currName.middleName() == QLatin1String("The")
                 && currName.lastName() == QLatin1String("Destroyer")
                 && currPhn.number() == QLatin1String("765432")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 localBob = curr;
                 foundLocalBob = true;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateBob = curr;
                 foundAggregateBob = true;
             }
@@ -398,14 +464,14 @@ void tst_Aggregation::createMultipleLocal()
     QVERIFY(foundAggregateAlice);
     QVERIFY(foundLocalBob);
     QVERIFY(foundAggregateBob);
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
-    QVERIFY(!relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateBob.id()));
-    QVERIFY(!relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
-    QVERIFY(relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateBob.id()));
-    QVERIFY(relatedContactIds(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
-    QVERIFY(!relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(!relatedContactIds(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(!localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateBob.id()));
+    QVERIFY(!aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localBob.id()));
+    QVERIFY(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateBob.id()));
+    QVERIFY(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localBob.id()));
+    QVERIFY(!localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(!aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
 
     // Test the provenance of details
     QContactPhoneNumber localAliceDetail(localAlice.detail<QContactPhoneNumber>());
@@ -433,11 +499,10 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
     // and then we create a "sync" contact, which should "match" it.
     // It should be related to the aggregate created for the sync.
 
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
 
     int aggCount = m_cm->contactIds().size();
-    int allCount = m_cm->contactIds(allSyncTargets).size();
+    int allCount = m_cm->contactIds(allCollections).size();
 
     // set up some signal spies
     QSignalSpy addSpy(m_cm, contactsAddedSignal);
@@ -445,7 +510,7 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
     int addSpyCount = 0;
     int chgSpyCount = 0;
 
-    // now add a new local contact (no synctarget specified == automatically local)
+    // now add a new local contact (no collectionId specified == automatically local)
     QContact alice;
 
     QContactName an;
@@ -471,17 +536,16 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
     aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 2); // should have added local + aggregate
-    allCount = m_cm->contactIds(allSyncTargets).size();
+    QCOMPARE(m_cm->contactIds(allCollections).size(), allCount + 2); // should have added local + aggregate
+    allCount = m_cm->contactIds(allCollections).size();
 
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
     QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
     QContact localAlice;
     QContact aggregateAlice;
     bool foundLocalAlice = false;
     bool foundAggregateAlice = false;
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
         QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
@@ -490,11 +554,11 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("34567")
                 && currEm.emailAddress() == QLatin1String("alice@test.com")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 localAlice = curr;
                 foundLocalAlice = true;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -503,11 +567,20 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
 
-    // now add the doppleganger from another sync source
+    // now add the doppleganger from another sync source (remote addressbook)
+    QContactCollection remoteAddressbook;
+    remoteAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    remoteAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    remoteAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    remoteAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    QVERIFY(m_cm->saveCollection(&remoteAddressbook));
+
     QContact syncAlice;
+    syncAlice.setCollectionId(remoteAddressbook.id());
+
     QContactName san;
     san.setFirstName(an.firstName());
     san.setMiddleName(an.middleName());
@@ -547,15 +620,14 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
 
     QCOMPARE(m_cm->contactIds().size(), aggCount); // no extra aggregate contact
     aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 1); // should have added test but not an aggregate
-    allCount = m_cm->contactIds(allSyncTargets).size();
+    QCOMPARE(m_cm->contactIds(allCollections).size(), allCount + 1); // should have added test but not an aggregate
+    allCount = m_cm->contactIds(allCollections).size();
 
-    allContacts = m_cm->contacts(allSyncTargets);
+    allContacts = m_cm->contacts(allCollections);
     QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
     QContact testAlice;
     bool foundTestAlice = false;
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
         QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
@@ -564,14 +636,14 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("34567")
                 && currEm.emailAddress() == QLatin1String("alice@test.com")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 localAlice = curr;
                 foundLocalAlice = true;
-            } else if (currSt.syncTarget() == QLatin1String("test")) {
+            } else if (curr.collectionId() == remoteAddressbook.id()) {
                 testAlice = curr;
                 foundTestAlice = true;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -581,10 +653,10 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
     QVERIFY(foundLocalAlice);
     QVERIFY(foundTestAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(testAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(testAlice.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(testAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(testAlice.id()));
 
     // Verify the propagation of details
     QContactHobby localDetail(localAlice.detail<QContactHobby>());
@@ -599,13 +671,190 @@ void tst_Aggregation::createSingleLocalAndSingleSync()
     QVERIFY(detailProvenance(localDetail).isEmpty());
 }
 
-void tst_Aggregation::updateSingleLocal()
+void tst_Aggregation::createNonAggregable()
 {
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
 
     int aggCount = m_cm->contactIds().size();
-    int allCount = m_cm->contactIds(allSyncTargets).size();
+    int allCount = m_cm->contactIds(allCollections).size();
+
+    // set up some signal spies
+    QSignalSpy addSpy(m_cm, contactsAddedSignal);
+    int addSpyCount = 0;
+
+    // add a non-aggregable addressbook (e.g. application-specific addressbook).
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_AGGREGABLE, false);
+    QVERIFY(m_cm->saveCollection(&testAddressbook));
+
+    // now add a new non-aggregable contact
+    QContact alice;
+    alice.setCollectionId(testAddressbook.id());
+
+    QContactName an;
+    an.setFirstName("Alice");
+    an.setMiddleName("In");
+    an.setLastName("Wonderland");
+    alice.saveDetail(&an);
+
+    QContactPhoneNumber aph;
+    aph.setNumber("34567");
+    alice.saveDetail(&aph);
+
+    QContactEmailAddress aem;
+    aem.setEmailAddress("alice@test.com");
+    alice.saveDetail(&aem);
+
+    m_addAccumulatedIds.clear();
+    QVERIFY(m_cm->saveContact(&alice));
+    QTRY_VERIFY(addSpy.count() > addSpyCount);
+    QTRY_COMPARE(m_addAccumulatedIds.size(), 1); // just 1, since no aggregate should be generated.
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(alice)));
+    addSpyCount = addSpy.count();
+
+    QCOMPARE(m_cm->contactIds().size(), aggCount);
+    aggCount = m_cm->contactIds().size();
+    QCOMPARE(m_cm->contactIds(allCollections).size(), allCount + 1); // should have added non-aggregable
+    allCount = m_cm->contactIds(allCollections).size();
+
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
+    QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
+    QContact testAlice;
+    bool foundTestAlice = false;
+    bool foundAggregateAlice = false;
+    foreach (const QContact &curr, allContacts) {
+        QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
+        QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice")
+                && currName.middleName() == QLatin1String("In")
+                && currName.lastName() == QLatin1String("Wonderland")
+                && currPhn.number() == QLatin1String("34567")
+                && currEm.emailAddress() == QLatin1String("alice@test.com")) {
+            if (curr.collectionId() == testAddressbook.id()) {
+                testAlice = curr;
+                foundTestAlice = true;
+            } else {
+                foundAggregateAlice = true;
+            }
+        }
+    }
+
+    QVERIFY(foundTestAlice);
+    QVERIFY(!foundAggregateAlice); // should not be found, no aggregate should have been generated for it.
+    QCOMPARE(testAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).size(), 0);
+
+    // now add a new local contact (no collectionId specified == automatically local)
+    QContact localAlice;
+
+    QContactName lan;
+    lan.setFirstName("Alice");
+    lan.setMiddleName("In");
+    lan.setLastName("Wonderland");
+    localAlice.saveDetail(&lan);
+
+    QContactHobby lah;
+    lah.setHobby("tennis");
+    localAlice.saveDetail(&lah);
+
+    QContactEmailAddress laem;
+    laem.setEmailAddress("alice@test.com");
+    localAlice.saveDetail(&laem);
+
+    QVERIFY(m_cm->saveContact(&localAlice));
+    QTRY_VERIFY(addSpy.count() > addSpyCount); // should have added local + aggregate
+    QTRY_COMPARE(m_addAccumulatedIds.size(), 3); // testAlice, localAlice, aggAlice.
+    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(localAlice)));
+    addSpyCount = addSpy.count();
+
+    QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
+    aggCount = m_cm->contactIds().size();
+    QCOMPARE(m_cm->contactIds(allCollections).size(), allCount + 2); // should have added local + aggregate
+    allCount = m_cm->contactIds(allCollections).size();
+
+    allContacts = m_cm->contacts(allCollections);
+    QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
+    QContact locAlice, aggAlice;
+    bool foundLocalAlice = false;
+    foundTestAlice = false;
+    foundAggregateAlice = false;
+    foreach (const QContact &curr, allContacts) {
+        QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice")
+                && currName.middleName() == QLatin1String("In")
+                && currName.lastName() == QLatin1String("Wonderland")
+                && currEm.emailAddress() == QLatin1String("alice@test.com")) {
+            if (curr.collectionId() == testAddressbook.id()) {
+                testAlice = curr;
+                foundTestAlice = true;
+            } else if (curr.collectionId().localId() == localAddressbookId()) {
+                locAlice = curr;
+                foundLocalAlice = true;
+            } else {
+                aggAlice = curr;
+                foundAggregateAlice = true;
+            }
+        }
+    }
+
+    // ensure that we have now found all contacts
+    QVERIFY(foundTestAlice);
+    QVERIFY(foundLocalAlice);
+    QVERIFY(foundAggregateAlice);
+
+    // ensure the local contact contains the content we expect.
+    QCOMPARE(locAlice.detail<QContactName>().firstName(), localAlice.detail<QContactName>().firstName());
+    QCOMPARE(locAlice.detail<QContactName>().middleName(), localAlice.detail<QContactName>().middleName());
+    QCOMPARE(locAlice.detail<QContactName>().lastName(), localAlice.detail<QContactName>().lastName());
+    QCOMPARE(locAlice.detail<QContactEmailAddress>().emailAddress(), localAlice.detail<QContactEmailAddress>().emailAddress());
+    QCOMPARE(locAlice.detail<QContactHobby>().hobby(), localAlice.detail<QContactHobby>().hobby());
+    QVERIFY(locAlice.detail<QContactPhoneNumber>().number().isEmpty());
+
+    // ensure that the aggregate contact contains the content we expect.
+    QCOMPARE(aggAlice.detail<QContactName>().firstName(), localAlice.detail<QContactName>().firstName());
+    QCOMPARE(aggAlice.detail<QContactName>().middleName(), localAlice.detail<QContactName>().middleName());
+    QCOMPARE(aggAlice.detail<QContactName>().lastName(), localAlice.detail<QContactName>().lastName());
+    QCOMPARE(aggAlice.detail<QContactEmailAddress>().emailAddress(), localAlice.detail<QContactEmailAddress>().emailAddress());
+    QCOMPARE(aggAlice.detail<QContactHobby>().hobby(), localAlice.detail<QContactHobby>().hobby());
+    QVERIFY(aggAlice.detail<QContactPhoneNumber>().number().isEmpty());
+
+    // and that it aggregates only localAlice
+    QVERIFY(aggAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(!aggAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(testAlice.id()));
+
+    // now modify the local contact; this shouldn't result in testAlice details being aggregated into the aggregate.
+    QContactNickname lnick;
+    lnick.setNickname("Ally");
+    localAlice = locAlice;
+    QVERIFY(localAlice.saveDetail(&lnick));
+    QVERIFY(m_cm->saveContact(&localAlice));
+    aggAlice = m_cm->contact(aggAlice.id());
+    QCOMPARE(aggAlice.detail<QContactNickname>().nickname(), localAlice.detail<QContactNickname>().nickname());
+    QVERIFY(aggAlice.detail<QContactPhoneNumber>().number().isEmpty());
+
+    // now modify the test contact; this shouldn't result in testAlice details being aggregated into the aggregate.
+    QContactAvatar tav;
+    tav.setImageUrl(QUrl(QStringLiteral("img://alice.in.wonderland.tld/avatar.png")));
+    QVERIFY(testAlice.saveDetail(&tav));
+    QVERIFY(m_cm->saveContact(&testAlice));
+    aggAlice = m_cm->contact(aggAlice.id());
+    QCOMPARE(aggAlice.detail<QContactNickname>().nickname(), localAlice.detail<QContactNickname>().nickname());
+    QVERIFY(aggAlice.detail<QContactPhoneNumber>().number().isEmpty());
+    QVERIFY(aggAlice.detail<QContactAvatar>().imageUrl().isEmpty());
+
+    // nor should the relationships have changed.
+    QVERIFY(aggAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(!aggAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(testAlice.id()));
+}
+
+void tst_Aggregation::updateSingleLocal()
+{
+    QContactCollectionFilter allCollections;
+
+    int aggCount = m_cm->contactIds().size();
+    int allCount = m_cm->contactIds(allCollections).size();
 
     // set up some signal spies
     QSignalSpy addSpy(m_cm, contactsAddedSignal);
@@ -639,17 +888,16 @@ void tst_Aggregation::updateSingleLocal()
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
     aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 2); // should have added local + aggregate
-    allCount = m_cm->contactIds(allSyncTargets).size();
+    QCOMPARE(m_cm->contactIds(allCollections).size(), allCount + 2); // should have added local + aggregate
+    allCount = m_cm->contactIds(allCollections).size();
 
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
     QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
     QContact localAlice;
     QContact aggregateAlice;
     bool foundLocalAlice = false;
     bool foundAggregateAlice = false;
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
         QContactHobby currHobby = curr.detail<QContactHobby>();
@@ -658,11 +906,11 @@ void tst_Aggregation::updateSingleLocal()
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("4567")
                 && currHobby.hobby() == QLatin1String("tennis")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 localAlice = curr;
                 foundLocalAlice = true;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -671,10 +919,10 @@ void tst_Aggregation::updateSingleLocal()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
 
-    // now update alice.  The aggregate should get updated also.
+    // now update local alice.  The aggregate should get updated also.
     QContactEmailAddress ae; // add an email address.
     ae.setEmailAddress("alice4@test.com");
     QVERIFY(localAlice.saveDetail(&ae));
@@ -724,18 +972,23 @@ void tst_Aggregation::updateSingleLocal()
     localAlice = m_cm->contact(retrievalId(localAlice));
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
     QCOMPARE(localAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QString::fromLatin1("alice4@test4.com"));
+    QCOMPARE(localAlice.details<QContactEmailAddress>().size(), 1);
     QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QString::fromLatin1("alice4@test4.com"));
+    QCOMPARE(aggregateAlice.details<QContactEmailAddress>().size(), 1);
     QCOMPARE(localAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("4444"));
+    QCOMPARE(localAlice.details<QContactPhoneNumber>().size(), 1);
     QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("4444"));
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1);
 }
 
+// we now require updates to occur to constituent contacts;
+// any attempt to save to an aggregate contact will result in an error.
 void tst_Aggregation::updateSingleAggregate()
 {
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
 
     int aggCount = m_cm->contactIds().size();
-    int allCount = m_cm->contactIds(allSyncTargets).size();
+    int allCount = m_cm->contactIds(allCollections).size();
 
     // set up some signal spies
     QSignalSpy addSpy(m_cm, contactsAddedSignal);
@@ -773,17 +1026,16 @@ void tst_Aggregation::updateSingleAggregate()
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
     aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 2); // should have added local + aggregate
-    allCount = m_cm->contactIds(allSyncTargets).size();
+    QCOMPARE(m_cm->contactIds(allCollections).size(), allCount + 2); // should have added local + aggregate
+    allCount = m_cm->contactIds(allCollections).size();
 
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
     QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
     QContact localAlice;
     QContact aggregateAlice;
     bool foundLocalAlice = false;
     bool foundAggregateAlice = false;
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
         QContactHobby currHobby = curr.detail<QContactHobby>();
@@ -792,11 +1044,11 @@ void tst_Aggregation::updateSingleAggregate()
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("567")
                 && currHobby.hobby() == QLatin1String("tennis")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 localAlice = curr;
                 foundLocalAlice = true;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -805,10 +1057,10 @@ void tst_Aggregation::updateSingleAggregate()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
 
-    // now update aggregate alice.  We expect the changes to "down promoted" to the local contact!
+    // now attempt update aggregate alice.  We expect the operation to fail.
     QContactEmailAddress ae; // add an email address
     ae.setEmailAddress("alice5@test.com");
     aggregateAlice.saveDetail(&ae);
@@ -819,41 +1071,48 @@ void tst_Aggregation::updateSingleAggregate()
     aggregateAlice.saveDetail(&maph);
     chgSpyCount = chgSpy.count();
     m_chgAccumulatedIds.clear();
-    QVERIFY(m_cm->saveContact(&aggregateAlice));
-    QTRY_VERIFY(chgSpy.count() > chgSpyCount);
-    QTRY_VERIFY(m_chgAccumulatedIds.contains(ContactId::apiId(localAlice)));
-    QTRY_VERIFY(m_chgAccumulatedIds.contains(ContactId::apiId(aggregateAlice)));
+    QVERIFY(!m_cm->saveContact(&aggregateAlice));
+    QTest::qWait(250);
+    QCOMPARE(chgSpy.count(), chgSpyCount);
+    QVERIFY(!m_chgAccumulatedIds.contains(ContactId::apiId(localAlice)));
+    QVERIFY(!m_chgAccumulatedIds.contains(ContactId::apiId(aggregateAlice)));
 
-    // reload them, and compare.
+    // reload them, and compare.  ensure that no changes have occurred.
     localAlice = m_cm->contact(retrievalId(localAlice));
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
-    QCOMPARE(localAlice.details<QContactEmailAddress>().size(), 1);
+    QCOMPARE(localAlice.details<QContactEmailAddress>().size(), 0);
     QCOMPARE(localAlice.details<QContactPhoneNumber>().size(), 1);
-    QCOMPARE(localAlice.details<QContactHobby>().size(), 0);
+    QCOMPARE(localAlice.details<QContactHobby>().size(), 1);
     QCOMPARE(localAlice.details<QContactNickname>().size(), 1);
-    QCOMPARE(aggregateAlice.details<QContactEmailAddress>().size(), 1);
+    QCOMPARE(aggregateAlice.details<QContactEmailAddress>().size(), 0);
     QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1);
-    QCOMPARE(aggregateAlice.details<QContactHobby>().size(), 0);
+    QCOMPARE(aggregateAlice.details<QContactHobby>().size(), 1);
     QCOMPARE(aggregateAlice.details<QContactNickname>().size(), 1);
-    QCOMPARE(localAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice5@test.com"));
-    QVERIFY(!detailProvenance(localAlice.detail<QContactEmailAddress>()).isEmpty());
-    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().value<QString>(QContactEmailAddress::FieldEmailAddress), QLatin1String("alice5@test.com"));
-    QCOMPARE(detailProvenance(aggregateAlice.detail<QContactEmailAddress>()), detailProvenance(localAlice.detail<QContactEmailAddress>()));
-    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QLatin1String("555"));
+    QCOMPARE(localAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QLatin1String("567"));
     QVERIFY(!detailProvenance(localAlice.detail<QContactPhoneNumber>()).isEmpty());
-    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QLatin1String("555"));
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QLatin1String("567"));
     QCOMPARE(detailProvenance(aggregateAlice.detail<QContactPhoneNumber>()), detailProvenance(localAlice.detail<QContactPhoneNumber>()));
-    QVERIFY(localAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
-    QVERIFY(aggregateAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby).isEmpty());
+    QCOMPARE(localAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QLatin1String("tennis"));
+    QVERIFY(!detailProvenance(localAlice.detail<QContactHobby>()).isEmpty());
+    QCOMPARE(aggregateAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QLatin1String("tennis"));
+    QCOMPARE(detailProvenance(aggregateAlice.detail<QContactHobby>()), detailProvenance(localAlice.detail<QContactHobby>()));
     QCOMPARE(localAlice.detail<QContactNickname>().value<QString>(QContactNickname::FieldNickname), QLatin1String("Ally"));
     QVERIFY(!detailProvenance(localAlice.detail<QContactNickname>()).isEmpty());
     QCOMPARE(aggregateAlice.detail<QContactNickname>().value<QString>(QContactNickname::FieldNickname), QLatin1String("Ally"));
     QCOMPARE(detailProvenance(aggregateAlice.detail<QContactNickname>()), detailProvenance(localAlice.detail<QContactNickname>()));
-    QCOMPARE(detailProvenanceContact(localAlice.detail<QContactNickname>()), detailProvenanceContact(localAlice.detail<QContactEmailAddress>()));
 }
 
+// we now require updates to occur to constituent contacts;
+// any attempt to save to an aggregate contact will result in an error.
 void tst_Aggregation::updateAggregateOfLocalAndSync()
 {
+    QContactCollection remoteAddressbook;
+    remoteAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    remoteAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    remoteAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    remoteAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    QVERIFY(m_cm->saveCollection(&remoteAddressbook));
+
     // local alice
     QContact alice;
     QContactName an;
@@ -878,6 +1137,8 @@ void tst_Aggregation::updateAggregateOfLocalAndSync()
 
     // sync alice
     QContact syncAlice;
+    syncAlice.setCollectionId(remoteAddressbook.id());
+
     QContactName san;
     san.setFirstName(an.firstName());
     san.setMiddleName(an.middleName());
@@ -904,72 +1165,77 @@ void tst_Aggregation::updateAggregateOfLocalAndSync()
 
     // now grab the aggregate alice
     QContactRelationshipFilter aggf;
-    setFilterContact(aggf, alice);
+    setFilterContactId(aggf, alice.id());
     aggf.setRelatedContactRole(QContactRelationship::Second);
     setFilterType(aggf, QContactRelationship::Aggregates);
     QList<QContact> allAggregatesOfAlice = m_cm->contacts(aggf);
     QCOMPARE(allAggregatesOfAlice.size(), 1);
     QContact aggregateAlice = allAggregatesOfAlice.at(0);
 
-    // now ensure that updates / modifies / removals work as expected
+    // now ensure that any attempt to modify the aggregate directly will fail.
     QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1); // comes from the local contact
     QContactPhoneNumber maph = aggregateAlice.detail<QContactPhoneNumber>();
+    QVERIFY((maph.accessConstraints() & QContactDetail::Irremovable) && (maph.accessConstraints() & QContactDetail::ReadOnly));
     maph.setNumber("11115");
-    QVERIFY(aggregateAlice.saveDetail(&maph)); // this should work, and modify the local contact's version.
+    QVERIFY(!aggregateAlice.saveDetail(&maph));
+
     QCOMPARE(aggregateAlice.details<QContactEmailAddress>().size(), 1); // there are two, but since the values were identical, should only have one!
     QContactEmailAddress mem = aggregateAlice.detail<QContactEmailAddress>();
+    QVERIFY((mem.accessConstraints() & QContactDetail::Irremovable) && (mem.accessConstraints() & QContactDetail::ReadOnly));
     mem.setEmailAddress("aliceP2@test.com");
-    QVERIFY(aggregateAlice.saveDetail(&mem)); // this has strange semantics.  It should modify the local contact's version
-                                     // but the regenerated aggregate will have BOTH email addresses - since we cannot remove
-                                     // or modify the email address from the sync-source contact.
-    QCOMPARE(aggregateAlice.details<QContactHobby>().size(), 1); // comes from the sync contact
+    QVERIFY(!aggregateAlice.saveDetail(&mem));
 
+    QCOMPARE(aggregateAlice.details<QContactHobby>().size(), 1); // comes from the sync contact
     QContactHobby rah = aggregateAlice.detail<QContactHobby>();
     QVERIFY(rah.accessConstraints() & QContactDetail::Irremovable);
     QVERIFY(rah.accessConstraints() & QContactDetail::ReadOnly);
     QVERIFY(!aggregateAlice.removeDetail(&rah)); // this should be irremovable, due to constraint on synced details
 
-    /*BUG IN MOBILITY - contact.saveDetail() doesn't check read only constraints :-/
     QContactNote man = aggregateAlice.detail<QContactNote>();
     QVERIFY(man.accessConstraints() & QContactDetail::Irremovable);
     QVERIFY(man.accessConstraints() & QContactDetail::ReadOnly);
     man.setNote("modified note");
     QVERIFY(!aggregateAlice.saveDetail(&man)); // this should be read only, due to constraint on synced details
-    */
 
-    QVERIFY(m_cm->saveContact(&aggregateAlice));
+    // but the attempted modifications should fail, due to modifying an aggregate.
+    QVERIFY(!m_cm->saveContact(&aggregateAlice));
 
-    // regenerate and ensure we get what we expect.
+    // re-retrieve and ensure we get what we expect.
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
-    QCOMPARE(aggregateAlice.details<QContactNickname>().size(), 1);     // original, comes from the local contact
+    QCOMPARE(aggregateAlice.details<QContactNickname>().size(), 1);     // comes from the local contact
     QVERIFY(!detailProvenance(aggregateAlice.detail<QContactNickname>()).isEmpty());
-    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1);  // modified, comes from the local contact
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1);  // comes from the local contact
     QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactPhoneNumber>()), detailProvenanceContact(aggregateAlice.detail<QContactNickname>()));
-    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("11115"));
-    QCOMPARE(aggregateAlice.details<QContactHobby>().size(), 1);        // couldn't remove, comes from the sync contact
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().value<QString>(QContactPhoneNumber::FieldNumber), QString::fromLatin1("11111"));
+    QCOMPARE(aggregateAlice.details<QContactHobby>().size(), 1);        // comes from the sync contact
     QVERIFY(!detailProvenance(aggregateAlice.detail<QContactHobby>()).isEmpty());
     QCOMPARE(aggregateAlice.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QString::fromLatin1("tennis"));
-    QCOMPARE(aggregateAlice.details<QContactNote>().size(), 1);         // couldn't modify, comes from the sync contact
+    QCOMPARE(aggregateAlice.details<QContactNote>().size(), 1);         // comes from the sync contact
     QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactNote>()), detailProvenanceContact(aggregateAlice.detail<QContactHobby>()));
     QVERIFY(detailProvenanceContact(aggregateAlice.detail<QContactNote>()) != detailProvenanceContact(aggregateAlice.detail<QContactNickname>()));
     QCOMPARE(aggregateAlice.detail<QContactNote>().value<QString>(QContactNote::FieldNote), QString::fromLatin1("noteworthy note"));
 
     QList<QContactEmailAddress> aaems = aggregateAlice.details<QContactEmailAddress>();
-    QCOMPARE(aaems.size(), 2); // modified local, now have two different values
-    if (aaems.at(0).emailAddress() == QLatin1String("aliceP@test.com")) { // order is undefined.
-        QCOMPARE(detailProvenanceContact(aaems.at(0)), detailProvenanceContact(aggregateAlice.detail<QContactHobby>()));
-        QCOMPARE(aaems.at(1).emailAddress(), QLatin1String("aliceP2@test.com"));
-        QCOMPARE(detailProvenanceContact(aaems.at(1)), detailProvenanceContact(aggregateAlice.detail<QContactNickname>()));
-    } else {
-        QCOMPARE(aaems.at(0).emailAddress(), QLatin1String("aliceP2@test.com"));
-        QCOMPARE(detailProvenanceContact(aaems.at(0)), detailProvenanceContact(aggregateAlice.detail<QContactNickname>()));
-        QCOMPARE(aaems.at(1).emailAddress(), QLatin1String("aliceP@test.com"));
-        QCOMPARE(detailProvenanceContact(aaems.at(1)), detailProvenanceContact(aggregateAlice.detail<QContactHobby>()));
-    }
+    QCOMPARE(aaems.size(), 1); // values should be unchanged (and identical).
+    QCOMPARE(aaems.at(0).emailAddress(), QLatin1String("aliceP@test.com"));
 }
 
 void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
 {
+    QContactCollection remoteAddressbook;
+    remoteAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    remoteAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    remoteAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    remoteAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    QVERIFY(m_cm->saveCollection(&remoteAddressbook));
+
+    QContactCollection remoteAddressbook2;
+    remoteAddressbook2.setMetaData(QContactCollection::KeyName, QStringLiteral("trial"));
+    remoteAddressbook2.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    remoteAddressbook2.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 6);
+    remoteAddressbook2.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/trial");
+    QVERIFY(m_cm->saveCollection(&remoteAddressbook2));
+
     // local alice
     QContact alice;
     {
@@ -993,6 +1259,7 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
 
     // first syncTarget alice
     QContact testAlice;
+    testAlice.setCollectionId(remoteAddressbook.id());
     {
         QContactName name;
         name.setFirstName(localName.firstName());
@@ -1028,6 +1295,7 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
 
     // second syncTarget alice
     QContact trialAlice;
+    trialAlice.setCollectionId(remoteAddressbook2.id());
     {
         QContactName name;
         name.setFirstName(localName.firstName());
@@ -1060,7 +1328,7 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
     QContact aggregateAlice;
     {
         QContactRelationshipFilter filter;
-        setFilterContact(filter, alice);
+        setFilterContactId(filter, alice.id());
         filter.setRelatedContactRole(QContactRelationship::Second);
         setFilterType(filter, QContactRelationship::Aggregates);
         QList<QContact> allAggregatesOfAlice = m_cm->contacts(filter);
@@ -1083,7 +1351,7 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
     QVERIFY(detailProvenanceContact(aggregateAlice.detail<QContactRingtone>()) != localContact);
 
     // Ringtone found only in the 'test' contact
-    const QString testContact(detailProvenanceContact(aggregateAlice.detail<QContactRingtone>()));
+    const QString teabContact(detailProvenanceContact(aggregateAlice.detail<QContactRingtone>()));
 
     QCOMPARE(aggregateAlice.details<QContactEmailAddress>().size(), 2);
     QVERIFY(!detailProvenance(aggregateAlice.details<QContactEmailAddress>().at(0)).isEmpty());
@@ -1093,15 +1361,15 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
     QVERIFY(detailProvenanceContact(aggregateAlice.details<QContactEmailAddress>().at(0)) != detailProvenanceContact(aggregateAlice.details<QContactEmailAddress>().at(1)));
 
     QCOMPARE(aggregateAlice.details<QContactNote>().size(), 1);
-    QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactNote>()), testContact);
+    QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactNote>()), teabContact);
 
     QCOMPARE(aggregateAlice.details<QContactHobby>().size(), 1);
-    QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactHobby>()), testContact);
+    QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactHobby>()), teabContact);
 
     QCOMPARE(aggregateAlice.details<QContactTag>().size(), 1);
     QVERIFY(!detailProvenance(aggregateAlice.detail<QContactTag>()).isEmpty());
     QVERIFY(detailProvenanceContact(aggregateAlice.detail<QContactTag>()) != localContact);
-    QVERIFY(detailProvenanceContact(aggregateAlice.detail<QContactTag>()) != testContact);
+    QVERIFY(detailProvenanceContact(aggregateAlice.detail<QContactTag>()) != teabContact);
 
     // Tag found only in the 'trial' contact
     const QString trialContact(detailProvenanceContact(aggregateAlice.detail<QContactTag>()));
@@ -1138,89 +1406,87 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
     QCOMPARE(trialAlice.detail<QContactEmailAddress>().value(QContactDetail__FieldModifiable).toBool(), true);
     QCOMPARE(trialAlice.detail<QContactOrganization>().value(QContactDetail__FieldModifiable).toBool(), true);
 
-    // Aggregate details which are promoted from modifiable details are not readonly
-    QVERIFY((aggregateAlice.detail<QContactName>().accessConstraints() & QContactDetail::ReadOnly) == 0);
-    QVERIFY((aggregateAlice.detail<QContactNickname>().accessConstraints() & QContactDetail::ReadOnly) == 0);
-    QVERIFY((aggregateAlice.detail<QContactPhoneNumber>().accessConstraints() & QContactDetail::ReadOnly) == 0);
-    QVERIFY((aggregateAlice.details<QContactEmailAddress>().at(0).accessConstraints() & QContactDetail::ReadOnly) == 0);
-    QVERIFY((aggregateAlice.details<QContactEmailAddress>().at(1).accessConstraints() & QContactDetail::ReadOnly) == 0);
+    // Aggregate details which are promoted even from modifiable details are readonly
+    QVERIFY((aggregateAlice.detail<QContactName>().accessConstraints() & QContactDetail::ReadOnly) > 0);
+    QVERIFY((aggregateAlice.detail<QContactNickname>().accessConstraints() & QContactDetail::ReadOnly) > 0);
+    QVERIFY((aggregateAlice.detail<QContactPhoneNumber>().accessConstraints() & QContactDetail::ReadOnly) > 0);
+    QVERIFY((aggregateAlice.details<QContactEmailAddress>().at(0).accessConstraints() & QContactDetail::ReadOnly) > 0);
+    QVERIFY((aggregateAlice.details<QContactEmailAddress>().at(1).accessConstraints() & QContactDetail::ReadOnly) > 0);
     QVERIFY((aggregateAlice.detail<QContactHobby>().accessConstraints() & QContactDetail::ReadOnly) > 0);
-    QVERIFY((aggregateAlice.detail<QContactNote>().accessConstraints() & QContactDetail::ReadOnly) == 0);
-    QVERIFY((aggregateAlice.detail<QContactOrganization>().accessConstraints() & QContactDetail::ReadOnly) == 0);
+    QVERIFY((aggregateAlice.detail<QContactNote>().accessConstraints() & QContactDetail::ReadOnly) > 0);
+    QVERIFY((aggregateAlice.detail<QContactOrganization>().accessConstraints() & QContactDetail::ReadOnly) > 0);
     QVERIFY((aggregateAlice.detail<QContactRingtone>().accessConstraints() & QContactDetail::ReadOnly) > 0);
     QVERIFY((aggregateAlice.detail<QContactTag>().accessConstraints() & QContactDetail::ReadOnly) > 0);
 
-    // now ensure that updates / modifies / removals work as expected
+    // now ensure that attempts to modify the aggregate contact fail as expected.
     {
-        // locally-originated detail - should be modified
+        // locally-originated detail
         QContactPhoneNumber phoneNumber = aggregateAlice.detail<QContactPhoneNumber>();
         phoneNumber.setNumber("22222");
-        QVERIFY(aggregateAlice.saveDetail(&phoneNumber));
+        QVERIFY(!aggregateAlice.saveDetail(&phoneNumber));
 
-        // modifiable sync details - should be modified in each contact
+        // sync constituent details
         foreach (QContactEmailAddress emailAddress, aggregateAlice.details<QContactEmailAddress>()) {
             if (emailAddress.emailAddress() == QString::fromLatin1("aliceP@test.com")) {
                 emailAddress.setEmailAddress("aliceP2@test.com");
-                QVERIFY(aggregateAlice.saveDetail(&emailAddress));
+                QVERIFY(!aggregateAlice.saveDetail(&emailAddress));
             } else {
                 emailAddress.setEmailAddress("alice2@example.org");
-                QVERIFY(aggregateAlice.saveDetail(&emailAddress));
+                QVERIFY(!aggregateAlice.saveDetail(&emailAddress));
             }
         }
 
-        // modifiable sync detail - should be removed
+        // sync constituent detail which is modifiable in constituent
         QContactNote note = aggregateAlice.detail<QContactNote>();
-        QVERIFY(aggregateAlice.removeDetail(&note));
+        QVERIFY(!aggregateAlice.removeDetail(&note));
 
-        // modifiable sync detail - should be removed
+        // sync constituent detail which is modifiable in constituent
         QContactOrganization organization = aggregateAlice.detail<QContactOrganization>();
-        QVERIFY(aggregateAlice.removeDetail(&organization));
+        QVERIFY(!aggregateAlice.removeDetail(&organization));
 
-        // unmodifiable sync detail - modification should be pushed to local
+        // sync constituent detail which is non-modifiable in constituent
         QContactHobby hobby = aggregateAlice.detail<QContactHobby>();
         hobby.setHobby("crochet");
-        QVERIFY(aggregateAlice.saveDetail(&hobby));
+        QVERIFY(!aggregateAlice.saveDetail(&hobby));
     }
 
-    QVERIFY(m_cm->saveContact(&aggregateAlice));
+    QVERIFY(!m_cm->saveContact(&aggregateAlice));
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+
+    // ensure that no changes have occurred.
 
     QCOMPARE(aggregateAlice.details<QContactNickname>().size(), 1);
     QVERIFY(!detailProvenance(aggregateAlice.detail<QContactNickname>()).isEmpty());
 
     QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1);
     QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactPhoneNumber>()), localContact);
-    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().at(0).number(), QString::fromLatin1("22222"));
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().at(0).number(), QString::fromLatin1("11111"));
 
     QList<QContactEmailAddress> aaeas = aggregateAlice.details<QContactEmailAddress>();
     QCOMPARE(aaeas.size(), 2);
-    if (aaeas.at(0).emailAddress() == QString::fromLatin1("aliceP2@test.com")) {
-        QCOMPARE(detailProvenanceContact(aaeas.at(0)), testContact);
+    if (aaeas.at(0).emailAddress() == QString::fromLatin1("aliceP@test.com")) {
+        QCOMPARE(detailProvenanceContact(aaeas.at(0)), teabContact);
         QCOMPARE(detailProvenanceContact(aaeas.at(1)), trialContact);
-        QCOMPARE(aaeas.at(1).emailAddress(), QString::fromLatin1("alice2@example.org"));
+        QCOMPARE(aaeas.at(1).emailAddress(), QString::fromLatin1("alice@example.org"));
     } else {
         QCOMPARE(detailProvenanceContact(aaeas.at(0)), trialContact);
-        QCOMPARE(aaeas.at(0).emailAddress(), QString::fromLatin1("alice2@example.org"));
-        QCOMPARE(detailProvenanceContact(aaeas.at(1)), testContact);
-        QCOMPARE(aaeas.at(1).emailAddress(), QString::fromLatin1("aliceP2@test.com"));
+        QCOMPARE(aaeas.at(0).emailAddress(), QString::fromLatin1("alice@example.org"));
+        QCOMPARE(detailProvenanceContact(aaeas.at(1)), teabContact);
+        QCOMPARE(aaeas.at(1).emailAddress(), QString::fromLatin1("aliceP@test.com"));
     }
 
-    QCOMPARE(aggregateAlice.details<QContactNote>().size(), 0);
+    QCOMPARE(aggregateAlice.details<QContactNote>().size(), 1);
+    QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactNote>()), teabContact);
+    QCOMPARE(aggregateAlice.details<QContactNote>().at(0).note(), QString::fromLatin1("noteworthy note"));
 
     QList<QContactHobby> aahs = aggregateAlice.details<QContactHobby>();
-    QCOMPARE(aahs.size(), 2);
-    if (aahs.at(0).hobby() == QString::fromLatin1("tennis")) {
-        QCOMPARE(detailProvenanceContact(aahs.at(0)), testContact);
-        QCOMPARE(aahs.at(1).hobby(), QString::fromLatin1("crochet"));
-        QCOMPARE(detailProvenanceContact(aahs.at(1)), localContact);
-    } else {
-        QCOMPARE(aahs.at(0).hobby(), QString::fromLatin1("crochet"));
-        QCOMPARE(detailProvenanceContact(aahs.at(0)), localContact);
-        QCOMPARE(aahs.at(1).hobby(), QString::fromLatin1("tennis"));
-        QCOMPARE(detailProvenanceContact(aahs.at(1)), testContact);
-    }
+    QCOMPARE(aahs.size(), 1);
+    QCOMPARE(aggregateAlice.details<QContactHobby>().at(0).hobby(), QString::fromLatin1("tennis"));
+    QCOMPARE(detailProvenanceContact(aahs.at(0)), teabContact);
 
-    QCOMPARE(aggregateAlice.details<QContactOrganization>().size(), 0);
+    QCOMPARE(aggregateAlice.details<QContactOrganization>().size(), 1);
+    QCOMPARE(detailProvenanceContact(aggregateAlice.detail<QContactOrganization>()), trialContact);
+    QCOMPARE(aggregateAlice.details<QContactOrganization>().at(0).role(), QString::fromLatin1("CEO"));
 
     // Modifiability should be unaffected
 
@@ -1246,80 +1512,47 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
     QCOMPARE(trialAlice.detail<QContactTag>().value(QContactDetail__FieldModifiable).toBool(), false);
     QCOMPARE(trialAlice.detail<QContactEmailAddress>().value(QContactDetail__FieldModifiable).toBool(), true);
 
-    // Aggregate details which are promoted from modifiable details are not readonly
-    QVERIFY((aggregateAlice.detail<QContactName>().accessConstraints() & QContactDetail::ReadOnly) == 0);
-    QVERIFY((aggregateAlice.detail<QContactPhoneNumber>().accessConstraints() & QContactDetail::ReadOnly) == 0);
-    QVERIFY((aggregateAlice.details<QContactEmailAddress>().at(0).accessConstraints() & QContactDetail::ReadOnly) == 0);
-    QVERIFY((aggregateAlice.details<QContactEmailAddress>().at(1).accessConstraints() & QContactDetail::ReadOnly) == 0);
-    if ((aggregateAlice.details<QContactHobby>().at(0).accessConstraints() & QContactDetail::ReadOnly) > 0) {
-        QVERIFY((aggregateAlice.details<QContactHobby>().at(1).accessConstraints() & QContactDetail::ReadOnly) == 0);
-    } else {
-        QVERIFY((aggregateAlice.details<QContactHobby>().at(1).accessConstraints() & QContactDetail::ReadOnly) > 0);
-    }
+    // Aggregate details which are promoted from modifiable details are still readonly
+    QVERIFY((aggregateAlice.detail<QContactName>().accessConstraints() & QContactDetail::ReadOnly) > 0);
+    QVERIFY((aggregateAlice.detail<QContactPhoneNumber>().accessConstraints() & QContactDetail::ReadOnly) > 0);
+    QVERIFY((aggregateAlice.details<QContactEmailAddress>().at(0).accessConstraints() & QContactDetail::ReadOnly) > 0);
+    QVERIFY((aggregateAlice.details<QContactEmailAddress>().at(1).accessConstraints() & QContactDetail::ReadOnly) > 0);
+    QVERIFY((aggregateAlice.details<QContactHobby>().at(0).accessConstraints() & QContactDetail::ReadOnly) > 0);
     QVERIFY((aggregateAlice.detail<QContactRingtone>().accessConstraints() & QContactDetail::ReadOnly) > 0);
     QVERIFY((aggregateAlice.detail<QContactTag>().accessConstraints() & QContactDetail::ReadOnly) > 0);
-
-    // Modified details should remain modifiable after modification
-    {
-        foreach (QContactEmailAddress emailAddress, aggregateAlice.details<QContactEmailAddress>()) {
-            if (emailAddress.emailAddress() == QString::fromLatin1("aliceP2@test.com")) {
-                emailAddress.setEmailAddress("aliceP3@test.com");
-                QVERIFY(aggregateAlice.saveDetail(&emailAddress));
-            } else {
-                emailAddress.setEmailAddress("alice3@example.org");
-                QVERIFY(aggregateAlice.saveDetail(&emailAddress));
-            }
-        }
-    }
-
-    QVERIFY(m_cm->saveContact(&aggregateAlice));
-    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
-
-    aaeas = aggregateAlice.details<QContactEmailAddress>();
-    QCOMPARE(aaeas.size(), 2);
-    if (aaeas.at(0).emailAddress() == QString::fromLatin1("aliceP3@test.com")) {
-        QCOMPARE(detailProvenanceContact(aaeas.at(0)), testContact);
-        QCOMPARE(detailProvenanceContact(aaeas.at(1)), trialContact);
-        QCOMPARE(aaeas.at(1).emailAddress(), QString::fromLatin1("alice3@example.org"));
-    } else {
-        QCOMPARE(detailProvenanceContact(aaeas.at(0)), trialContact);
-        QCOMPARE(aaeas.at(0).emailAddress(), QString::fromLatin1("alice3@example.org"));
-        QCOMPARE(detailProvenanceContact(aaeas.at(1)), testContact);
-        QCOMPARE(aaeas.at(1).emailAddress(), QString::fromLatin1("aliceP3@test.com"));
-    }
-
-    testAlice = m_cm->contact(retrievalId(testAlice));
-    QCOMPARE(testAlice.details<QContactEmailAddress>().count(), 1);
-    QCOMPARE(testAlice.details<QContactEmailAddress>().at(0).emailAddress(), QString::fromLatin1("aliceP3@test.com"));
-    QCOMPARE(testAlice.detail<QContactEmailAddress>().value(QContactDetail__FieldModifiable).toBool(), true);
-
-    trialAlice = m_cm->contact(retrievalId(trialAlice));
-    QCOMPARE(trialAlice.details<QContactEmailAddress>().count(), 1);
-    QCOMPARE(trialAlice.details<QContactEmailAddress>().at(0).emailAddress(), QString::fromLatin1("alice3@example.org"));
-    QCOMPARE(trialAlice.detail<QContactEmailAddress>().value(QContactDetail__FieldModifiable).toBool(), true);
 }
 
 void tst_Aggregation::compositionPrefersLocal()
 {
     // Composed details should prefer the values of the local, where present
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
+
+    // Create the addressbook collections
+    QContactCollection testCollection1, testCollection2, testCollection3;
+    testCollection1.setMetaData(QContactCollection::KeyName, QStringLiteral("test1"));
+    testCollection1.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    testCollection2.setMetaData(QContactCollection::KeyName, QStringLiteral("test2"));
+    testCollection2.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    testCollection3.setMetaData(QContactCollection::KeyName, QStringLiteral("test3"));
+    testCollection3.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    testCollection3.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testCollection3.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test3");
+    QVERIFY(m_cm->saveCollection(&testCollection1));
+    QVERIFY(m_cm->saveCollection(&testCollection2));
+    QVERIFY(m_cm->saveCollection(&testCollection3));
 
     // These contacts should all be aggregated together
-    QContact stContact1, stContact2, stContact3, localContact;
+    QContact abContact1, abContact2, abContact3, localContact;
 
     QContactName n1;
     n1.setPrefix(QLatin1String("Supt."));
     n1.setFirstName(QLatin1String("Link"));
     n1.setMiddleName(QLatin1String("Alice"));
     n1.setLastName(QLatin1String("CompositionTester"));
-    stContact1.saveDetail(&n1);
+    abContact1.saveDetail(&n1);
 
-    QContactSyncTarget sast;
-    sast.setSyncTarget(QLatin1String("test1"));
-    stContact1.saveDetail(&sast);
-
-    QVERIFY(m_cm->saveContact(&stContact1));
+    abContact1.setCollectionId(testCollection1.id());
+    QVERIFY(m_cm->saveContact(&abContact1));
 
     QContactName n2;
     n2.setFirstName(QLatin1String("Link"));
@@ -1334,62 +1567,66 @@ void tst_Aggregation::compositionPrefersLocal()
     n3.setMiddleName(QLatin1String("Charlie"));
     n3.setLastName(QLatin1String("CompositionTester"));
     n3.setSuffix(QLatin1String("Esq."));
-    stContact2.saveDetail(&n3);
+    abContact2.saveDetail(&n3);
 
-    sast.setSyncTarget(QLatin1String("test2"));
-    stContact2.saveDetail(&sast);
-
-    QVERIFY(m_cm->saveContact(&stContact2));
+    abContact2.setCollectionId(testCollection2.id());
+    QVERIFY(m_cm->saveContact(&abContact2));
 
     // Add a contact via synchronization
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
     QContactName n4;
     n4.setFirstName(QLatin1String("Link"));
     n4.setMiddleName(QLatin1String("Donatella"));
     n4.setLastName(QLatin1String("CompositionTester"));
-    stContact3.saveDetail(&n4);
-
-    QList<QPair<QContact, QContact> > modifications;
-    modifications.append(qMakePair(QContact(), stContact3));
-
+    abContact3.saveDetail(&n4);
+    QContactStatusFlags flags;
+    flags.setFlag(QContactStatusFlags::IsAdded, true);
+    abContact3.saveDetail(&flags, QContact::IgnoreAccessConstraints);
     QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy policy(QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges);
     QContactManager::Error err;
+    QHash<QContactCollection*, QList<QContact> *> additions;
+    QHash<QContactCollection*, QList<QContact> *> modifications;
+    QList<QContact> modifiedContacts;
+    modifiedContacts.append(abContact3); // in this case, the change is an addition.
+    modifications.insert(&testCollection3, &modifiedContacts);
+    QVERIFY(cme->storeChanges(
+            &additions,                     // not adding any collections
+            &modifications,
+            QList<QContactCollectionId>(),  // not deleting any collections
+            policy, true, &err));
 
-    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
-    QVERIFY(cme->storeSyncContacts("test3", policy, &modifications, &err));
-
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
-    QContact st1, st2, st3, l, a;
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
+    QContact abc1, abc2, abc3, l, a; // addressbook contacts 1,2,3, local, aggregate.
     foreach (const QContact &curr, allContacts) {
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Link") && currName.lastName() == QLatin1String("CompositionTester")) {
-            QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
-            if (currSt.syncTarget() == QLatin1String("test1")) {
-                st1 = curr;
-            } else if (currSt.syncTarget() == QLatin1String("test2")) {
-                st2 = curr;
-            } else if (currSt.syncTarget() == QLatin1String("test3")) {
-                st3 = curr;
-            } else if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId() == testCollection1.id()) {
+                abc1 = curr;
+            } else if (curr.collectionId() == testCollection2.id()) {
+                abc2 = curr;
+            } else if (curr.collectionId() == testCollection3.id()) {
+                abc3 = curr;
+            } else if (curr.collectionId().localId() == localAddressbookId()) {
                 l = curr;
-            } else if (currSt.syncTarget() == QLatin1String("aggregate")) {
+            } else if (curr.collectionId().localId() == aggregateAddressbookId()) {
                 a = curr;
             }
         }
     }
 
-    QVERIFY(st1.id() != QContactId());
-    QVERIFY(st2.id() != QContactId());
-    QVERIFY(st3.id() != QContactId());
+    QVERIFY(abc1.id() != QContactId());
+    QVERIFY(abc2.id() != QContactId());
+    QVERIFY(abc3.id() != QContactId());
     QVERIFY(l.id() != QContactId());
     QVERIFY(a.id() != QContactId());
-    QVERIFY(relatedContactIds(st1.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(a.id()));
-    QVERIFY(relatedContactIds(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(st1.id()));
-    QVERIFY(relatedContactIds(st2.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(a.id()));
-    QVERIFY(relatedContactIds(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(st2.id()));
-    QVERIFY(relatedContactIds(st3.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(a.id()));
-    QVERIFY(relatedContactIds(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(st3.id()));
-    QVERIFY(relatedContactIds(l.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(a.id()));
-    QVERIFY(relatedContactIds(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(l.id()));
+    QVERIFY(abc1.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(a.id()));
+    QVERIFY(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(abc1.id()));
+    QVERIFY(abc2.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(a.id()));
+    QVERIFY(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(abc2.id()));
+    QVERIFY(abc3.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(a.id()));
+    QVERIFY(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(abc3.id()));
+    QVERIFY(l.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(a.id()));
+    QVERIFY(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(l.id()));
 
     // The name of the local contact should be prioritized in aggregation
     QContactName name(a.detail<QContactName>());
@@ -1400,19 +1637,19 @@ void tst_Aggregation::compositionPrefersLocal()
     QCOMPARE(name.suffix(), n3.suffix());
 
     // Change the names in non-local constituents
-    n1 = st1.detail<QContactName>();
+    n1 = abc1.detail<QContactName>();
     n1.setPrefix(QLatin1String("Dr."));
     n1.setMiddleName(QLatin1String("Enzo"));
-    st1.saveDetail(&n1);
-    QVERIFY(m_cm->saveContact(&st1));
+    abc1.saveDetail(&n1);
+    QVERIFY(m_cm->saveContact(&abc1));
 
     // Update with a definition mask
-    n3 = st2.detail<QContactName>();
+    n3 = abc2.detail<QContactName>();
     n3.setMiddleName(QLatin1String("Francois"));
     n3.setSuffix(QLatin1String("MBA"));
-    st2.saveDetail(&n3);
+    abc2.saveDetail(&n3);
     QList<QContact> saveList;
-    saveList.append(st2);
+    saveList.append(abc2);
     QVERIFY(m_cm->saveContacts(&saveList, QList<QContactDetail::DetailType>() << QContactName::Type));
 
     a = m_cm->contact(retrievalId(a));
@@ -1423,10 +1660,12 @@ void tst_Aggregation::compositionPrefersLocal()
     QCOMPARE(name.suffix(), n3.suffix());
 
     // Update with a definition mask not including name (should not update, but local still has priority)
-    QContactName n5 = st2.detail<QContactName>();
+    QContactName n5 = abc2.detail<QContactName>();
     n5.setMiddleName(QLatin1String("Guillermo"));
     n5.setSuffix(QLatin1String("Ph.D"));
-    st2.saveDetail(&n5);
+    abc2.saveDetail(&n5);
+    saveList.clear();
+    saveList.append(abc2);
     QVERIFY(m_cm->saveContacts(&saveList, QList<QContactDetail::DetailType>() << QContactAvatar::Type));
 
     a = m_cm->contact(retrievalId(a));
@@ -1437,33 +1676,56 @@ void tst_Aggregation::compositionPrefersLocal()
     QCOMPARE(name.suffix(), n3.suffix());
 
     // Update via synchronization
-    QList<QContactId> exportedIds;
-    QList<QContact> syncContacts;
-    QDateTime updatedSyncTime;
-    QVERIFY(cme->fetchSyncContacts("test3", QDateTime(), exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
-    QCOMPARE(syncContacts.count(), 1);
-
-    QContact modified(syncContacts.at(0));
+    QContact modified;
+    {
+        QList<QContact> addedContacts;
+        QList<QContact> modifiedContacts;
+        QList<QContact> deletedContacts;
+        QList<QContact> unmodifiedContacts;
+        QVERIFY(cme->fetchContactChanges(
+                    testCollection3.id(),
+                    &addedContacts,
+                    &modifiedContacts,
+                    &deletedContacts,
+                    &unmodifiedContacts,
+                    &err));
+        QCOMPARE(addedContacts.count(), 0);
+        QCOMPARE(modifiedContacts.count(), 0);
+        QCOMPARE(deletedContacts.count(), 0);
+        QCOMPARE(unmodifiedContacts.count(), 1);
+        modified = unmodifiedContacts.first();
+    }
 
     n4 = modified.detail<QContactName>();
     n4.setMiddleName(QLatin1String("Hector"));
     modified.saveDetail(&n4);
 
+    // mark the contact as modified for the sync operation.
+    flags = modified.detail<QContactStatusFlags>();
+    flags.setFlag(QContactStatusFlags::IsModified, true);
+    modified.saveDetail(&flags, QContact::IgnoreAccessConstraints);
+
     modifications.clear();
-    modifications.append(qMakePair(syncContacts.at(0), modified));
-    QVERIFY(cme->storeSyncContacts("test3", policy, &modifications, &err));
+    modifiedContacts.clear();
+    modifiedContacts.append(modified);
+    modifications.insert(&testCollection3, &modifiedContacts);
+    QVERIFY(cme->storeChanges(
+        &additions,                     // not adding any collections
+        &modifications,
+        QList<QContactCollectionId>(),  // not deleting any collections
+        policy, true, &err));
 
     a = m_cm->contact(retrievalId(a));
     l = m_cm->contact(retrievalId(l));
 
-    // The sync update will also update the local
+    // The sync update will not update the local.
+    // Since the local data is preferred for aggregation, the aggregate will not update.
     name = a.detail<QContactName>();
-    QCOMPARE(name.middleName(), n4.middleName());
+    QCOMPARE(name.middleName(), n2.middleName());
     QCOMPARE(name.prefix(), n1.prefix());
     QCOMPARE(name.suffix(), n3.suffix());
-
     name = l.detail<QContactName>();
-    QCOMPARE(name.middleName(), n4.middleName());
+    QCOMPARE(name.middleName(), n2.middleName()); // unchanged
 
     // Local changes override other changes
     n2 = l.detail<QContactName>();
@@ -1486,246 +1748,9 @@ void tst_Aggregation::compositionPrefersLocal()
     QCOMPARE(name.suffix(), n3.suffix());
 }
 
-void tst_Aggregation::promotionToSingleLocal()
-{
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
-
-    // first, save a sync target alice.  This should generate an aggregate, but not a local.
-    // (with no last name, we require QContactIncidental to find the correct aggregate)
-    QContact syncAlice;
-    QContactName san;
-    san.setFirstName(QLatin1String("Single"));
-    san.setMiddleName(QLatin1String("Promotion"));
-    syncAlice.saveDetail(&san);
-
-    QContactEmailAddress saem;
-    saem.setEmailAddress(QLatin1String("spta@test.com"));
-    syncAlice.saveDetail(&saem);
-
-    QContactSyncTarget sast;
-    sast.setSyncTarget(QLatin1String("test"));
-    syncAlice.saveDetail(&sast);
-
-    QVERIFY(m_cm->saveContact(&syncAlice));
-
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
-    QContact aggregateAlice;
-    QContact localAlice;
-    bool foundLocalAlice = false;
-    bool foundSyncAlice = false;
-    bool foundAggregateAlice = false;
-    foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
-        QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
-        QContactName currName = curr.detail<QContactName>();
-        if (currName.firstName() == QLatin1String("Single")
-                && currName.middleName() == QLatin1String("Promotion")
-                && currName.lastName().isEmpty()
-                && currEm.emailAddress() == QLatin1String("spta@test.com")) {
-            if (currSt.syncTarget() == QLatin1String("test")) {
-                syncAlice = curr;
-                foundSyncAlice = true;
-            } else if (currSt.syncTarget() == QLatin1String("local")) {
-                localAlice = curr;
-                foundLocalAlice = true;
-            } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
-                aggregateAlice = curr;
-                foundAggregateAlice = true;
-            }
-        }
-    }
-
-    QVERIFY(!foundLocalAlice); // shouldn't have created a local
-    QVERIFY(foundSyncAlice);
-    QVERIFY(foundAggregateAlice); // should have created an aggregate
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
-
-    // now we favoritify the aggregate contact.
-    // this should cause the creation of a local contact.
-    // The favoriteness should be promoted down to the local, but not to the sync.
-    // Also, the email address should not be promoted down to the local, as it
-    // came from the sync.
-    QContactFavorite afav = aggregateAlice.detail<QContactFavorite>();
-    afav.setFavorite(true);
-    QVERIFY(aggregateAlice.saveDetail(&afav)); // this overwrites the existing one.
-    QVERIFY(m_cm->saveContact(&aggregateAlice)); // should succeed, and update.
-
-    allContacts = m_cm->contacts(allSyncTargets);
-    foundLocalAlice = false;
-    foundSyncAlice = false;
-    foundAggregateAlice = false;
-    foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
-        QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
-        QContactName currName = curr.detail<QContactName>();
-        QContactFavorite currFav = curr.detail<QContactFavorite>();
-        if (currName.firstName() == QLatin1String("Single")
-                && currName.middleName() == QLatin1String("Promotion")
-                && currName.lastName().isEmpty()) {
-            if (currSt.syncTarget() == QLatin1String("test")) {
-                QVERIFY(!foundSyncAlice); // found more than one = error...
-                QCOMPARE(currEm.emailAddress(), QLatin1String("spta@test.com"));
-                QVERIFY(!currFav.isFavorite());
-                syncAlice = curr;
-                foundSyncAlice = true;
-            } else if (currSt.syncTarget() == QLatin1String("local")) {
-                QVERIFY(!foundLocalAlice); // found more than one = error...
-                QCOMPARE(currEm.emailAddress(), QString());
-                QVERIFY(currFav.isFavorite());
-                localAlice = curr;
-                foundLocalAlice = true;
-            } else {
-                QVERIFY(!foundAggregateAlice); // found more than one = error...
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
-                QCOMPARE(currEm.emailAddress(), QLatin1String("spta@test.com"));
-                QVERIFY(currFav.isFavorite());
-                aggregateAlice = curr;
-                foundAggregateAlice = true;
-            }
-        }
-    }
-
-    // ensure that we found them all
-    QVERIFY(foundLocalAlice);
-    QVERIFY(foundSyncAlice);
-    QVERIFY(foundAggregateAlice);
-
-    // ensure they're related as required.
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
-
-    // the created local contact is incidental; the others are not
-    QVERIFY(!localAlice.details<QContactIncidental>().isEmpty());
-    QVERIFY(localAlice.detail<QContactStatusFlags>().testFlag(QContactStatusFlags::IsIncidental));
-    QVERIFY(syncAlice.details<QContactIncidental>().isEmpty());
-    QVERIFY(!syncAlice.detail<QContactStatusFlags>().testFlag(QContactStatusFlags::IsIncidental));
-    QVERIFY(aggregateAlice.details<QContactIncidental>().isEmpty());
-    QVERIFY(!aggregateAlice.detail<QContactStatusFlags>().testFlag(QContactStatusFlags::IsIncidental));
-
-    // finally, save a phone number in the aggregate.
-    // this should get downpromoted to the local.
-    // no more local contacts should be generated.
-    QContactPhoneNumber aphn;
-    aphn.setNumber("11111");
-    QVERIFY(aggregateAlice.saveDetail(&aphn));
-    QVERIFY(m_cm->saveContact(&aggregateAlice));
-
-    allContacts = m_cm->contacts(allSyncTargets);
-    foundLocalAlice = false;
-    foundSyncAlice = false;
-    foundAggregateAlice = false;
-    foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
-        QContactName currName = curr.detail<QContactName>();
-        if (currName.firstName() == QLatin1String("Single")
-                && currName.middleName() == QLatin1String("Promotion")
-                && currName.lastName().isEmpty()) {
-            if (currSt.syncTarget() == QLatin1String("test")) {
-                QVERIFY(!foundSyncAlice); // found more than one = error...
-                syncAlice = curr;
-                foundSyncAlice = true;
-            } else if (currSt.syncTarget() == QLatin1String("local")) {
-                QVERIFY(!foundLocalAlice); // found more than one = error...
-                localAlice = curr;
-                foundLocalAlice = true;
-            } else {
-                QVERIFY(!foundAggregateAlice); // found more than one = error...
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
-                aggregateAlice = curr;
-                foundAggregateAlice = true;
-            }
-        }
-    }
-
-    // ensure that we found them all
-    QVERIFY(foundLocalAlice);
-    QVERIFY(foundSyncAlice);
-    QVERIFY(foundAggregateAlice);
-
-    // ensure they're related as required.
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
-
-    QCOMPARE(localAlice.detail<QContactEmailAddress>().emailAddress(), QString());
-    QCOMPARE(localAlice.detail<QContactPhoneNumber>().number(), QLatin1String("11111"));
-    QVERIFY(!detailProvenance(localAlice.detail<QContactPhoneNumber>()).isEmpty());
-    QVERIFY(localAlice.detail<QContactFavorite>().isFavorite());
-
-    QCOMPARE(syncAlice.detail<QContactEmailAddress>().emailAddress(), QLatin1String("spta@test.com"));
-    QVERIFY(!detailProvenance(syncAlice.detail<QContactEmailAddress>()).isEmpty());
-    QVERIFY(detailProvenanceContact(syncAlice.detail<QContactEmailAddress>()) != detailProvenanceContact(localAlice.detail<QContactPhoneNumber>()));
-    QCOMPARE(syncAlice.detail<QContactPhoneNumber>().number(), QString());
-    QVERIFY(!syncAlice.detail<QContactFavorite>().isFavorite());
-
-    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().emailAddress(), QLatin1String("spta@test.com"));
-    QCOMPARE(detailProvenance(aggregateAlice.detail<QContactEmailAddress>()), detailProvenance(syncAlice.detail<QContactEmailAddress>()));
-    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().number(), QLatin1String("11111"));
-    QCOMPARE(detailProvenance(aggregateAlice.detail<QContactPhoneNumber>()), detailProvenance(localAlice.detail<QContactPhoneNumber>()));
-    QVERIFY(detailProvenanceContact(aggregateAlice.detail<QContactPhoneNumber>()) != detailProvenanceContact(aggregateAlice.detail<QContactEmailAddress>()));
-    QVERIFY(aggregateAlice.detail<QContactFavorite>().isFavorite());
-
-    // now unfavorite aggregate alice.  ensure that it propagates properly.
-    afav = aggregateAlice.detail<QContactFavorite>();
-    afav.setFavorite(false);
-    QVERIFY(aggregateAlice.saveDetail(&afav));
-    QVERIFY(m_cm->saveContact(&aggregateAlice));
-
-    allContacts = m_cm->contacts(allSyncTargets);
-    foundLocalAlice = false;
-    foundSyncAlice = false;
-    foundAggregateAlice = false;
-    foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
-        QContactName currName = curr.detail<QContactName>();
-        if (currName.firstName() == QLatin1String("Single")
-                && currName.middleName() == QLatin1String("Promotion")
-                && currName.lastName().isEmpty()) {
-            if (currSt.syncTarget() == QLatin1String("test")) {
-                QVERIFY(!foundSyncAlice); // found more than one = error...
-                syncAlice = curr;
-                foundSyncAlice = true;
-            } else if (currSt.syncTarget() == QLatin1String("local")) {
-                QVERIFY(!foundLocalAlice); // found more than one = error...
-                localAlice = curr;
-                foundLocalAlice = true;
-            } else {
-                QVERIFY(!foundAggregateAlice); // found more than one = error...
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
-                aggregateAlice = curr;
-                foundAggregateAlice = true;
-            }
-        }
-    }
-
-    // ensure that we found them all
-    QVERIFY(foundLocalAlice);
-    QVERIFY(foundSyncAlice);
-    QVERIFY(foundAggregateAlice);
-
-    QCOMPARE(localAlice.detail<QContactEmailAddress>().emailAddress(), QString());
-    QCOMPARE(localAlice.detail<QContactPhoneNumber>().number(), QLatin1String("11111"));
-    QVERIFY(!localAlice.detail<QContactFavorite>().isFavorite());
-
-    QCOMPARE(syncAlice.detail<QContactEmailAddress>().emailAddress(), QLatin1String("spta@test.com"));
-    QCOMPARE(syncAlice.detail<QContactPhoneNumber>().number(), QString());
-    QVERIFY(!syncAlice.detail<QContactFavorite>().isFavorite());
-
-    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().emailAddress(), QLatin1String("spta@test.com"));
-    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().number(), QLatin1String("11111"));
-    QVERIFY(!aggregateAlice.detail<QContactFavorite>().isFavorite());
-}
-
 void tst_Aggregation::uniquenessConstraints()
 {
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
 
     // create a valid local contact.  An aggregate should be generated.
     QContact localAlice;
@@ -1739,24 +1764,26 @@ void tst_Aggregation::uniquenessConstraints()
     QContactGuid ag;
     ag.setGuid("first-unique-guid");
     QVERIFY(localAlice.saveDetail(&ag));
+    QContactFavorite afav;
+    afav.setFavorite(false);
+    QVERIFY(localAlice.saveDetail(&afav));
     QVERIFY(m_cm->saveContact(&localAlice));
 
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
     QContact aggregateAlice;
     bool foundLocalAlice = false;
     bool foundAggregateAlice = false;
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Uniqueness")
                 && currName.lastName() == QLatin1String("Constraints")
                 && currEm.emailAddress() == QLatin1String("uniqueness@test.com")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 localAlice = curr;
                 foundLocalAlice = true;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -1768,17 +1795,19 @@ void tst_Aggregation::uniquenessConstraints()
 
     // test uniqueness constraint of favorite detail.
     QCOMPARE(aggregateAlice.details<QContactFavorite>().size(), 1);
-    QContactFavorite afav;
+    afav = localAlice.detail<QContactFavorite>();
+    QContactFavorite afav2;
+    afav2.setFavorite(true);
+    QVERIFY(localAlice.saveDetail(&afav2)); // this actually creates a second (in memory) favorite detail
+    QCOMPARE(localAlice.details<QContactFavorite>().size(), 2);
+    QVERIFY(!m_cm->saveContact(&localAlice)); // should fail, as Favorite is unique
+    QVERIFY(localAlice.removeDetail(&afav2));
+    afav = localAlice.detail<QContactFavorite>();
     afav.setFavorite(true);
-    QVERIFY(aggregateAlice.saveDetail(&afav)); // this actually creates a second (in memory) favorite detail
-    QCOMPARE(aggregateAlice.details<QContactFavorite>().size(), 2);
-    QVERIFY(!m_cm->saveContact(&aggregateAlice)); // should fail, as Favorite is unique
-    QVERIFY(aggregateAlice.removeDetail(&afav));
-    QCOMPARE(aggregateAlice.details<QContactFavorite>().size(), 1);
-    afav = aggregateAlice.detail<QContactFavorite>();
-    afav.setFavorite(true);
-    QVERIFY(aggregateAlice.saveDetail(&afav));   // should update the existing.
-    QVERIFY(m_cm->saveContact(&aggregateAlice)); // should succeed.
+    QVERIFY(localAlice.saveDetail(&afav));
+    QCOMPARE(localAlice.details<QContactFavorite>().size(), 1);
+    QVERIFY(m_cm->saveContact(&localAlice)); // should succeed.
+    QCOMPARE(localAlice.details<QContactFavorite>().size(), 1);
     QVERIFY(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactFavorite>().isFavorite());
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
 
@@ -1787,23 +1816,25 @@ void tst_Aggregation::uniquenessConstraints()
     QCOMPARE(aggregateAlice.details<QContactBirthday>().size(), 0);
     QContactBirthday abd;
     abd.setDateTime(aliceBirthday);
-    QVERIFY(aggregateAlice.saveDetail(&abd));
-    QCOMPARE(aggregateAlice.details<QContactBirthday>().size(), 1);
-    QVERIFY(m_cm->saveContact(&aggregateAlice));
+    QVERIFY(localAlice.saveDetail(&abd));
+    QCOMPARE(localAlice.details<QContactBirthday>().size(), 1);
+    QVERIFY(m_cm->saveContact(&localAlice));
     // now save another, should fail.
     QContactBirthday anotherBd;
     anotherBd.setDateTime(QDateTime::currentDateTime());
-    QVERIFY(aggregateAlice.saveDetail(&anotherBd));
-    QCOMPARE(aggregateAlice.details<QContactBirthday>().size(), 2);
-    QVERIFY(!m_cm->saveContact(&aggregateAlice)); // should fail, uniqueness.
-    QVERIFY(aggregateAlice.removeDetail(&anotherBd));
-    QVERIFY(m_cm->saveContact(&aggregateAlice)); // back to just one, should succeed.
+    QVERIFY(localAlice.saveDetail(&anotherBd));
+    QCOMPARE(localAlice.details<QContactBirthday>().size(), 2);
+    QVERIFY(!m_cm->saveContact(&localAlice)); // should fail, uniqueness.
+    QVERIFY(localAlice.removeDetail(&anotherBd));
+    QVERIFY(m_cm->saveContact(&localAlice)); // back to just one, should succeed.
     QVERIFY(m_cm->contact(retrievalId(aggregateAlice)).detail<QContactBirthday>().date() == aliceBirthday.date());
+
     // now save a different birthday in another contact aggregated into alice.
+    QContactCollection testCollection1;
+    testCollection1.setMetaData(QContactCollection::KeyName, QStringLiteral("test1"));
+    QVERIFY(m_cm->saveCollection(&testCollection1));
     QContact testsyncAlice;
-    QContactSyncTarget tsst;
-    tsst.setSyncTarget("test");
-    testsyncAlice.saveDetail(&tsst);
+    testsyncAlice.setCollectionId(testCollection1.id());
     QContactBirthday tsabd;
     tsabd.setDateTime(aliceBirthday.addDays(-5));
     testsyncAlice.saveDetail(&tsabd);
@@ -1814,74 +1845,87 @@ void tst_Aggregation::uniquenessConstraints()
     QContactEmailAddress tsaem;
     tsaem.setEmailAddress(aem.emailAddress());
     testsyncAlice.saveDetail(&tsaem);
+    QContactNote tsanote;
+    tsanote.setNote("noteworthy note");
+    testsyncAlice.saveDetail(&tsanote);
+    QContactSyncTarget tsast;
+    tsast.setSyncTarget("test1");
+    testsyncAlice.saveDetail(&tsast);
     QVERIFY(m_cm->saveContact(&testsyncAlice)); // should get aggregated into aggregateAlice.
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice)); // reload
     QCOMPARE(aggregateAlice.details<QContactBirthday>().size(), 1); // should still only have one birthday - local should take precedence.
-    QVERIFY(aggregateAlice.detail<QContactBirthday>().date() == aliceBirthday.date());
+    QCOMPARE(aggregateAlice.detail<QContactBirthday>().date(), aliceBirthday.date());
+    QCOMPARE(aggregateAlice.detail<QContactNote>().note(), tsanote.note());
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+    localAlice = m_cm->contact(retrievalId(localAlice));
 
     // test uniqueness constraint of name detail.
-    QVERIFY(aggregateAlice.details<QContactName>().size() == 1);
+    QVERIFY(localAlice.details<QContactName>().size() == 1);
     QContactName anotherName;
     anotherName.setFirstName("Testing");
-    QVERIFY(aggregateAlice.saveDetail(&anotherName));
-    QCOMPARE(aggregateAlice.details<QContactName>().size(), 2);
-    QVERIFY(!m_cm->saveContact(&aggregateAlice));
-    QVERIFY(aggregateAlice.removeDetail(&anotherName));
-    QCOMPARE(aggregateAlice.details<QContactName>().size(), 1);
-    anotherName = aggregateAlice.detail<QContactName>();
+    QVERIFY(localAlice.saveDetail(&anotherName));
+    QCOMPARE(localAlice.details<QContactName>().size(), 2);
+    QVERIFY(!m_cm->saveContact(&localAlice));
+    QVERIFY(localAlice.removeDetail(&anotherName));
+    QCOMPARE(localAlice.details<QContactName>().size(), 1);
+    anotherName = localAlice.detail<QContactName>();
     anotherName.setMiddleName("Middle");
-    QVERIFY(aggregateAlice.saveDetail(&anotherName));
-    QVERIFY(m_cm->saveContact(&aggregateAlice));
+    QVERIFY(localAlice.saveDetail(&anotherName));
+    QVERIFY(m_cm->saveContact(&localAlice));
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+    localAlice = m_cm->contact(retrievalId(localAlice));
+    QCOMPARE(aggregateAlice.detail<QContactName>().firstName(), localAlice.detail<QContactName>().firstName());
+    QCOMPARE(aggregateAlice.detail<QContactName>().middleName(), localAlice.detail<QContactName>().middleName());
+    QCOMPARE(aggregateAlice.detail<QContactName>().lastName(), localAlice.detail<QContactName>().lastName());
 
-    // test uniqueness (and read-only) constraint of sync target.
-    QVERIFY(aggregateAlice.details<QContactSyncTarget>().size() == 1);
-    QCOMPARE(aggregateAlice.detail<QContactSyncTarget>().value<QString>(QContactSyncTarget::FieldSyncTarget), QString::fromLatin1("aggregate"));
-    QContactSyncTarget ast;
-    ast.setSyncTarget("uniqueness");
-    QVERIFY(aggregateAlice.saveDetail(&ast));
-    QCOMPARE(aggregateAlice.details<QContactSyncTarget>().size(), 2);
-    QVERIFY(!m_cm->saveContact(&aggregateAlice));
-    QVERIFY(aggregateAlice.removeDetail(&ast));
-    QCOMPARE(aggregateAlice.details<QContactSyncTarget>().size(), 1);
-    ast = aggregateAlice.detail<QContactSyncTarget>();
-    ast.setSyncTarget("uniqueness");
-    QVERIFY(aggregateAlice.saveDetail(&ast));
-    QVERIFY(!m_cm->saveContact(&aggregateAlice)); // should also fail, as sync target is read only.
-    ast = aggregateAlice.detail<QContactSyncTarget>();
-    ast.setSyncTarget("aggregate"); // reset the state.
-    QVERIFY(aggregateAlice.saveDetail(&ast));
+    // test uniqueness (and non-promotion) constraint of sync target.
+    QVERIFY(aggregateAlice.details<QContactSyncTarget>().size() == 0);
+    QContactSyncTarget tsast2;
+    tsast2.setSyncTarget("uniqueness");
+    QVERIFY(testsyncAlice.saveDetail(&tsast2));
+    QCOMPARE(testsyncAlice.details<QContactSyncTarget>().size(), 2);
+    QVERIFY(!m_cm->saveContact(&testsyncAlice)); // uniqueness constraint fails.
+    QVERIFY(testsyncAlice.removeDetail(&tsast2));
+    QCOMPARE(testsyncAlice.details<QContactSyncTarget>().size(), 1);
+    tsast2 = testsyncAlice.detail<QContactSyncTarget>();
+    tsast2.setSyncTarget("uniqueness");
+    QVERIFY(testsyncAlice.saveDetail(&tsast2));
+    QVERIFY(m_cm->saveContact(&testsyncAlice)); // should now succeed.
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+    QVERIFY(aggregateAlice.details<QContactSyncTarget>().size() == 0); // but not promoted to aggregate.
+    localAlice = m_cm->contact(retrievalId(localAlice));
+    QVERIFY(localAlice.details<QContactSyncTarget>().size() == 0); // and localAlice should never be affected by operations to testsyncAlice.
 
     // test uniqueness constraint of timestamp detail.
     // Timestamp is a bit special, since if no values exist, we don't synthesise it,
     // even though it exists in the main table.
     QDateTime testDt = QDateTime::currentDateTime();
     bool hasCreatedTs = false;
-    if (aggregateAlice.details<QContactTimestamp>().size() == 0) {
+    if (testsyncAlice.details<QContactTimestamp>().size() == 0) {
         QContactTimestamp firstTs;
         firstTs.setCreated(testDt);
-        QVERIFY(aggregateAlice.saveDetail(&firstTs));
-        QVERIFY(m_cm->saveContact(&aggregateAlice));
+        QVERIFY(testsyncAlice.saveDetail(&firstTs));
+        QVERIFY(m_cm->saveContact(&testsyncAlice));
         hasCreatedTs = true;
     }
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
     QVERIFY(aggregateAlice.details<QContactTimestamp>().size() == 1);
     QContactTimestamp ats;
     ats.setLastModified(testDt);
-    QVERIFY(aggregateAlice.saveDetail(&ats));
-    QCOMPARE(aggregateAlice.details<QContactTimestamp>().size(), 2);
-    QVERIFY(!m_cm->saveContact(&aggregateAlice));
-    QVERIFY(aggregateAlice.removeDetail(&ats));
-    QCOMPARE(aggregateAlice.details<QContactTimestamp>().size(), 1);
-    ats = aggregateAlice.detail<QContactTimestamp>();
+    QVERIFY(testsyncAlice.saveDetail(&ats));
+    QCOMPARE(testsyncAlice.details<QContactTimestamp>().size(), 2);
+    QVERIFY(!m_cm->saveContact(&testsyncAlice));
+    QVERIFY(testsyncAlice.removeDetail(&ats));
+    QCOMPARE(testsyncAlice.details<QContactTimestamp>().size(), 1);
+    ats = testsyncAlice.detail<QContactTimestamp>();
     ats.setLastModified(testDt);
-    QVERIFY(aggregateAlice.saveDetail(&ats));
+    QVERIFY(testsyncAlice.saveDetail(&ats));
 
     QDateTime beforeWrite(QDateTime::currentDateTimeUtc());
-    QVERIFY(m_cm->saveContact(&aggregateAlice));
-    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
+    QTest::qWait(11);
+    QVERIFY(m_cm->saveContact(&testsyncAlice));
 
+    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
     QVERIFY(aggregateAlice.details<QContactTimestamp>().size() == 1);
     QVERIFY(aggregateAlice.detail<QContactTimestamp>().lastModified() >= beforeWrite);
     QVERIFY(aggregateAlice.detail<QContactTimestamp>().lastModified() <= QDateTime::currentDateTimeUtc());
@@ -1907,11 +1951,10 @@ void tst_Aggregation::uniquenessConstraints()
 
 void tst_Aggregation::removeSingleLocal()
 {
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
 
     int aggCount = m_cm->contactIds().size();
-    int allCount = m_cm->contactIds(allSyncTargets).size();
+    int allCount = m_cm->contactIds(allCollections).size();
     int oldAggCount = aggCount;
     int oldAllCount = allCount;
 
@@ -1921,7 +1964,7 @@ void tst_Aggregation::removeSingleLocal()
     int addSpyCount = 0;
     int remSpyCount = 0;
 
-    // now add a new local contact (no synctarget specified == automatically local)
+    // now add a new local contact (no collectionId specified == automatically local)
     QContact alice;
 
     QContactName an;
@@ -1943,28 +1986,27 @@ void tst_Aggregation::removeSingleLocal()
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
     aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 2); // should have added local + aggregate
-    allCount = m_cm->contactIds(allSyncTargets).size();
+    QCOMPARE(m_cm->contactIds(allCollections).size(), allCount + 2); // should have added local + aggregate
+    allCount = m_cm->contactIds(allCollections).size();
 
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
     QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
     QContact localAlice;
     QContact aggregateAlice;
     bool foundLocalAlice = false;
     bool foundAggregateAlice = false;
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Alice")
                 && currName.middleName() == QLatin1String("In")
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("67")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 localAlice = curr;
                 foundLocalAlice = true;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -1973,8 +2015,8 @@ void tst_Aggregation::removeSingleLocal()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
 
     // now add another local contact.
     QContact bob;
@@ -2003,8 +2045,8 @@ void tst_Aggregation::removeSingleLocal()
     QCOMPARE(m_cm->contactIds().size(), (aggCount-1));
 
     // but bob should not have been removed.
-    QVERIFY(m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(bob)));
-    QList<QContact> stillExisting = m_cm->contacts(allSyncTargets);
+    QVERIFY(m_cm->contactIds(allCollections).contains(ContactId::apiId(bob)));
+    QList<QContact> stillExisting = m_cm->contacts(allCollections);
     bool foundBob = false;
     foreach (const QContact &c, stillExisting) {
         if (c.id() == bob.id()) {
@@ -2016,22 +2058,21 @@ void tst_Aggregation::removeSingleLocal()
 
     // now remove bob.
     QVERIFY(m_cm->removeContact(removalId(bob)));
-    QVERIFY(!m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(bob)));
+    QVERIFY(!m_cm->contactIds(allCollections).contains(ContactId::apiId(bob)));
 
     // should be back to our original counts
     int newAggCount = m_cm->contactIds().size();
-    int newAllCount = m_cm->contactIds(allSyncTargets).size();
+    int newAllCount = m_cm->contactIds(allCollections).size();
     QCOMPARE(newAggCount, oldAggCount);
     QCOMPARE(newAllCount, oldAllCount);
 }
 
 void tst_Aggregation::removeSingleAggregate()
 {
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
 
     int aggCount = m_cm->contactIds().size();
-    int allCount = m_cm->contactIds(allSyncTargets).size();
+    int allCount = m_cm->contactIds(allCollections).size();
     int oldAggCount = aggCount;
     int oldAllCount = allCount;
 
@@ -2041,7 +2082,7 @@ void tst_Aggregation::removeSingleAggregate()
     int addSpyCount = 0;
     int remSpyCount = 0;
 
-    // now add a new local contact (no synctarget specified == automatically local)
+    // now add a new local contact (no collectionId specified == automatically local)
     QContact alice;
 
     QContactName an;
@@ -2063,28 +2104,27 @@ void tst_Aggregation::removeSingleAggregate()
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
     aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 2); // should have added local + aggregate
-    allCount = m_cm->contactIds(allSyncTargets).size();
+    QCOMPARE(m_cm->contactIds(allCollections).size(), allCount + 2); // should have added local + aggregate
+    allCount = m_cm->contactIds(allCollections).size();
 
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
     QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
     QContact localAlice;
     QContact aggregateAlice;
     bool foundLocalAlice = false;
     bool foundAggregateAlice = false;
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Alice")
                 && currName.middleName() == QLatin1String("In")
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("7")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 localAlice = curr;
                 foundLocalAlice = true;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -2093,8 +2133,8 @@ void tst_Aggregation::removeSingleAggregate()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
 
     // now add another local contact.
     QContact bob;
@@ -2111,10 +2151,17 @@ void tst_Aggregation::removeSingleAggregate()
     // we should have an extra aggregate (bob's) now too
     aggCount = m_cm->contactIds().size();
 
-    // now remove aggregate alice.  We expect that the "orphan" local alice will also be removed.
+    // now attempt to remove aggregate alice - should fail.
     remSpyCount = remSpy.count();
     m_remAccumulatedIds.clear();
-    QVERIFY(m_cm->removeContact(removalId(aggregateAlice)));
+    QVERIFY(!m_cm->removeContact(removalId(aggregateAlice)));
+    QTest::qWait(50);
+    QCOMPARE(remSpy.count(), remSpyCount);
+    QVERIFY(!m_remAccumulatedIds.contains(ContactId::apiId(localAlice)));
+    QVERIFY(!m_remAccumulatedIds.contains(ContactId::apiId(aggregateAlice)));
+
+    // now attempt to remove local alice - should succeed, and her "orphan" aggregate should be removed also.
+    QVERIFY(m_cm->removeContact(removalId(localAlice)));
     QTRY_VERIFY(remSpy.count() > remSpyCount);
     QTRY_VERIFY(m_remAccumulatedIds.contains(ContactId::apiId(localAlice)));
     QTRY_VERIFY(m_remAccumulatedIds.contains(ContactId::apiId(aggregateAlice)));
@@ -2122,9 +2169,9 @@ void tst_Aggregation::removeSingleAggregate()
     // alice's aggregate contact should have been removed, bob's should not have.
     QCOMPARE(m_cm->contactIds().size(), (aggCount-1));
 
-    // but bob should not have been removed.
-    QVERIFY(m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(bob)));
-    QList<QContact> stillExisting = m_cm->contacts(allSyncTargets);
+    // and bob should not have been removed.
+    QVERIFY(m_cm->contactIds(allCollections).contains(ContactId::apiId(bob)));
+    QList<QContact> stillExisting = m_cm->contacts(allCollections);
     bool foundBob = false;
     foreach (const QContact &c, stillExisting) {
         if (c.id() == bob.id()) {
@@ -2136,22 +2183,21 @@ void tst_Aggregation::removeSingleAggregate()
 
     // now remove bob.
     QVERIFY(m_cm->removeContact(removalId(bob)));
-    QVERIFY(!m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(bob)));
+    QVERIFY(!m_cm->contactIds(allCollections).contains(ContactId::apiId(bob)));
 
     // should be back to our original counts
     int newAggCount = m_cm->contactIds().size();
-    int newAllCount = m_cm->contactIds(allSyncTargets).size();
+    int newAllCount = m_cm->contactIds(allCollections).size();
     QCOMPARE(newAggCount, oldAggCount);
     QCOMPARE(newAllCount, oldAllCount);
 }
 
 void tst_Aggregation::alterRelationships()
 {
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
 
     int aggCount = m_cm->contactIds().size();
-    int allCount = m_cm->contactIds(allSyncTargets).size();
+    int allCount = m_cm->contactIds(allCollections).size();
 
     // set up some signal spies
     QSignalSpy addSpy(m_cm, contactsAddedSignal);
@@ -2159,18 +2205,30 @@ void tst_Aggregation::alterRelationships()
     int addSpyCount = 0;
     int remSpyCount = 0;
 
-    // now add two new contacts (with different sync targets)
+    // add two test collections
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    QVERIFY(m_cm->saveCollection(&testAddressbook));
+
+    QContactCollection trialAddressbook;
+    trialAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("trial"));
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 6);
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/trial");
+    QVERIFY(m_cm->saveCollection(&trialAddressbook));
+
+    // now add two new contacts (with different collection ids)
     QContact alice;
+    alice.setCollectionId(testAddressbook.id());
 
     QContactName an;
     an.setMiddleName("Alice");
     an.setFirstName("test");
     an.setLastName("alterRelationships");
     alice.saveDetail(&an);
-
-    QContactSyncTarget aliceST;
-    aliceST.setSyncTarget("test-one");
-    alice.saveDetail(&aliceST);
 
     // Add a detail with non-empty detail URI - during the alteration, a duplicate
     // of the linked detail URI will exist in each aggregate, until the obsolete
@@ -2182,21 +2240,22 @@ void tst_Aggregation::alterRelationships()
     alice.saveDetail(&ap);
 
     QContact bob;
+    bob.setCollectionId(trialAddressbook.id());
 
     QContactName bn;
     bn.setMiddleName("Bob");
     bn.setLastName("alterRelationships");
     bob.saveDetail(&bn);
 
-    QContactSyncTarget bobST;
-    bobST.setSyncTarget("test-two");
-    bob.saveDetail(&bobST);
-
     QContactPhoneNumber bp;
     bp.setNumber("2345678");
     bp.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
     bp.setDetailUri("bob-alterRelationships-phone");
     bob.saveDetail(&bp);
+
+    QContactEmailAddress bem;
+    bem.setEmailAddress("bob@wonderland.tld");
+    bob.saveDetail(&bem);
 
     m_addAccumulatedIds.clear();
     QVERIFY(m_cm->saveContact(&alice));
@@ -2209,31 +2268,30 @@ void tst_Aggregation::alterRelationships()
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 2); // 2 extra aggregate contacts
     aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 4); // should have added 2 normal + 2 aggregates
-    allCount = m_cm->contactIds(allSyncTargets).size();
+    QCOMPARE(m_cm->contactIds(allCollections).size(), allCount + 4); // should have added 2 normal + 2 aggregates
+    allCount = m_cm->contactIds(allCollections).size();
 
     QContact localAlice;
     QContact localBob;
     QContact aggregateAlice;
     QContact aggregateBob;
 
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
     QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.middleName() == QLatin1String("Alice") && currName.lastName() == QLatin1String("alterRelationships")) {
-            if (currSt.syncTarget() == QLatin1String("test-one")) {
+            if (curr.collectionId() == testAddressbook.id()) {
                 localAlice = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
             }
         } else if (currName.middleName() == QLatin1String("Bob") && currName.lastName() == QLatin1String("alterRelationships")) {
-            if (currSt.syncTarget() == QLatin1String("test-two")) {
+            if (curr.collectionId() == trialAddressbook.id()) {
                 localBob = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateBob = curr;
             }
         }
@@ -2243,10 +2301,10 @@ void tst_Aggregation::alterRelationships()
     QVERIFY(localBob.id() != QContactId());
     QVERIFY(aggregateAlice.id() != QContactId());
     QVERIFY(aggregateBob.id() != QContactId());
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateBob.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
-    QVERIFY(relatedContactIds(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateBob.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localBob.id()));
 
     // Remove the aggregation relationship for Bob
     QContactRelationship relationship;
@@ -2272,22 +2330,21 @@ void tst_Aggregation::alterRelationships()
     aggregateAlice = QContact();
     aggregateBob = QContact();
 
-    allContacts = m_cm->contacts(allSyncTargets);
+    allContacts = m_cm->contacts(allCollections);
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.middleName() == QLatin1String("Alice") && currName.lastName() == QLatin1String("alterRelationships")) {
-            if (currSt.syncTarget() == QLatin1String("test-one")) {
+            if (curr.collectionId() == testAddressbook.id()) {
                 localAlice = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
             }
         } else if (currName.middleName() == QLatin1String("Bob") && currName.lastName() == QLatin1String("alterRelationships")) {
-            if (currSt.syncTarget() == QLatin1String("test-two")) {
+            if (curr.collectionId() == trialAddressbook.id()) {
                 localBob = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateBob = curr;
             }
         }
@@ -2297,10 +2354,10 @@ void tst_Aggregation::alterRelationships()
     QVERIFY(localBob.id() != QContactId());
     QVERIFY(aggregateAlice.id() != QContactId());
     QVERIFY(aggregateBob.id() != QContactId());
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateBob.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
-    QVERIFY(relatedContactIds(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateBob.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localBob.id()));
     QVERIFY(aggregateBob.id() != oldAggregateBobId);
 
     // Aggregate localBob into aggregateAlice
@@ -2328,22 +2385,21 @@ void tst_Aggregation::alterRelationships()
     aggregateAlice = QContact();
     aggregateBob = QContact();
 
-    allContacts = m_cm->contacts(allSyncTargets);
+    allContacts = m_cm->contacts(allCollections);
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.middleName() == QLatin1String("Alice") && currName.lastName() == QLatin1String("alterRelationships")) {
-            if (currSt.syncTarget() == QLatin1String("test-one")) {
+            if (curr.collectionId() == testAddressbook.id()) {
                 localAlice = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
             }
         } else if (currName.middleName() == QLatin1String("Bob") && currName.lastName() == QLatin1String("alterRelationships")) {
-            if (currSt.syncTarget() == QLatin1String("test-two")) {
+            if (curr.collectionId() == trialAddressbook.id()) {
                 localBob = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateBob = curr;
             }
         }
@@ -2353,10 +2409,14 @@ void tst_Aggregation::alterRelationships()
     QVERIFY(localBob.id() != QContactId());
     QVERIFY(aggregateAlice.id() != QContactId());
     QCOMPARE(aggregateBob.id(), QContactId());
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localBob.id()));
+
+    // ensure that Bob's details have been promoted to the aggregateAlice contact.
+    QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().emailAddress(), localBob.detail<QContactEmailAddress>().emailAddress());
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 2);
 
     // Change Bob to have the same first and last name details as Alice
     bn = localBob.detail<QContactName>();
@@ -2384,8 +2444,8 @@ void tst_Aggregation::alterRelationships()
     // Verify that the relationships are unchanged
     localAlice = m_cm->contact(retrievalId(localAlice));
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
 
     // Create an IsNot relationship to prevent re-aggregation
     relationship = makeRelationship(QString::fromLatin1("IsNot"), aggregateAlice.id(), localAlice.id());
@@ -2408,306 +2468,130 @@ void tst_Aggregation::alterRelationships()
     // Verify that the relationships are updated
     localAlice = m_cm->contact(retrievalId(localAlice));
     aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
-    QVERIFY(!relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(!relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
-}
+    QCOMPARE(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).size(), 1);
+    QVERIFY(!localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(!aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
 
-void tst_Aggregation::wasLocalUpdate()
-{
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    // ensure that each aggregate contains the details from the respective constituent contact.
+    aggregateBob = aggregateAlice; // this one now only aggregates Bob
+    QCOMPARE(aggregateBob.details<QContactPhoneNumber>().size(), 1);
+    QCOMPARE(aggregateBob.detail<QContactPhoneNumber>().number(), localBob.detail<QContactPhoneNumber>().number());
+    QCOMPARE(aggregateBob.details<QContactEmailAddress>().size(), 1);
+    QCOMPARE(aggregateBob.detail<QContactEmailAddress>().emailAddress(), localBob.detail<QContactEmailAddress>().emailAddress());
+    aggregateAlice = m_cm->contact(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).first());
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().size(), 1);
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().number(), localAlice.detail<QContactPhoneNumber>().number());
+    QCOMPARE(aggregateAlice.details<QContactEmailAddress>().size(), 0);
 
-    int aggCount = m_cm->contactIds().size();
-    int allCount = m_cm->contactIds(allSyncTargets).size();
+    // finally, create two new local addresbook contacts,
+    // which we will later manually aggregate together.
+    QContact localEdmond;
+    QContactName en;
+    en.setMiddleName("Edmond");
+    en.setFirstName("test");
+    en.setLastName("alterRelationshipsLocal");
+    localEdmond.saveDetail(&en);
+    QContactPhoneNumber ep;
+    ep.setNumber("8765432");
+    ep.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
+    ep.setDetailUri("edmond-alterRelationships-phone");
+    localEdmond.saveDetail(&ep);
+    QContactHobby eh;
+    eh.setHobby("Surfing");
+    localEdmond.saveDetail(&eh);
+    QContactGuid eg;
+    eg.setGuid("alterRelationships-Edmond");
+    localEdmond.saveDetail(&eg);
 
-    // set up some signal spies
-    QSignalSpy addSpy(m_cm, contactsAddedSignal);
-    QSignalSpy remSpy(m_cm, contactsRemovedSignal);
-    int addSpyCount = 0;
-    int remSpyCount = 0;
+    QContact localFred;
+    QContactName fn;
+    fn.setMiddleName("Fred");
+    fn.setFirstName("trial");
+    fn.setLastName("alterRelationshipsLocal");
+    localFred.saveDetail(&fn);
+    QContactPhoneNumber fp;
+    fp.setNumber("9876543");
+    fp.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
+    fp.setDetailUri("fred-alterRelationships-phone");
+    localFred.saveDetail(&fp);
+    QContactHobby fh;
+    fh.setHobby("Bowling");
+    localFred.saveDetail(&fh);
+    QContactGuid fg;
+    fg.setGuid("alterRelationships-Fred");
+    localFred.saveDetail(&fg);
 
-    // now add two new local contacts (no synctarget specified == automatically local)
-    QContact alice;
+    QVERIFY(m_cm->saveContact(&localEdmond));
+    QVERIFY(m_cm->saveContact(&localFred));
 
-    QContactName an;
-    an.setFirstName("Alice");
-    an.setLastName("wasLocal");
-    alice.saveDetail(&an);
-
-    QContactPhoneNumber ap;
-    ap.setNumber("1234567");
-    ap.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
-    alice.saveDetail(&ap);
-
-    QContact bob;
-
-    QContactNickname bn;
-    bn.setNickname("Cooper");
-    bob.saveDetail(&bn);
-
-    QContactPhoneNumber bp;
-    bp.setNumber("2345678");
-    bp.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
-    bob.saveDetail(&bp);
-
-    m_addAccumulatedIds.clear();
-    QVERIFY(m_cm->saveContact(&alice));
-    QVERIFY(m_cm->saveContact(&bob));
-    QTRY_VERIFY(addSpy.count() >= addSpyCount + 2);
-    QTRY_COMPARE(m_addAccumulatedIds.size(), 4); // should have added locals + aggregates
-    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(alice)));
-    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(bob)));
-    addSpyCount = addSpy.count();
-
-    QCOMPARE(m_cm->contactIds().size(), aggCount + 2); // 2 extra aggregate contacts
-    aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 4); // should have added locals + aggregates
-    allCount = m_cm->contactIds(allSyncTargets).size();
-
-    QContact localAlice;
-    QContact localBob;
-    QContact aggregateAlice;
-    QContact aggregateBob;
-
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
-    QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
+    // fetch the contacts, ensure we have what we expect.
+    QContact aggregateEdmond, aggregateFred;
+    allContacts = m_cm->contacts(allCollections);
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactName currName = curr.detail<QContactName>();
-        QContactNickname currNick = curr.detail<QContactNickname>();
-        if (currName.firstName() == QLatin1String("Alice") && currName.lastName() == QLatin1String("wasLocal")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+        if (currName.middleName() == QLatin1String("Alice") && currName.lastName() == QLatin1String("alterRelationships")) {
+            if (curr.collectionId() == testAddressbook.id()) {
                 localAlice = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
             }
-        } else if (currNick.nickname() == QLatin1String("Cooper")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+        } else if (currName.middleName() == QLatin1String("Bob") && currName.lastName() == QLatin1String("alterRelationships")) {
+            if (curr.collectionId() == trialAddressbook.id()) {
                 localBob = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateBob = curr;
+            }
+        } else if (currName.middleName() == QLatin1String("Edmond") && currName.lastName() == QLatin1String("alterRelationshipsLocal")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
+                localEdmond = curr;
+            } else {
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
+                aggregateEdmond = curr;
+            }
+        } else if (currName.middleName() == QLatin1String("Fred") && currName.lastName() == QLatin1String("alterRelationshipsLocal")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
+                localFred = curr;
+            } else {
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
+                aggregateFred = curr;
             }
         }
     }
 
-    // Verify the presence of contacts
-    QVERIFY(localAlice.id() != QContactId());
-    QVERIFY(localBob.id() != QContactId());
-    QVERIFY(aggregateAlice.id() != QContactId());
-    QVERIFY(aggregateBob.id() != QContactId());
+    QCOMPARE(localEdmond.collectionId().localId(), localAddressbookId());
+    QCOMPARE(localFred.collectionId().localId(), localAddressbookId());
+    QCOMPARE(aggregateEdmond.collectionId().localId(), aggregateAddressbookId());
+    QCOMPARE(aggregateFred.collectionId().localId(), aggregateAddressbookId());
 
-    // Verify the relationships
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateBob.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
-    QVERIFY(relatedContactIds(aggregateBob.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
+    remSpyCount = remSpy.count();
 
-    // Verify the details
-    QCOMPARE(localAlice.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(localAlice.details<QContactPhoneNumber>().at(0).number(), QLatin1String("1234567"));
-    QCOMPARE(localBob.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(localBob.details<QContactPhoneNumber>().at(0).number(), QLatin1String("2345678"));
-    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().at(0).number(), QLatin1String("1234567"));
-    QCOMPARE(aggregateBob.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(aggregateBob.details<QContactPhoneNumber>().at(0).number(), QLatin1String("2345678"));
-
-    // Convert localBob to was_local
-    QContactSyncTarget bst = localBob.detail<QContactSyncTarget>();
-    bst.setSyncTarget("was_local");
-    QVERIFY(localBob.saveDetail(&bst));
-
-    QVERIFY(m_cm->saveContact(&localBob));
-
-    // Convert localBob to be a constituent of aggregateAlice
-    QContactRelationship relationship;
-    relationship = makeRelationship(QContactRelationship::Aggregates, aggregateAlice.id(), localBob.id());
+    // Aggregate localFred into aggregateEdmond
+    relationship = makeRelationship(QContactRelationship::Aggregates, aggregateEdmond.id(), localFred.id());
     QVERIFY(m_cm->saveRelationship(&relationship));
 
-    // Remove the aggregation relationship for Bob
-    relationship = makeRelationship(QContactRelationship::Aggregates, aggregateBob.id(), localBob.id());
+    // Remove the relationship between localFred and aggregateFred
+    relationship = makeRelationship(QContactRelationship::Aggregates, aggregateFred.id(), localFred.id());
     QVERIFY(m_cm->removeRelationship(relationship));
 
     // The childless aggregate should have been removed
     QTRY_VERIFY(remSpy.count() > remSpyCount);
-    QTRY_COMPARE(m_remAccumulatedIds.size(), 1);
-    QVERIFY(m_remAccumulatedIds.contains(ContactId::apiId(aggregateBob)));
+    QVERIFY(m_remAccumulatedIds.contains(ContactId::apiId(aggregateFred)));
     remSpyCount = remSpy.count();
 
-    // No new aggregate should have been created
-    QCOMPARE(addSpy.count(), addSpyCount);
-
-    // Verify the relationships
-    localAlice = QContact();
-    localBob = QContact();
-    aggregateAlice = QContact();
-    aggregateBob = QContact();
-
-    allContacts = m_cm->contacts(allSyncTargets);
-    foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
-        QContactName currName = curr.detail<QContactName>();
-        QContactNickname currNick = curr.detail<QContactNickname>();
-        if (currName.firstName() == QLatin1String("Alice") && currName.lastName() == QLatin1String("wasLocal")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
-                localAlice = curr;
-            } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
-                aggregateAlice = curr;
-            }
-        } else if (currNick.nickname() == QLatin1String("Cooper")) {
-            if (currSt.syncTarget() == QLatin1String("was_local")) {
-                localBob = curr;
-            } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
-                aggregateBob = curr;
-            }
-        }
-    }
-
-    QVERIFY(localAlice.id() != QContactId());
-    QVERIFY(localBob.id() != QContactId());
-    QVERIFY(aggregateAlice.id() != QContactId());
-    QVERIFY(aggregateBob.id() == QContactId());
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
-    QCOMPARE(localAlice.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(localAlice.details<QContactPhoneNumber>().at(0).number(), QLatin1String("1234567"));
-    QCOMPARE(localBob.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(localBob.details<QContactPhoneNumber>().at(0).number(), QLatin1String("2345678"));
-    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 2);
-    foreach (const QContactPhoneNumber &phoneNumber, aggregateAlice.details<QContactPhoneNumber>()) {
-        QVERIFY(phoneNumber.number() == QLatin1String("1234567") ||
-                phoneNumber.number() == QLatin1String("2345678"));
-    }
-
-    // Was-local details are aggregated
-    QCOMPARE(aggregateAlice.detail<QContactNickname>().nickname(), QLatin1String("Cooper"));
-    QCOMPARE(localAlice.detail<QContactNickname>().nickname(), QString());
-
-    // Changes are promoted down to the was_local constituent
-    QContactPhoneNumber pn = aggregateAlice.details<QContactPhoneNumber>().at(0);
-    if (pn.number() != QLatin1String("2345678")) {
-        pn = aggregateAlice.details<QContactPhoneNumber>().at(1);
-    }
-    pn.setNumber("7654321");
-    pn.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
-    aggregateAlice.saveDetail(&pn);
-
-    QVERIFY(m_cm->saveContact(&aggregateAlice));
-
-    localAlice = m_cm->contact(retrievalId(localAlice));
-    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
-    localBob = m_cm->contact(retrievalId(localBob));
-
-    QCOMPARE(localAlice.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(localAlice.details<QContactPhoneNumber>().at(0).number(), QLatin1String("1234567"));
-    QCOMPARE(localBob.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(localBob.details<QContactPhoneNumber>().at(0).number(), QLatin1String("7654321"));
-    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 2);
-    foreach (const QContactPhoneNumber &phoneNumber, aggregateAlice.details<QContactPhoneNumber>()) {
-        QVERIFY(phoneNumber.number() == QLatin1String("1234567") ||
-                phoneNumber.number() == QLatin1String("7654321"));
-    }
-
-    // New details are not promoted down to the was_local constituent
-    pn = QContactPhoneNumber();
-    pn.setNumber("1234321");
-    aggregateAlice.saveDetail(&pn);
-
-    QVERIFY(m_cm->saveContact(&aggregateAlice));
-
-    localAlice = m_cm->contact(retrievalId(localAlice));
-    aggregateAlice = m_cm->contact(retrievalId(aggregateAlice));
-    localBob = m_cm->contact(retrievalId(localBob));
-
-    QCOMPARE(localAlice.details<QContactPhoneNumber>().count(), 2);
-    foreach (const QContactPhoneNumber &phoneNumber, localAlice.details<QContactPhoneNumber>()) {
-        QVERIFY(phoneNumber.number() == QLatin1String("1234567") ||
-                phoneNumber.number() == QLatin1String("1234321"));
-    }
-    QCOMPARE(localBob.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(localBob.details<QContactPhoneNumber>().at(0).number(), QLatin1String("7654321"));
-    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 3);
-    foreach (const QContactPhoneNumber &phoneNumber, aggregateAlice.details<QContactPhoneNumber>()) {
-        QVERIFY(phoneNumber.number() == QLatin1String("1234567") ||
-                phoneNumber.number() == QLatin1String("7654321") ||
-                phoneNumber.number() == QLatin1String("1234321"));
-    }
-}
-
-void tst_Aggregation::wasLocalCreation()
-{
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
-
-    int aggCount = m_cm->contactIds().size();
-    int allCount = m_cm->contactIds(allSyncTargets).size();
-
-    // set up some signal spies
-    QSignalSpy addSpy(m_cm, contactsAddedSignal);
-    QSignalSpy remSpy(m_cm, contactsRemovedSignal);
-    int addSpyCount = 0;
-
-    QContactName an;
-    an.setFirstName("Alice");
-    an.setLastName("wasLocalCreation");
-
-    // add two new local contacts which get aggregated together (no synctarget specified == automatically local)
-    QContact alice;
-    alice.saveDetail(&an);
-
-    QContact bob;
-    bob.saveDetail(&an);
-
-    m_addAccumulatedIds.clear();
-    QVERIFY(m_cm->saveContact(&alice));
-    QVERIFY(m_cm->saveContact(&bob));
-    QTRY_VERIFY(addSpy.count() >= addSpyCount + 2);
-    QTRY_COMPARE(m_addAccumulatedIds.size(), 3); // should have added 2 locals + 1 aggregate
-    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(alice)));
-    QVERIFY(m_addAccumulatedIds.contains(ContactId::apiId(bob)));
-    addSpyCount = addSpy.count();
-
-    QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
-    aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 3); // should have added 2 locals + 1 aggregate
-    allCount = m_cm->contactIds(allSyncTargets).size();
-
-    QContact localAlice;
-    QContact localBob;
-    QContact aggregateAlice;
-
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
-    QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
-    foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
-        if (currSt.syncTarget() == QLatin1String("aggregate")) {
-            aggregateAlice = curr;
-        } else {
-            if (curr.id() == alice.id()) {
-                localAlice = curr;
-
-                // Alice should be a local constituent
-                QCOMPARE(currSt.syncTarget(), QLatin1String("local"));
-            } else {
-                localBob = curr;
-
-                // Bob should have become a was_local constituent
-                QCOMPARE(currSt.syncTarget(), QLatin1String("was_local"));
-            }
-        }
-    }
-
-    // Verify the relationships
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(localBob.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localBob.id()));
+    // Reload the aggregateEdmond, and ensure that it has the required details.
+    aggregateEdmond = m_cm->contact(aggregateEdmond.id());
+    QCOMPARE(aggregateEdmond.details<QContactPhoneNumber>().size(), 2);
+    QCOMPARE(aggregateEdmond.details<QContactHobby>().size(), 2);
+    QVERIFY((aggregateEdmond.details<QContactPhoneNumber>().at(0).number() == ep.number()
+                || aggregateEdmond.details<QContactPhoneNumber>().at(1).number() == ep.number())
+            && (aggregateEdmond.details<QContactPhoneNumber>().at(0).number() == fp.number()
+                || aggregateEdmond.details<QContactPhoneNumber>().at(1).number() == fp.number()));
+    QVERIFY((aggregateEdmond.details<QContactHobby>().at(0).hobby() == eh.hobby()
+                || aggregateEdmond.details<QContactHobby>().at(1).hobby() == eh.hobby())
+            && (aggregateEdmond.details<QContactHobby>().at(0).hobby() == fh.hobby()
+                || aggregateEdmond.details<QContactHobby>().at(1).hobby() == fh.hobby()));
 }
 
 void tst_Aggregation::aggregationHeuristic_data()
@@ -2731,21 +2615,21 @@ void tst_Aggregation::aggregationHeuristic_data()
     QTest::addColumn<QString>("bOnlineAccount");
 
     // shared details / family members
-    QTest::newRow("shared email") << false /* husband and wife, sharing email, should not get aggregated */
+    QTest::newRow("shared email") << false // husband and wife, sharing email, should not get aggregated
         << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "" << "gumboots@test.com" << ""
         << "Jillian" << "Anastacia Faith" << "Gumboots" << "Jilly" << "unspecified" << "" << "gumboots@test.com" << "";
-    QTest::newRow("shared phone") << false /* husband and wife, sharing phone, should not get aggregated */
+    QTest::newRow("shared phone") << false // husband and wife, sharing phone, should not get aggregated
         << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "" << ""
         << "Jillian" << "Anastacia Faith" << "Gumboots" << "Jilly" << "unspecified" << "111992888337" << "" << "";
-    QTest::newRow("shared phone+email") << false /* husband and wife, sharing phone+email, should not get aggregated */
+    QTest::newRow("shared phone+email") << false // husband and wife, sharing phone+email, should not get aggregated
         << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << ""
         << "Jillian" << "Anastacia Faith" << "Gumboots" << "Jilly" << "unspecified" << "111992888337" << "gumboots@test.com" << "";
-    QTest::newRow("shared phone+email+account") << false /* husband and wife, sharing phone+email+account, should not get aggregated */
+    QTest::newRow("shared phone+email+account") << false // husband and wife, sharing phone+email+account, should not get aggregated
         << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "gumboots@familysocial"
         << "Jillian" << "Anastacia Faith" << "Gumboots" << "Jilly" << "unspecified" << "111992888337" << "gumboots@test.com" << "gumboots@familysocial";
 
     // different contactable details / same name
-    QTest::newRow("match name, different p/e/a") << true /* identical name match is enough to match the contact */
+    QTest::newRow("match name, different p/e/a") << true // identical name match is enough to match the contact
         << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
         << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "999118222773" << "freddy@test.net" << "fgumboots@coolsocial";
     QTest::newRow("match name insentive, different p/e/a") << true
@@ -2796,7 +2680,7 @@ void tst_Aggregation::aggregationHeuristic_data()
         << "Frederick" << "" << "Galoshes" << "" << "unspecified" << "999118222773" << "" << "";
 
     // similarities in name, different contactable details
-    QTest::newRow("similar name, different p/e/a") << false /* Only the last names match; not enough */
+    QTest::newRow("similar name, different p/e/a") << false // Only the last names match; not enough
         << "Frederick" << "William Preston" << "Gumboots" << "Freddy" << "unspecified" << "111992888337" << "gumboots@test.com" << "freddy00001@socialaccount"
         << "" << "" << "Gumboots" << "" << "unspecified" << "999118222773" << "anastacia@test.net" << "agumboots@coolsocial";
 
@@ -2892,9 +2776,23 @@ void tst_Aggregation::aggregationHeuristic()
     QFETCH(QString, bEmailAddress);
     QFETCH(QString, bOnlineAccount);
 
+    // add two test collections
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    QVERIFY(m_cm->saveCollection(&testAddressbook));
+
+    QContactCollection trialAddressbook;
+    trialAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("trial"));
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 6);
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/trial");
+    QVERIFY(m_cm->saveCollection(&trialAddressbook));
+
     for (int i = 0; i < 2; ++i) {
         QContact a, b;
-        QContactSyncTarget async, bsync;
         QContactName aname, bname;
         QContactNickname anick, bnick;
         QContactGender agen, bgen;
@@ -2903,8 +2801,7 @@ void tst_Aggregation::aggregationHeuristic()
         QContactOnlineAccount aoa, boa;
 
         // construct a
-        async.setSyncTarget("aggregation-heuristic-a");
-        a.saveDetail(&async);
+        a.setCollectionId(testAddressbook.id());
 
         if (!aFirstName.isEmpty() || !aMiddleName.isEmpty() || !aLastName.isEmpty()) {
             aname.setFirstName(aFirstName);
@@ -2939,8 +2836,7 @@ void tst_Aggregation::aggregationHeuristic()
         }
 
         // construct b
-        bsync.setSyncTarget("aggregation-heuristic-b");
-        b.saveDetail(&bsync);
+        b.setCollectionId(trialAddressbook.id());
 
         if (!bFirstName.isEmpty() || !bMiddleName.isEmpty() || !bLastName.isEmpty()) {
             bname.setFirstName(bFirstName);
@@ -2990,25 +2886,24 @@ void tst_Aggregation::aggregationHeuristic()
         QVERIFY(m_cm->saveContact(i == 0 ? &b : &a));
         QCOMPARE(m_cm->contactIds().count(), shouldAggregate ? (count+1) : (count+2));
 
-        m_cm->removeContact(a.id());
-        m_cm->removeContact(b.id());
+        QVERIFY(m_cm->removeContact(a.id()));
+        QVERIFY(m_cm->removeContact(b.id()));
     }
 }
 
 void tst_Aggregation::regenerateAggregate()
 {
     // here we create a local contact, and then save it
-    // and then we create a "sync" contact, which should "match" it.
+    // and then we create a "synced" contact, which should "match" it.
     // It should be related to the aggregate created for the sync.
-    // We then remove the sync target, which should cause the aggregate
+    // We then remove the synced contact, which should cause the aggregate
     // to be "regenerated" from the remaining aggregated contacts
     // (which in this case, is just the local contact).
 
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
 
     int aggCount = m_cm->contactIds().size();
-    int allCount = m_cm->contactIds(allSyncTargets).size();
+    int allCount = m_cm->contactIds(allCollections).size();
 
     // set up some signal spies
     QSignalSpy addSpy(m_cm, contactsAddedSignal);
@@ -3016,7 +2911,7 @@ void tst_Aggregation::regenerateAggregate()
     int addSpyCount = 0;
     int chgSpyCount = 0;
 
-    // now add a new local contact (no synctarget specified == automatically local)
+    // now add a new local contact (no collectionId specified == automatically local)
     QContact alice;
 
     QContactName an;
@@ -3042,17 +2937,16 @@ void tst_Aggregation::regenerateAggregate()
 
     QCOMPARE(m_cm->contactIds().size(), aggCount + 1); // 1 extra aggregate contact
     aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 2); // should have added local + aggregate
-    allCount = m_cm->contactIds(allSyncTargets).size();
+    QCOMPARE(m_cm->contactIds(allCollections).size(), allCount + 2); // should have added local + aggregate
+    allCount = m_cm->contactIds(allCollections).size();
 
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
     QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
     QContact localAlice;
     QContact aggregateAlice;
     bool foundLocalAlice = false;
     bool foundAggregateAlice = false;
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
         QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
@@ -3061,11 +2955,11 @@ void tst_Aggregation::regenerateAggregate()
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("88888")
                 && currEm.emailAddress() == QLatin1String("alice8@test.com")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 localAlice = curr;
                 foundLocalAlice = true;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
             }
@@ -3074,11 +2968,20 @@ void tst_Aggregation::regenerateAggregate()
 
     QVERIFY(foundLocalAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
 
     // now add the doppleganger from another sync source
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    QVERIFY(m_cm->saveCollection(&testAddressbook));
+
     QContact syncAlice;
+    syncAlice.setCollectionId(testAddressbook.id());
+
     QContactName san;
     san.setFirstName(an.firstName());
     san.setMiddleName(an.middleName());
@@ -3097,10 +3000,6 @@ void tst_Aggregation::regenerateAggregate()
     sah.setHobby(QLatin1String("tennis"));
     syncAlice.saveDetail(&sah);
 
-    QContactSyncTarget sast;
-    sast.setSyncTarget(QLatin1String("test"));
-    syncAlice.saveDetail(&sast);
-
     // DON'T clear the m_addAccumulatedIds list here.
     // DO clear the m_chgAccumulatedIds list here, though.
     chgSpyCount = chgSpy.count();
@@ -3118,15 +3017,14 @@ void tst_Aggregation::regenerateAggregate()
 
     QCOMPARE(m_cm->contactIds().size(), aggCount); // no extra aggregate contact
     aggCount = m_cm->contactIds().size();
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), allCount + 1); // should have added test but not an aggregate
-    allCount = m_cm->contactIds(allSyncTargets).size();
+    QCOMPARE(m_cm->contactIds(allCollections).size(), allCount + 1); // should have added test but not an aggregate
+    allCount = m_cm->contactIds(allCollections).size();
 
-    allContacts = m_cm->contacts(allSyncTargets);
+    allContacts = m_cm->contacts(allCollections);
     QCOMPARE(allContacts.size(), allCount); // should return as many contacts as contactIds.
     QContact testAlice;
     bool foundTestAlice = false;
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
         QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
@@ -3135,16 +3033,16 @@ void tst_Aggregation::regenerateAggregate()
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("88888")
                 && currEm.emailAddress() == QLatin1String("alice8@test.com")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QString()); // local shouldn't get it
                 localAlice = curr;
                 foundLocalAlice = true;
-            } else if (currSt.syncTarget() == QLatin1String("test")) {
+            } else if (curr.collectionId() == testAddressbook.id()) {
                 QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QLatin1String("tennis")); // came from here
                 testAlice = curr;
                 foundTestAlice = true;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QLatin1String("tennis")); // aggregated to here
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
@@ -3155,23 +3053,22 @@ void tst_Aggregation::regenerateAggregate()
     QVERIFY(foundLocalAlice);
     QVERIFY(foundTestAlice);
     QVERIFY(foundAggregateAlice);
-    QVERIFY(relatedContactIds(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(testAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(localAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(testAlice.id()));
+    QVERIFY(localAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(testAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(localAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(testAlice.id()));
 
     // now remove the "test" sync contact
     QVERIFY(m_cm->removeContact(removalId(testAlice)));
-    QVERIFY(!m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(testAlice))); // should have been removed
+    QVERIFY(!m_cm->contactIds(allCollections).contains(ContactId::apiId(testAlice))); // should have been removed
 
     // but the other contacts should NOT have been removed
-    QVERIFY(m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(localAlice)));
-    QVERIFY(m_cm->contactIds(allSyncTargets).contains(ContactId::apiId(aggregateAlice)));
+    QVERIFY(m_cm->contactIds(allCollections).contains(ContactId::apiId(localAlice)));
+    QVERIFY(m_cm->contactIds(allCollections).contains(ContactId::apiId(aggregateAlice)));
 
     // reload them, and ensure that the "hobby" detail has been removed from the aggregate
-    allContacts = m_cm->contacts(allSyncTargets);
+    allContacts = m_cm->contacts(allCollections);
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
         QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
@@ -3180,12 +3077,12 @@ void tst_Aggregation::regenerateAggregate()
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("88888")
                 && currEm.emailAddress() == QLatin1String("alice8@test.com")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QString());
                 localAlice = curr;
                 foundLocalAlice = true;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 QCOMPARE(curr.detail<QContactHobby>().value<QString>(QContactHobby::FieldHobby), QString());
                 aggregateAlice = curr;
                 foundAggregateAlice = true;
@@ -3196,8 +3093,7 @@ void tst_Aggregation::regenerateAggregate()
 
 void tst_Aggregation::detailUris()
 {
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
 
     // save alice.  Some details will have a detailUri or linkedDetailUris
     QContact alice;
@@ -3216,11 +3112,10 @@ void tst_Aggregation::detailUris()
     alice.saveDetail(&aem);
     QVERIFY(m_cm->saveContact(&alice));
 
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
     QContact localAlice;
     QContact aggregateAlice;
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
         QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
@@ -3229,10 +3124,10 @@ void tst_Aggregation::detailUris()
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("99999")
                 && currEm.emailAddress() == QLatin1String("alice9@test.com")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 localAlice = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
             }
         }
@@ -3268,11 +3163,10 @@ void tst_Aggregation::detailUris()
     QVERIFY(m_cm->saveContact(&localAlice));
 
     // reload them both
-    allContacts = m_cm->contacts(allSyncTargets);
+    allContacts = m_cm->contacts(allCollections);
     localAlice = QContact();
     aggregateAlice = QContact();
     foreach (const QContact &curr, allContacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactEmailAddress currEm = curr.detail<QContactEmailAddress>();
         QContactPhoneNumber currPhn = curr.detail<QContactPhoneNumber>();
         QContactName currName = curr.detail<QContactName>();
@@ -3281,10 +3175,10 @@ void tst_Aggregation::detailUris()
                 && currName.lastName() == QLatin1String("Wonderland")
                 && currPhn.number() == QLatin1String("99999")
                 && currEm.emailAddress() == QLatin1String("alice9@test.com")) {
-            if (currSt.syncTarget() == QLatin1String("local")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
                 localAlice = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
             }
         }
@@ -3343,9 +3237,8 @@ void tst_Aggregation::correctDetails()
     saveList << a << b << c << d;
     m_cm->saveContacts(&saveList);
 
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QContactCollectionFilter allCollections;
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
 
     QVERIFY(allContacts.size() >= saveList.size()); // at least that amount, maybe more (aggregates)
     for (int i = 0; i < allContacts.size(); ++i) {
@@ -3399,89 +3292,89 @@ void tst_Aggregation::batchSemantics()
     // for simplification of possible cases, however
 
     // for performance reasons, the engine assumes:
-    // 1) sync targets of all contacts in a batch save must be the same
-    // 2) no two contacts from the same sync target should be aggregated together
+    // 1) collectionId of all contacts in a batch save must be the same
+    // 2) no two contacts from the same collection should be aggregated together
 
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
+    QContactCollectionFilter allCollections;
+    QList<QContact> allContacts = m_cm->contacts(allCollections);
     int allContactsCount = allContacts.size();
 
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    QVERIFY(m_cm->saveCollection(&testAddressbook));
+
+    QContactCollection trialAddressbook;
+    trialAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("trial"));
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 6);
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/trial");
+    QVERIFY(m_cm->saveCollection(&trialAddressbook));
+
     QContact a, b, c;
+    b.setCollectionId(testAddressbook.id());
+    c.setCollectionId(trialAddressbook.id());
+
     QContactName aname, bname, cname;
-    QContactSyncTarget ast, bst, cst;
     aname.setFirstName("a");
     aname.setLastName("batch");
     bname.setFirstName("b");
     bname.setLastName("batch");
     cname.setFirstName("c");
     cname.setLastName("batch");
-    ast.setSyncTarget("async");
-    bst.setSyncTarget("bsync");
-    cst.setSyncTarget("csync");
 
     a.saveDetail(&aname);
-    a.saveDetail(&ast);
     b.saveDetail(&bname);
-    b.saveDetail(&bst);
     c.saveDetail(&cname);
-    c.saveDetail(&cst);
 
-    // a) batch save should fail due to different sync targets.
+    // a) batch save should fail due to different collection ids.
     QList<QContact> saveList;
     saveList << a << b << c;
     QVERIFY(!m_cm->saveContacts(&saveList));
 
     // b) same as (a)
-    cst.setSyncTarget("bsync");
-    c.saveDetail(&cst);
+    c.setCollectionId(testAddressbook.id()); // move addressbooks.
     saveList.clear();
     saveList << a << b << c;
     QVERIFY(!m_cm->saveContacts(&saveList));
 
     // c) same as (a) although in this case, local / empty are considered identical
-    ast.setSyncTarget("local");
-    bst.setSyncTarget(QString());
-    cst.setSyncTarget("csync");
-    a.saveDetail(&ast);
-    b.saveDetail(&bst);
-    c.saveDetail(&cst);
+    b.setCollectionId(QContactCollectionId());
     saveList.clear();
     saveList << a << b << c;
     QVERIFY(!m_cm->saveContacts(&saveList));
 
     // d) now it should succeed.
-    cst.setSyncTarget("local");
-    c.saveDetail(&cst);
+    c.setCollectionId(QContactCollectionId());
     saveList.clear();
     saveList << a << b << c;
     QVERIFY(m_cm->saveContacts(&saveList));
 
-    allContacts = m_cm->contacts(allSyncTargets);
+    allContacts = m_cm->contacts(allCollections);
     int newContactsCount = allContacts.size() - allContactsCount;
     QCOMPARE(newContactsCount, 6); // 3 local, 3 aggregate
 
-    // Now we test the semantic of "two contacts from the same sync target should get aggregated if they match"
+    // Now we test the semantic of "two contacts from the same collection should get aggregated if they match"
     QContact d, e;
+    d.setCollectionId(trialAddressbook.id());
+    e.setCollectionId(trialAddressbook.id());
+
     QContactName dname, ename;
-    QContactSyncTarget dst, est;
     dname.setFirstName("d");
     dname.setLastName("batch");
     ename.setFirstName("d");
     ename.setLastName("batch");
-    ast.setSyncTarget("batch-sync");
-    bst.setSyncTarget("batch-sync");
 
     d.saveDetail(&dname);
-    d.saveDetail(&dst);
     e.saveDetail(&ename);
-    e.saveDetail(&est);
 
     saveList.clear();
     saveList << d << e;
     QVERIFY(m_cm->saveContacts(&saveList));
 
-    allContacts = m_cm->contacts(allSyncTargets);
+    allContacts = m_cm->contacts(allCollections);
     newContactsCount = allContacts.size() - allContactsCount;
     QCOMPARE(newContactsCount, 9); // 5 local, 4 aggregate - d and e should have been aggregated into one.
 }
@@ -3490,29 +3383,31 @@ void tst_Aggregation::customSemantics()
 {
     // the qtcontacts-sqlite engine defines some custom semantics
     // 1) avatars have a custom "AvatarMetadata" field
-    // 2) self contact cannot be changed, and its id will always be "2"
+    // 2) self contact cannot be changed, and its id will always be "1" (aggregate=2)
 
-    // 1 - ensure that the AvatarMetadata field is supported.
+    // ensure that the AvatarMetadata field is supported.
     QContact alice;
     QContactName an;
     an.setFirstName("Alice");
     alice.saveDetail(&an);
     QContactAvatar aa;
     aa.setImageUrl(QUrl(QString::fromLatin1("test.png")));
-    aa.setValue(QContactAvatar__FieldAvatarMetadata, "cover");
+    aa.setValue(QContactAvatar::FieldMetaData, "cover");
     alice.saveDetail(&aa);
     QVERIFY(m_cm->saveContact(&alice));
     QContact aliceReloaded = m_cm->contact(retrievalId(alice));
     QCOMPARE(aliceReloaded.detail<QContactName>().value<QString>(QContactName::FieldFirstName), QLatin1String("Alice"));
     QCOMPARE(QUrl(aliceReloaded.detail<QContactAvatar>().value<QString>(QContactAvatar::FieldImageUrl)).toString(), QUrl(QString::fromLatin1("test.png")).toString());
-    QCOMPARE(aliceReloaded.detail<QContactAvatar>().value<QString>(QContactAvatar__FieldAvatarMetadata), QLatin1String("cover"));
+    QCOMPARE(aliceReloaded.detail<QContactAvatar>().value<QString>(QContactAvatar::FieldMetaData), QLatin1String("cover"));
 
-    // 2 - test the self contact semantics
-    QCOMPARE(m_cm->selfContactId(), ContactId::apiId(2));
+    // test the self contact semantics
+    QCOMPARE(m_cm->selfContactId(), ContactId::apiId(2, m_cm->managerUri()));
     QVERIFY(!m_cm->setSelfContactId(ContactId::apiId(alice)));
 
-    // cleanup.
-    m_cm->removeContact(removalId(alice));
+    // ensure we cannot delete the self contact.
+    QVERIFY(!m_cm->removeContact(ContactId::apiId(1, m_cm->managerUri())));
+    QVERIFY(!m_cm->removeContact(ContactId::apiId(2, m_cm->managerUri())));
+    QVERIFY(m_cm->removeContact(removalId(alice)));
 }
 
 void tst_Aggregation::changeLogFiltering()
@@ -3606,39 +3501,37 @@ void tst_Aggregation::changeLogFiltering()
     QVERIFY(at.lastModified() >= justPrior);
     QVERIFY(at.lastModified() <= QDateTime::currentDateTimeUtc());
 
+    QContactCollectionFilter localFilter;
+    localFilter.setCollectionId(QContactCollectionId(m_cm->managerUri(), localAddressbookId()));
+    QContactCollectionFilter aggFilter;
+    aggFilter.setCollectionId(QContactCollectionId(m_cm->managerUri(), aggregateAddressbookId()));
     QContactIntersectionFilter cif;
-    QContactDetailFilter stf;
-    setFilterDetail<QContactSyncTarget>(stf, QContactSyncTarget::FieldSyncTarget);
-    stf.setValue("local"); // explicitly ignore aggregates.
-    QContactDetailFilter astf;
-    setFilterDetail<QContactSyncTarget>(astf, QContactSyncTarget::FieldSyncTarget);
-    astf.setValue("aggregate"); // only include aggregates
     QContactChangeLogFilter clf;
 
     clf.setEventType(QContactChangeLogFilter::EventAdded);
     clf.setSince(beforeBCreated); // should contain b, but not a as a's creation time was days-5
-    cif.clear(); cif << stf << clf;
+    cif.clear(); cif << localFilter << clf;
     QList<QContactId> filtered = m_cm->contactIds(cif);
     QVERIFY(!filtered.contains(retrievalId(a)));
     QVERIFY(filtered.contains(retrievalId(b)));
 
     clf.setEventType(QContactChangeLogFilter::EventAdded);
     clf.setSince(betweenTime);   // should not contain either a or b
-    cif.clear(); cif << stf << clf;
+    cif.clear(); cif << localFilter << clf;
     filtered = m_cm->contactIds(cif);
     QVERIFY(!filtered.contains(retrievalId(a)));
     QVERIFY(!filtered.contains(retrievalId(b)));
 
     clf.setEventType(QContactChangeLogFilter::EventChanged);
     clf.setSince(betweenTime);   // should contain a (modified after betweenTime) but not b (modified before)
-    cif.clear(); cif << stf << clf;
+    cif.clear(); cif << localFilter << clf;
     filtered = m_cm->contactIds(cif);
     QVERIFY(filtered.contains(retrievalId(a)));
     QVERIFY(!filtered.contains(retrievalId(b)));
 
     clf.setEventType(QContactChangeLogFilter::EventChanged);
     clf.setSince(startTime);     // should contain both a and b
-    cif.clear(); cif << stf << clf;
+    cif.clear(); cif << localFilter << clf;
     filtered = m_cm->contactIds(cif);
     QVERIFY(filtered.contains(retrievalId(a)));
     QVERIFY(filtered.contains(retrievalId(b)));
@@ -3651,13 +3544,13 @@ void tst_Aggregation::changeLogFiltering()
     QVERIFY(!filtered.contains(retrievalId(b)));
 
     // Filtering in combination with syncTarget filtering is also supported
-    cif.clear(); cif << stf << clf;
+    cif.clear(); cif << localFilter << clf;
     filtered = m_cm->contactIds(cif);
     QVERIFY(!filtered.contains(retrievalId(a)));
     QVERIFY(!filtered.contains(retrievalId(b)));
 
     // Either order of intersected filters is the same
-    cif.clear(); cif << clf << stf;
+    cif.clear(); cif << clf << localFilter;
     filtered = m_cm->contactIds(cif);
     QVERIFY(!filtered.contains(retrievalId(a)));
     QVERIFY(!filtered.contains(retrievalId(b)));
@@ -3675,61 +3568,59 @@ void tst_Aggregation::changeLogFiltering()
     clf.setEventType(QContactChangeLogFilter::EventRemoved);
     clf.setSince(startTime);     // should contain both a and b
     filtered = m_cm->contactIds(clf);
-    QVERIFY(filtered.count() >= 4);
+    QVERIFY(filtered.count() >= 2);
     QVERIFY(filtered.contains(idA));
     QVERIFY(filtered.contains(idB));
 
     // Check that syncTarget filtering is also applied
-    cif.clear(); cif << stf << clf;
+    cif.clear(); cif << localFilter << clf;
     filtered = m_cm->contactIds(cif);
     QVERIFY(filtered.count() >= 2);
     QVERIFY(filtered.contains(idA));
     QVERIFY(filtered.contains(idB));
 
-    cif.clear(); cif << astf << clf;
+    // And that aggregate contacts are not reported for EventRemoved filters
+    // as aggregate contacts are deleted directly rather than marked with changeFlags.
+    cif.clear(); cif << aggFilter << clf;
     filtered = m_cm->contactIds(cif);
-    QVERIFY(filtered.count() >= 2);
-    QVERIFY(!filtered.contains(idA));
-    QVERIFY(!filtered.contains(idB));
+    QCOMPARE(filtered.count(), 0);
 
     // Check that since values are applied
     clf = QContactChangeLogFilter();
     clf.setEventType(QContactChangeLogFilter::EventRemoved);
-    clf.setSince(postDeleteTime);     // should contain both only b
+    clf.setSince(postDeleteTime);     // should contain only b
     filtered = m_cm->contactIds(clf);
-    QVERIFY(filtered.count() >= 2);
-    QVERIFY(filtered.contains(idB));
-
-    cif.clear(); cif << stf << clf;
-    filtered = m_cm->contactIds(cif);
     QVERIFY(filtered.count() >= 1);
     QVERIFY(filtered.contains(idB));
 
-    cif.clear(); cif << astf << clf;
+    cif.clear(); cif << localFilter << clf;
     filtered = m_cm->contactIds(cif);
     QVERIFY(filtered.count() >= 1);
-    QVERIFY(!filtered.contains(idB));
+    QVERIFY(filtered.contains(idB));
 
     // Check that since is not required
     clf = QContactChangeLogFilter();
     clf.setEventType(QContactChangeLogFilter::EventRemoved);
     filtered = m_cm->contactIds(clf);
-    QVERIFY(filtered.count() >= 4);
+    QVERIFY(filtered.count() >= 2);
     QVERIFY(filtered.contains(idA));
     QVERIFY(filtered.contains(idB));
 }
 
 void tst_Aggregation::deactivationSingle()
 {
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
 
-    // add a new contact (synctarget must be specified to deactivate)
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    QVERIFY(m_cm->saveCollection(&testAddressbook));
+
+    // add a new contact (collectionId must be specified to deactivate)
     QContact syncAlice;
-
-    QContactSyncTarget sast;
-    sast.setSyncTarget(QLatin1String("test"));
-    syncAlice.saveDetail(&sast);
+    syncAlice.setCollectionId(testAddressbook.id());
 
     QContactName an;
     an.setFirstName("Alice");
@@ -3741,17 +3632,16 @@ void tst_Aggregation::deactivationSingle()
 
     QContact aggregateAlice;
 
-    QList<QContact> contacts = m_cm->contacts(allSyncTargets);
+    QList<QContact> contacts = m_cm->contacts(allCollections);
     foreach (const QContact &curr, contacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Alice") &&
             currName.middleName() == QLatin1String("Through The") &&
             currName.lastName() == QLatin1String("Looking-Glass")) {
-            if (currSt.syncTarget() == QLatin1String("test")) {
+            if (curr.collectionId() == testAddressbook.id()) {
                 syncAlice = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
             }
         }
@@ -3760,13 +3650,13 @@ void tst_Aggregation::deactivationSingle()
     // Check that aggregation occurred
     QVERIFY(syncAlice.id() != QContactId());
     QVERIFY(aggregateAlice.id() != QContactId());
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).count() == 1);
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
+    QVERIFY(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count() == 1);
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(syncAlice.id()));
 
     // Verify the presence of the contact IDs
-    QList<QContactId> contactIds = m_cm->contactIds(allSyncTargets);
+    QList<QContactId> contactIds = m_cm->contactIds(allCollections);
     QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)));
     QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
 
@@ -3783,17 +3673,16 @@ void tst_Aggregation::deactivationSingle()
 
     syncAlice = aggregateAlice = QContact();
 
-    contacts = m_cm->contacts(allSyncTargets);
+    contacts = m_cm->contacts(allCollections);
     foreach (const QContact &curr, contacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Alice") &&
             currName.middleName() == QLatin1String("Through The") &&
             currName.lastName() == QLatin1String("Looking-Glass")) {
-            if (currSt.syncTarget() == QLatin1String("test")) {
+            if (curr.collectionId() == testAddressbook.id()) {
                 syncAlice = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
             }
         }
@@ -3807,33 +3696,32 @@ void tst_Aggregation::deactivationSingle()
     // Verify that test alice still exists
     syncAlice = m_cm->contact(syncAliceId);
     QVERIFY(syncAlice.id() == syncAliceId);
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 0);
+    QVERIFY(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 0);
 
     // Verify the presence/absence of the contact IDs
-    contactIds = m_cm->contactIds(allSyncTargets);
+    contactIds = m_cm->contactIds(allCollections);
     QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)) == false);
 
-    contactIds = m_cm->contactIds(allSyncTargets & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeactivated, QContactFilter::MatchContains));
+    contactIds = m_cm->contactIds(allCollections & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeactivated, QContactFilter::MatchContains));
     QVERIFY(contactIds.contains(syncAliceId));
 
     // Reactivate
     deactivated = syncAlice.detail<QContactDeactivated>();
-    syncAlice.removeDetail(&deactivated);
+    syncAlice.removeDetail(&deactivated, QContact::IgnoreAccessConstraints);
     QVERIFY(m_cm->saveContact(&syncAlice));
 
     syncAlice = aggregateAlice = QContact();
 
-    contacts = m_cm->contacts(allSyncTargets);
+    contacts = m_cm->contacts(allCollections);
     foreach (const QContact &curr, contacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Alice") &&
             currName.middleName() == QLatin1String("Through The") &&
             currName.lastName() == QLatin1String("Looking-Glass")) {
-            if (currSt.syncTarget() == QLatin1String("test")) {
+            if (curr.collectionId() == testAddressbook.id()) {
                 syncAlice = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
             }
         }
@@ -3842,37 +3730,47 @@ void tst_Aggregation::deactivationSingle()
     // Check that aggregation is restored
     QVERIFY(syncAlice.id() != QContactId());
     QVERIFY(aggregateAlice.id() != QContactId());
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).count() == 1);
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
+    QVERIFY(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count() == 1);
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(syncAlice.id()));
 
     // Check that the reactivated contact retains the same ID
     QVERIFY(syncAlice.id() == syncAliceId);
 
     // Verify the presence of all contact IDs when queried
-    contactIds = m_cm->contactIds(allSyncTargets);
+    contactIds = m_cm->contactIds(allCollections);
     QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)));
     QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
 }
 
 void tst_Aggregation::deactivationMultiple()
 {
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    QContactCollectionFilter allCollections;
 
-    // add a new contact (synctarget must be specified to deactivate)
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    QVERIFY(m_cm->saveCollection(&testAddressbook));
+
+    QContactCollection trialAddressbook;
+    trialAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("trial"));
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 6);
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/trial");
+    QVERIFY(m_cm->saveCollection(&trialAddressbook));
+
+    // add a new contact (collection must be specified to deactivate)
     QContact syncAlice;
+    syncAlice.setCollectionId(testAddressbook.id());
 
     QContactName an;
     an.setFirstName("Alice");
     an.setMiddleName("Through The");
     an.setLastName("Looking-Glass");
     syncAlice.saveDetail(&an);
-
-    QContactSyncTarget sast;
-    sast.setSyncTarget(QLatin1String("test"));
-    syncAlice.saveDetail(&sast);
 
     QContactPhoneNumber aph;
     aph.setNumber("34567");
@@ -3882,6 +3780,8 @@ void tst_Aggregation::deactivationMultiple()
 
     // now add the doppelganger from another sync source
     QContact otherAlice;
+    otherAlice.setCollectionId(trialAddressbook.id());
+
     QContactName san;
     san.setFirstName(an.firstName());
     san.setMiddleName(an.middleName());
@@ -3892,27 +3792,22 @@ void tst_Aggregation::deactivationMultiple()
     saph.setNumber("76543");
     otherAlice.saveDetail(&saph);
 
-    QContactSyncTarget oast;
-    oast.setSyncTarget(QLatin1String("other"));
-    otherAlice.saveDetail(&oast);
-
     QVERIFY(m_cm->saveContact(&otherAlice));
 
     QContact aggregateAlice;
 
-    QList<QContact> contacts = m_cm->contacts(allSyncTargets);
+    QList<QContact> contacts = m_cm->contacts(allCollections);
     foreach (const QContact &curr, contacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Alice") &&
             currName.middleName() == QLatin1String("Through The") &&
             currName.lastName() == QLatin1String("Looking-Glass")) {
-            if (currSt.syncTarget() == QLatin1String("test")) {
+            if (curr.collectionId() == testAddressbook.id()) {
                 syncAlice = curr;
-            } else if (currSt.syncTarget() == QLatin1String("other")) {
+            } else if (curr.collectionId() == trialAddressbook.id()) {
                 otherAlice = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
             }
         }
@@ -3922,20 +3817,20 @@ void tst_Aggregation::deactivationMultiple()
     QVERIFY(syncAlice.id() != QContactId());
     QVERIFY(otherAlice.id() != QContactId());
     QVERIFY(aggregateAlice.id() != QContactId());
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
-    QVERIFY(relatedContactIds(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).count() == 2);
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(otherAlice.id()));
+    QVERIFY(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count() == 2);
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(syncAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(otherAlice.id()));
 
     QCOMPARE(syncAlice.details<QContactPhoneNumber>().count(), 1);
     QCOMPARE(otherAlice.details<QContactPhoneNumber>().count(), 1);
     QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 2);
 
     // Verify the presence of the contact IDs
-    QList<QContactId> contactIds = m_cm->contactIds(allSyncTargets);
+    QList<QContactId> contactIds = m_cm->contactIds(allCollections);
     QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)));
     QVERIFY(contactIds.contains(ContactId::apiId(otherAlice)));
     QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
@@ -3954,19 +3849,18 @@ void tst_Aggregation::deactivationMultiple()
 
     syncAlice = otherAlice = aggregateAlice = QContact();
 
-    contacts = m_cm->contacts(allSyncTargets);
+    contacts = m_cm->contacts(allCollections);
     foreach (const QContact &curr, contacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Alice") &&
             currName.middleName() == QLatin1String("Through The") &&
             currName.lastName() == QLatin1String("Looking-Glass")) {
-            if (currSt.syncTarget() == QLatin1String("test")) {
+            if (curr.collectionId() == testAddressbook.id()) {
                 syncAlice = curr;
-            } else if (currSt.syncTarget() == QLatin1String("other")) {
+            } else if (curr.collectionId() == trialAddressbook.id()) {
                 otherAlice = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
             }
         }
@@ -3976,11 +3870,11 @@ void tst_Aggregation::deactivationMultiple()
     QVERIFY(syncAlice.id() == QContactId());
     QVERIFY(otherAlice.id() != QContactId());
     QVERIFY(aggregateAlice.id() != QContactId());
-    QVERIFY(relatedContactIds(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
-    QVERIFY(relatedContactIds(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).count() == 2);
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAliceId));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(otherAlice.id()));
+    QVERIFY(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count() == 2);
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(syncAliceId));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(otherAlice.id()));
 
     // Check that the aggregate does not contain the deactivated detail
     QCOMPARE(otherAlice.details<QContactPhoneNumber>().count(), 1);
@@ -3989,16 +3883,16 @@ void tst_Aggregation::deactivationMultiple()
     // Verify that test alice still exists
     syncAlice = m_cm->contact(syncAliceId);
     QVERIFY(syncAlice.id() == syncAliceId);
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
+    QVERIFY(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
 
     // Verify the presence/absence of the contact IDs
-    contactIds = m_cm->contactIds(allSyncTargets);
+    contactIds = m_cm->contactIds(allCollections);
     QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)) == false);
     QVERIFY(contactIds.contains(ContactId::apiId(otherAlice)));
     QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
 
-    contactIds = m_cm->contactIds(allSyncTargets & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeactivated, QContactFilter::MatchContains));
+    contactIds = m_cm->contactIds(allCollections & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeactivated, QContactFilter::MatchContains));
     QVERIFY(contactIds.contains(syncAliceId));
     QVERIFY(contactIds.contains(ContactId::apiId(otherAlice)) == false);
     QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)) == false);
@@ -4010,19 +3904,18 @@ void tst_Aggregation::deactivationMultiple()
 
     syncAlice = otherAlice = aggregateAlice = QContact();
 
-    contacts = m_cm->contacts(allSyncTargets);
+    contacts = m_cm->contacts(allCollections);
     foreach (const QContact &curr, contacts) {
-        QContactSyncTarget currSt = curr.detail<QContactSyncTarget>();
         QContactName currName = curr.detail<QContactName>();
         if (currName.firstName() == QLatin1String("Alice") &&
             currName.middleName() == QLatin1String("Through The") &&
             currName.lastName() == QLatin1String("Looking-Glass")) {
-            if (currSt.syncTarget() == QLatin1String("test")) {
+            if (curr.collectionId() == testAddressbook.id()) {
                 syncAlice = curr;
-            } else if (currSt.syncTarget() == QLatin1String("other")) {
+            } else if (curr.collectionId() == trialAddressbook.id()) {
                 otherAlice = curr;
             } else {
-                QCOMPARE(currSt.syncTarget(), QLatin1String("aggregate"));
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
                 aggregateAlice = curr;
             }
         }
@@ -4032,13 +3925,13 @@ void tst_Aggregation::deactivationMultiple()
     QVERIFY(syncAlice.id() != QContactId());
     QVERIFY(otherAlice.id() != QContactId());
     QVERIFY(aggregateAlice.id() != QContactId());
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
-    QVERIFY(relatedContactIds(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).count() == 1);
-    QVERIFY(relatedContactIds(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First)).contains(aggregateAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).count() == 2);
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(syncAlice.id()));
-    QVERIFY(relatedContactIds(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second)).contains(otherAlice.id()));
+    QVERIFY(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(syncAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(otherAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count() == 2);
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(syncAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(otherAlice.id()));
 
     // Re-activated details are now aggregated
     QCOMPARE(syncAlice.details<QContactPhoneNumber>().count(), 1);
@@ -4049,2188 +3942,569 @@ void tst_Aggregation::deactivationMultiple()
     QVERIFY(syncAlice.id() == syncAliceId);
 
     // Verify the presence of all contact IDs when queried
-    contactIds = m_cm->contactIds(allSyncTargets);
+    contactIds = m_cm->contactIds(allCollections);
     QVERIFY(contactIds.contains(ContactId::apiId(syncAlice)));
     QVERIFY(contactIds.contains(ContactId::apiId(otherAlice)));
     QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
 }
 
-void tst_Aggregation::fetchSyncContacts()
+void tst_Aggregation::deletionSingle()
 {
     QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
+    QContactManager::Error err = QContactManager::NoError;
 
-    QSignalSpy syncSpy(cme, SIGNAL(syncContactsChanged(QStringList)));
+    QContactCollectionFilter allCollections;
 
-    QList<QContact> syncContacts;
-    QList<QContact> addedContacts;
-    QList<QContactId> exportedIds;
-    QList<QContactId> syncExportedIds;
-    QList<QContactId> deletedIds;
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    QVERIFY(m_cm->saveCollection(&testAddressbook));
 
-    QDateTime initialTime = QDateTime::currentDateTimeUtc();
-    QDateTime updatedSyncTime;
-    QTest::qWait(1);
+    // add a new contact
+    QContact alice;
 
-    // Initial test - ensure that nothing is reported for sync
-    QContactManager::Error err;
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 0);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-    QCOMPARE(syncSpy.count(), 0);
+    QContactName an;
+    an.setFirstName("Alice");
+    an.setMiddleName("Through The");
+    an.setLastName("Looking-Glass");
+    alice.saveDetail(&an);
 
-    // Also test export behavior
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("export", initialTime, syncExportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 0);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
+    QVERIFY(m_cm->saveContact(&alice));
 
-    // Store a sync target contact originating at this service
-    QContactName n;
-    n.setFirstName("Mad");
-    n.setLastName("Hatter");
+    QContact aggregateAlice;
 
-    QContactSyncTarget stTarget;
-    stTarget.setSyncTarget("sync-test");
-
-    QContact stc;
-    stc.saveDetail(&n);
-    stc.saveDetail(&stTarget);
-
-    QContactEmailAddress e;
-    e.setEmailAddress("mad.hatter@example.org");
-    stc.saveDetail(&e);
-
-    // Add a detail marked as non-exportable
-    QContactPhoneNumber pn;
-    pn.setNumber("555-555-555");
-    pn.setValue(QContactDetail__FieldNonexportable, true);
-    stc.saveDetail(&pn);
-
-    QVERIFY(m_cm->saveContact(&stc));
-
-    QTRY_COMPARE(syncSpy.count(), 1);
-    QVariantList signalArgs(syncSpy.takeFirst());
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    QStringList changedSyncTargets(signalArgs.first().value<QStringList>());
-    QCOMPARE(changedSyncTargets.count(), 1);
-    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
-
-    stc = m_cm->contact(retrievalId(stc));
-
-    QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QContactId a1 = stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id();
-
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-
-    // The partial aggregate should have the same ID as the constituent it was derived from
-    QContact pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), stc.id());
-
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 1);
-    QCOMPARE(pa.details<QContactEmailAddress>().at(0).emailAddress(), e.emailAddress());
-
-    QCOMPARE(pa.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(pa.details<QContactPhoneNumber>().at(0).number(), pn.number());
-
-    // Invalid since time is equivalent to not having a time limitation
-    syncContacts.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", QDateTime(), exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QVERIFY(syncContacts.count() >= 1);
-
-    // This contact should also be reported for export
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("export", initialTime, syncExportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 0);
-    QCOMPARE(addedContacts.count(), 1);
-    QCOMPARE(deletedIds.count(), 0);
-
-    // The export contact should have the aggregate ID
-    pa = addedContacts.at(0);
-    QCOMPARE(pa.id(), a1);
-
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 1);
-    QCOMPARE(pa.details<QContactEmailAddress>().at(0).emailAddress(), e.emailAddress());
-
-    // The non-exportable data is excluded from the export details
-    QCOMPARE(pa.details<QContactPhoneNumber>().count(), 0);
-
-    // Add this contact to the sync-export set
-    syncExportedIds.append(pa.id());
-
-    // Create a local contact which is merged with the test contact
-    QContact lc;
-    lc.saveDetail(&n);
-
-    e.setEmailAddress("cheshire.cat@example.org");
-    lc.saveDetail(&e);
-
-    QVERIFY(m_cm->saveContact(&lc));
-
-    QTRY_COMPARE(syncSpy.count(), 1);
-    signalArgs = syncSpy.takeFirst();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    changedSyncTargets = signalArgs.first().value<QStringList>();
-    QCOMPARE(changedSyncTargets.count(), 1);
-    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
-
-    lc = m_cm->contact(retrievalId(lc));
-
-    QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a1);
-
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-
-    pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), stc.id());
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 2);
-    QSet<QString> addresses;
-    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
-        addresses.insert(addr.emailAddress());
-    }
-    QVERIFY(addresses.contains(stc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
-
-    // The modified aggregate should be reported modified for export
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("export", initialTime, syncExportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-
-    pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), a1);
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 2);
-    addresses.clear();
-    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
-        addresses.insert(addr.emailAddress());
-    }
-    QVERIFY(addresses.contains(stc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
-
-    // Create another local contact which is merged with the test contact (the first local becomes was_local)
-    QContact alc;
-    alc.saveDetail(&n);
-
-    e.setEmailAddress("white.rabbit@example.org");
-    alc.saveDetail(&e);
-
-    QVERIFY(m_cm->saveContact(&alc));
-
-    QTRY_COMPARE(syncSpy.count(), 1);
-    signalArgs = syncSpy.takeFirst();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    changedSyncTargets = signalArgs.first().value<QStringList>();
-    QCOMPARE(changedSyncTargets.count(), 1);
-    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
-
-    alc = m_cm->contact(retrievalId(alc));
-
-    QCOMPARE(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QCOMPARE(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a1);
-
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-
-    pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), stc.id());
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 3);
-    addresses.clear();
-    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
-        addresses.insert(addr.emailAddress());
-    }
-    QVERIFY(addresses.contains(stc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(alc.detail<QContactEmailAddress>().emailAddress()));
-
-    // The export contact is modified, and the ID is unchanged
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("export", initialTime, syncExportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-
-    pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), a1);
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 3);
-    addresses.clear();
-    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
-        addresses.insert(addr.emailAddress());
-    }
-    QVERIFY(addresses.contains(stc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(alc.detail<QContactEmailAddress>().emailAddress()));
-
-    // Create a different sync target contact which is merged with the test contact
-    QContact dstc;
-    dstc.saveDetail(&n);
-
-    e.setEmailAddress("lewis.carroll@example.org");
-    dstc.saveDetail(&e);
-
-    QContactSyncTarget dstTarget;
-    dstTarget.setSyncTarget("different-sync-target");
-    dstc.saveDetail(&dstTarget);
-
-    QVERIFY(m_cm->saveContact(&dstc));
-
-    QTRY_COMPARE(syncSpy.count(), 1);
-    signalArgs = syncSpy.takeFirst();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    changedSyncTargets = signalArgs.first().value<QStringList>();
-    QCOMPARE(changedSyncTargets.count(), 1);
-    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
-
-    dstc = m_cm->contact(retrievalId(dstc));
-
-    QCOMPARE(dstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QCOMPARE(dstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a1);
-
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-
-    // Data from the other sync target should not be be returned here
-    pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), stc.id());
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 3);
-    addresses.clear();
-    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
-        addresses.insert(addr.emailAddress());
-    }
-    QVERIFY(addresses.contains(stc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(alc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(!addresses.contains(dstc.detail<QContactEmailAddress>().emailAddress()));
-
-    // The additional sync target data is included for export
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("export", initialTime, syncExportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-
-    pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), a1);
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 4);
-    addresses.clear();
-    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
-        addresses.insert(addr.emailAddress());
-    }
-    QVERIFY(addresses.contains(stc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(alc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(dstc.detail<QContactEmailAddress>().emailAddress()));
-
-    // Store an additional sync target contact originating at this service, merged into the same aggregate
-    QContact astc;
-    astc.saveDetail(&n);
-    astc.saveDetail(&stTarget);
-
-    e.setEmailAddress("march.hare@example.org");
-    astc.saveDetail(&e);
-
-    QVERIFY(m_cm->saveContact(&astc));
-
-    QTRY_COMPARE(syncSpy.count(), 1);
-    signalArgs = syncSpy.takeFirst();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    changedSyncTargets = signalArgs.first().value<QStringList>();
-    QCOMPARE(changedSyncTargets.count(), 1);
-    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
-
-    astc = m_cm->contact(retrievalId(astc));
-
-    QCOMPARE(astc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QCOMPARE(astc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a1);
-
-    // We should have two partial aggregates now
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 2);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-    QDateTime updatedInitialSyncTime = updatedSyncTime; // store for use later.
-
-    QVERIFY(syncContacts.at(0).id() != syncContacts.at(1).id());
-    for (int i = 0; i < 2; ++i) {
-        // Each partial aggregate should contain their own data, plus any shared local/was_local data
-        pa = syncContacts.at(i);
-        if (pa.id() == stc.id()) {
-            QCOMPARE(pa.details<QContactEmailAddress>().count(), 3);
-            addresses.clear();
-            foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
-                addresses.insert(addr.emailAddress());
+    QList<QContact> contacts = m_cm->contacts(allCollections);
+    foreach (const QContact &curr, contacts) {
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") &&
+            currName.middleName() == QLatin1String("Through The") &&
+            currName.lastName() == QLatin1String("Looking-Glass")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
+                alice = curr;
+            } else {
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
+                aggregateAlice = curr;
             }
-            QVERIFY(addresses.contains(stc.detail<QContactEmailAddress>().emailAddress()));
-            QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
-            QVERIFY(addresses.contains(alc.detail<QContactEmailAddress>().emailAddress()));
-        } else {
-            QCOMPARE(pa.id(), astc.id());
-            QCOMPARE(pa.details<QContactEmailAddress>().count(), 3);
-            addresses.clear();
-            foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
-                addresses.insert(addr.emailAddress());
-            }
-            QVERIFY(addresses.contains(astc.detail<QContactEmailAddress>().emailAddress()));
-            QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
-            QVERIFY(addresses.contains(alc.detail<QContactEmailAddress>().emailAddress()));
         }
     }
 
-    // The export set still contains a single contact
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("export", initialTime, syncExportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
+    // Check that aggregation occurred
+    QVERIFY(alice.id() != QContactId());
+    QVERIFY(aggregateAlice.id() != QContactId());
+    QVERIFY(alice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(alice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count() == 1);
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(alice.id()));
 
-    pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), a1);
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 5);
-    addresses.clear();
-    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
-        addresses.insert(addr.emailAddress());
-    }
-    QVERIFY(addresses.contains(stc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(lc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(alc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(dstc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(astc.detail<QContactEmailAddress>().emailAddress()));
+    // Verify the presence of the contact IDs
+    QList<QContactId> contactIds = m_cm->contactIds(allCollections);
+    QVERIFY(contactIds.contains(ContactId::apiId(alice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
 
-    // Create a time boundary here
-    QDateTime nextTime = QDateTime::currentDateTimeUtc();
-    QTest::qWait(1);
+    contactIds = m_cm->contactIds();
+    QVERIFY(contactIds.contains(ContactId::apiId(alice)) == false);
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
 
-    // Add an new local contact, which is unrelated
-    QContact nlc;
+    QContactId aliceId = alice.id();
 
-    QContactName n2;
-    n2.setFirstName("The Queen");
-    n2.setLastName("of Hearts");
-    nlc.saveDetail(&n2);
+    // Now delete the contact
+    QVERIFY(m_cm->removeContact(alice.id()));
 
-    e.setEmailAddress("her.majesty@example.org");
-    nlc.saveDetail(&e);
-
-    QVERIFY(m_cm->saveContact(&nlc));
-
-    // No sync target is affected by this store
-    QVERIFY(!syncSpy.wait(1000));
-
-    nlc = m_cm->contact(retrievalId(nlc));
-
-    QCOMPARE(nlc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QVERIFY(nlc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id() != a1);
-    QContactId a2 = nlc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id();
-
-    // The new contact will be reported as newly added
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 2);
-    QCOMPARE(addedContacts.count(), 1);
-    QCOMPARE(deletedIds.count(), 0);
-
-    pa = syncContacts.at(0);
-    QVERIFY(pa.id() == stc.id() || pa.id() == astc.id());
-    pa = syncContacts.at(1);
-    QVERIFY(pa.id() == stc.id() || pa.id() == astc.id());
-
-    // Added contacts return the IDs of their local constituents
-    pa = addedContacts.at(0);
-    QCOMPARE(pa.id(), nlc.id());
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 1);
-    addresses.clear();
-    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
-        addresses.insert(addr.emailAddress());
-    }
-    QVERIFY(addresses.contains(nlc.detail<QContactEmailAddress>().emailAddress()));
-
-    // The new contact is also reported for export
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("export", initialTime, syncExportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 1);
-    QCOMPARE(deletedIds.count(), 0);
-
-    QCOMPARE(syncContacts.at(0).id(), a1);
-
-    pa = addedContacts.at(0);
-    QCOMPARE(pa.id(), a2);
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 1);
-    addresses.clear();
-    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
-        addresses.insert(addr.emailAddress());
-    }
-    QVERIFY(addresses.contains(nlc.detail<QContactEmailAddress>().emailAddress()));
-
-    // Add this contact to our export set
-    syncExportedIds.append(pa.id());
-
-    // Create a time boundary here
-    QDateTime afterAdditionTime = QDateTime::currentDateTimeUtc();
-    QTest::qWait(1);
-
-    // Test the timestamp filtering - fetch using nextTime
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", nextTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 0);
-    QCOMPARE(addedContacts.count(), 1);
-    QCOMPARE(deletedIds.count(), 0);
-    QDateTime updatedNextSyncTime = updatedSyncTime;
-
-    pa = addedContacts.at(0);
-    QCOMPARE(pa.id(), nlc.id());
-
-    // Test the timestamp filtering - fetch using updatedSyncTime -- results should be equivalent to using nextTime
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = updatedInitialSyncTime; // the updatedInitialSyncTime should be "equivalent" time-separation-wise to nextTime.
-    QVERIFY(cme->fetchSyncContacts("sync-test", updatedSyncTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 0);
-    QCOMPARE(addedContacts.count(), 1);
-    QCOMPARE(deletedIds.count(), 0);
-
-    pa = addedContacts.at(0);
-    QCOMPARE(pa.id(), nlc.id());
-
-    // ensure that the timestamp update calculations work as expected
-    QCOMPARE(updatedSyncTime, updatedNextSyncTime); // should have been updated to the same value.
-    QCOMPARE(updatedSyncTime, pa.detail<QContactTimestamp>().created());
-
-    // Fetch with afterAddition
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 0);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-
-    // Report the added contact in the previously-exported list, as being of relevance
-    exportedIds.append(nlc.id());
-
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 0);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 3);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-
-    // The added contact is now in our sync set
-    QSet<QContactId> paIds;
-    foreach (const QContact &pac, syncContacts) {
-        paIds.insert(pac.id());
-    }
-    QCOMPARE(paIds, (QList<QContactId>() << stc.id() << astc.id() << nlc.id()).toSet());
-
-    // Merge another contact into the extraneous contact, from a different sync target
-    QContact nastc;
-    nastc.saveDetail(&n2);
-
-    nastc.saveDetail(&dstTarget);
-
-    e.setEmailAddress("caterpillar@example.org");
-    nastc.saveDetail(&e);
-
-    QVERIFY(m_cm->saveContact(&nastc));
-
-    QTRY_COMPARE(syncSpy.count(), 1);
-    signalArgs = syncSpy.takeFirst();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    changedSyncTargets = signalArgs.first().value<QStringList>();
-    QCOMPARE(changedSyncTargets.count(), 1);
-    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
-
-    nastc = m_cm->contact(retrievalId(nastc));
-
-    QCOMPARE(nastc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QCOMPARE(nastc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a2);
-
-    QContact na = m_cm->contact(a2);
-    QCOMPARE(na.details<QContactEmailAddress>().count(), 2);
-    addresses.clear();
-    foreach (const QContactEmailAddress &addr, na.details<QContactEmailAddress>()) {
-        addresses.insert(addr.emailAddress());
-    }
-    QVERIFY(addresses.contains(nlc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(nastc.detail<QContactEmailAddress>().emailAddress()));
-
-    // Filter so only this contact is included
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-
-    // The data from the other sync target is excluded
-    pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), nlc.id());
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 1);
-    addresses.clear();
-    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
-        addresses.insert(addr.emailAddress());
-    }
-    QVERIFY(addresses.contains(nlc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(!addresses.contains(nastc.detail<QContactEmailAddress>().emailAddress()));
-
-    QDateTime finalAdditionTime = QDateTime::currentDateTimeUtc();
-    QTest::qWait(1);
-
-    // The contact is reported as modified for export
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("export", afterAdditionTime, syncExportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-
-    pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), a2);
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 2);
-    addresses.clear();
-    foreach (const QContactEmailAddress &addr, pa.details<QContactEmailAddress>()) {
-        addresses.insert(addr.emailAddress());
-    }
-    QVERIFY(addresses.contains(nlc.detail<QContactEmailAddress>().emailAddress()));
-    QVERIFY(addresses.contains(nastc.detail<QContactEmailAddress>().emailAddress()));
-
-    // Create a final new contact, with a different sync target
-    QContact fstc;
-
-    QContactName n3;
-    n3.setFirstName("Mock");
-    n3.setLastName("Turtle");
-    fstc.saveDetail(&n3);
-
-    fstc.saveDetail(&dstTarget);
-
-    QVERIFY(m_cm->saveContact(&fstc));
-
-    QTRY_COMPARE(syncSpy.count(), 1);
-    signalArgs = syncSpy.takeFirst();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    changedSyncTargets = signalArgs.first().value<QStringList>();
-    QCOMPARE(changedSyncTargets.count(), 1);
-    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
-
-    fstc = m_cm->contact(retrievalId(fstc));
-
-    QCOMPARE(fstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QVERIFY(fstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id() != a1);
-    QVERIFY(fstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id() != a2);
-    QContactId a3 = fstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id();
-
-    // This contact should not be reported to us, because of the sync target
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", finalAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 0);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
-
-    // It is reported for export, however
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("export", finalAdditionTime, syncExportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 0);
-    QCOMPARE(addedContacts.count(), 1);
-    QCOMPARE(deletedIds.count(), 0);
-
-    pa = addedContacts.at(0);
-    QCOMPARE(pa.id(), a3);
-
-    // Add to the exported set
-    syncExportedIds.append(pa.id());
-
-    // Now make the aggregate a favorite, which will cause the incidental creation of a local
-    QContact fa = m_cm->contact(a3);
-
-    QContactFavorite f = fa.detail<QContactFavorite>();
-    f.setFavorite(true);
-    QVERIFY(fa.saveDetail(&f));
-    QVERIFY(m_cm->saveContact(&fa));
-
-    QTRY_COMPARE(syncSpy.count(), 1);
-    signalArgs = syncSpy.takeFirst();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    changedSyncTargets = signalArgs.first().value<QStringList>();
-    QCOMPARE(changedSyncTargets.count(), 1);
-    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
-
-    fa = m_cm->contact(a3);
-
-    QVERIFY(fa.detail<QContactFavorite>().isFavorite());
-    QCOMPARE(fa.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count(), 2);
-
-    QContact flc;
-    if (fa.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(0).id() == fstc.id()) {
-        flc = m_cm->contact(fa.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(1).id());
-    } else {
-        QVERIFY(fa.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(1).id() == fstc.id());
-        flc = m_cm->contact(fa.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(0).id());
+    alice = aggregateAlice = QContact();
+    contacts = m_cm->contacts(allCollections);
+    foreach (const QContact &curr, contacts) {
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") &&
+            currName.middleName() == QLatin1String("Through The") &&
+            currName.lastName() == QLatin1String("Looking-Glass")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
+                alice = curr;
+            } else {
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
+                aggregateAlice = curr;
+            }
+        }
     }
 
-    // The created local constituent is incidental
-    QVERIFY(!flc.details<QContactIncidental>().isEmpty());
-    QVERIFY(fstc.details<QContactIncidental>().isEmpty());
+    // The deleted contact is not found and the aggregate is removed
+    QVERIFY(alice.id() == QContactId());
+    QVERIFY(aggregateAlice.id() == QContactId());
+    alice = m_cm->contact(aliceId);
+    QCOMPARE(m_cm->error(), QContactManager::DoesNotExistError);
+    QVERIFY(alice.id() == QContactId()); // not found.
 
-    // Although we created a local, it isn't reported as added since it is incidental
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", finalAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 0);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
+    // Verify the presence/absence of the contact IDs with appropriate filter applied.
+    contactIds = m_cm->contactIds(allCollections);
+    QVERIFY(contactIds.contains(ContactId::apiId(alice)) == false);
+    contactIds = m_cm->contactIds(allCollections & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeleted, QContactFilter::MatchContains));
+    QVERIFY(contactIds.contains(aliceId));
 
-    // This results in a modification for export purposes
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("export", finalAdditionTime, syncExportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 0);
+    // attempt to modify alice.  should fail.
+    QContactHobby ahobby;
+    ahobby.setHobby("Snowboarding");
+    alice.saveDetail(&ahobby);
+    alice.setId(aliceId);
+    QVERIFY(!m_cm->saveContact(&alice));
+    QCOMPARE(m_cm->error(), QContactManager::DoesNotExistError);
 
-    pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), a3);
-    QVERIFY(pa.detail<QContactFavorite>().isFavorite());
+    // Undelete alice.
+    alice.clearDetails();
+    QContactUndelete undelete;
+    alice.saveDetail(&undelete, QContact::IgnoreAccessConstraints);
+    alice.setId(aliceId);
+    QVERIFY(m_cm->saveContact(&alice));
 
-    // Modify a contact locally, and affected sync targets should be reported
-    QContact ac = m_cm->contact(a1);
+    alice = aggregateAlice = QContact();
+    contacts = m_cm->contacts(allCollections);
+    foreach (const QContact &curr, contacts) {
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") &&
+            currName.middleName() == QLatin1String("Through The") &&
+            currName.lastName() == QLatin1String("Looking-Glass")) {
+            if (curr.collectionId().localId() == localAddressbookId()) {
+                alice = curr;
+            } else {
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
+                aggregateAlice = curr;
+            }
+        }
+    }
 
-    QContactHobby h;
-    h.setHobby("Croquet");
-    ac.saveDetail(&h);
+    // Check that aggregation is restored
+    QVERIFY(alice.id() != QContactId());
+    QVERIFY(aggregateAlice.id() != QContactId());
+    QVERIFY(alice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(alice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count() == 1);
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(alice.id()));
 
-    QVERIFY(m_cm->saveContact(&ac));
+    // Check that the undeleted contact retains the same ID
+    QVERIFY(alice.id() == aliceId);
 
-    QTRY_COMPARE(syncSpy.count(), 1);
-    signalArgs = syncSpy.takeFirst();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    changedSyncTargets = signalArgs.first().value<QStringList>();
-    QCOMPARE(changedSyncTargets.count(), 2);
-    QCOMPARE(changedSyncTargets.toSet(), (QSet<QString>() << "sync-test" << "different-sync-target"));
+    // Verify the presence of all contact IDs when queried
+    contactIds = m_cm->contactIds(allCollections);
+    QVERIFY(contactIds.contains(ContactId::apiId(alice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
 
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
+    // Now both delete and purge the contact.
+    QVERIFY(m_cm->removeContact(aliceId));
+    QVERIFY(cme->clearChangeFlags(QList<QContactId>() << aliceId, &err));
 
-    QList<QContactId> contactIds = m_cm->contactIds(allSyncTargets);
-    QVERIFY(contactIds.contains(stc.id()));
-    QVERIFY(contactIds.contains(lc.id()));
-    QVERIFY(contactIds.contains(alc.id()));
-    QVERIFY(contactIds.contains(dstc.id()));
-    QVERIFY(contactIds.contains(astc.id()));
-    QVERIFY(contactIds.contains(a1));
-    QVERIFY(contactIds.contains(nlc.id()));
-    QVERIFY(contactIds.contains(nastc.id()));
-    QVERIFY(contactIds.contains(a2));
-    QVERIFY(contactIds.contains(fstc.id()));
-    QVERIFY(contactIds.contains(flc.id()));
-    QVERIFY(contactIds.contains(a3));
+    // Verify the absence of the contact IDs even with appropriate filter applied.
+    contactIds = m_cm->contactIds(allCollections);
+    QVERIFY(!contactIds.contains(aliceId));
+    contactIds = m_cm->contactIds(allCollections & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeleted, QContactFilter::MatchContains));
+    QVERIFY(!contactIds.contains(aliceId));
 
-    // Remove a local contact that affects an aggregate containing our sync target
-    QVERIFY(m_cm->removeContact(lc.id()));
-
-    // The deletion should report changes to sync targets
-    QTRY_COMPARE(syncSpy.count(), 1);
-    signalArgs = syncSpy.takeFirst();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    changedSyncTargets = signalArgs.first().value<QStringList>();
-    QCOMPARE(changedSyncTargets.count(), 2);
-    QCOMPARE(changedSyncTargets.toSet(), (QSet<QString>() << "sync-test" << "different-sync-target"));
-
-    // Remove a local contact that affects a different sync target
-    QVERIFY(m_cm->removeContact(nlc.id()));
-
-    QTRY_COMPARE(syncSpy.count(), 1);
-    signalArgs = syncSpy.takeFirst();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    changedSyncTargets = signalArgs.first().value<QStringList>();
-    QCOMPARE(changedSyncTargets.count(), 1);
-    QCOMPARE(changedSyncTargets.first(), QString::fromLatin1("different-sync-target"));
-
-    contactIds = m_cm->contactIds(allSyncTargets);
-    QVERIFY(contactIds.contains(stc.id()));
-    QVERIFY(!contactIds.contains(lc.id()));
-    QVERIFY(contactIds.contains(alc.id()));
-    QVERIFY(contactIds.contains(dstc.id()));
-    QVERIFY(contactIds.contains(astc.id()));
-    QVERIFY(contactIds.contains(a1));
-    QVERIFY(!contactIds.contains(nlc.id()));
-    QVERIFY(contactIds.contains(nastc.id()));
-    QVERIFY(contactIds.contains(a2));
-    QVERIFY(contactIds.contains(fstc.id()));
-    QVERIFY(contactIds.contains(flc.id()));
-    QVERIFY(contactIds.contains(a3));
-
-    // Now remove all contacts
-    QVERIFY(m_cm->removeContacts(QList<QContactId>() << a1 << a2 << a3));
-
-    contactIds = m_cm->contactIds(allSyncTargets);
-    QVERIFY(!contactIds.contains(stc.id()));
-    QVERIFY(!contactIds.contains(lc.id()));
-    QVERIFY(!contactIds.contains(alc.id()));
-    QVERIFY(!contactIds.contains(dstc.id()));
-    QVERIFY(!contactIds.contains(astc.id()));
-    QVERIFY(!contactIds.contains(a1));
-    QVERIFY(!contactIds.contains(nlc.id()));
-    QVERIFY(!contactIds.contains(nastc.id()));
-    QVERIFY(!contactIds.contains(a2));
-    QVERIFY(!contactIds.contains(fstc.id()));
-    QVERIFY(!contactIds.contains(flc.id()));
-    QVERIFY(!contactIds.contains(a3));
-
-    // The IDs previously reported to us as sync or added contacts should be reported as deleted
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", afterAdditionTime, exportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 0);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 3);
-    QVERIFY(deletedIds.contains(stc.id()));
-    QVERIFY(deletedIds.contains(astc.id()));
-    QVERIFY(deletedIds.contains(nlc.id()));
-
-    // Previously exported contacts are also reported as deleted
-    syncContacts.clear();
-    addedContacts.clear();
-    deletedIds.clear();
-    QVERIFY(cme->fetchSyncContacts("export", finalAdditionTime, syncExportedIds, &syncContacts, &addedContacts, &deletedIds, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 0);
-    QCOMPARE(addedContacts.count(), 0);
-    QCOMPARE(deletedIds.count(), 3);
-    QVERIFY(deletedIds.contains(a1));
-    QVERIFY(deletedIds.contains(a2));
-    QVERIFY(deletedIds.contains(a3));
-
-    QTRY_COMPARE(syncSpy.count(), 1);
-    signalArgs = syncSpy.takeFirst();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    changedSyncTargets = signalArgs.first().value<QStringList>();
-    QCOMPARE(changedSyncTargets.count(), 2);
-    QCOMPARE(changedSyncTargets.toSet(), (QSet<QString>() << "sync-test" << "different-sync-target"));
+    // Verify that we cannot undelete the purged contact.
+    alice.clearDetails();
+    QContactUndelete undelete2;
+    alice.saveDetail(&undelete2, QContact::IgnoreAccessConstraints);
+    alice.setId(aliceId);
+    QVERIFY(!m_cm->saveContact(&alice));
 }
 
-void tst_Aggregation::storeSyncContacts()
+void tst_Aggregation::deletionMultiple()
 {
-    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
-
-    QSignalSpy syncSpy(cme, SIGNAL(syncContactsChanged(QStringList)));
-
-    QDateTime initialTime = QDateTime::currentDateTimeUtc();
-    QTest::qWait(1);
-
-    // Check for no errors with no input
-    QList<QPair<QContact, QContact> > modifications;
-    QContactManager::Error err;
-    QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy policy(QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges);
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
-    QCOMPARE(err, QContactManager::NoError);
-
-    // Store a sync target contact originating at this service
-    QContactName n;
-    n.setFirstName("Albert");
-    n.setLastName("Einstein");
-
-    QContact stc;
-    stc.saveDetail(&n);
-
-    QContactEmailAddress e;
-    e.setEmailAddress("albert.einstein@example.org");
-    stc.saveDetail(&e);
-
-    QContactEmailAddress e2;
-    e2.setEmailAddress("theoretical.physicist@example.org");
-    stc.saveDetail(&e2);
-
-    QContactHobby h;
-    h.setHobby("Kickboxing");
-    stc.saveDetail(&h);
-
-    modifications.append(qMakePair(QContact(), stc));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
-
-    // The added ID should be reported
-    QContactId additionId(modifications.first().second.id());
-    QVERIFY(additionId != QContactId());
-
-    // The syncTarget should not be reported as updated by storeSyncContacts
-    QVERIFY(!syncSpy.wait(1000));
-
-    QList<QContactId> exportedIds;
-    QList<QContact> syncContacts;
-    QDateTime updatedSyncTime;
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(syncContacts.at(0).id(), additionId);
-
-    stc = m_cm->contact(additionId);
-
-    // Verify that the contact properties are as we expect
-    QContactName n2 = stc.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n.prefix());
-    QCOMPARE(n2.firstName(), n.firstName());
-    QCOMPARE(n2.middleName(), n.middleName());
-    QCOMPARE(n2.lastName(), n.lastName());
-    QCOMPARE(n2.suffix(), n.suffix());
-
-    QCOMPARE(stc.details<QContactEmailAddress>().count(), 2);
-    QSet<QString> emailAddresses;
-    foreach (const QContactEmailAddress &e, stc.details<QContactEmailAddress>()) {
-        QCOMPARE(e.value(QContactDetail__FieldModifiable).toBool(), true);
-        emailAddresses.insert(e.emailAddress());
-    }
-    QCOMPARE(emailAddresses, (QStringList() << e.emailAddress() << e2.emailAddress()).toSet());
-
-    QCOMPARE(stc.details<QContactHobby>().count(), 1);
-    QCOMPARE(stc.details<QContactHobby>().at(0).hobby(), h.hobby());
-    QCOMPARE(stc.details<QContactHobby>().at(0).value(QContactDetail__FieldModifiable).toBool(), true);
-
-    QCOMPARE(stc.details<QContactGuid>().count(), 0);
-
-    QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-
-    QContactId a1Id(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id());
-    QContact a = m_cm->contact(a1Id);
-
-    n2 = a.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n.prefix());
-    QCOMPARE(n2.firstName(), n.firstName());
-    QCOMPARE(n2.middleName(), n.middleName());
-    QCOMPARE(n2.lastName(), n.lastName());
-    QCOMPARE(n2.suffix(), n.suffix());
-
-    QCOMPARE(a.details<QContactEmailAddress>().count(), 2);
-    emailAddresses.clear();
-    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
-        emailAddresses.insert(e.emailAddress());
-    }
-    QCOMPARE(emailAddresses, (QStringList() << e.emailAddress() << e2.emailAddress()).toSet());
-
-    QCOMPARE(a.details<QContactHobby>().count(), 1);
-    QCOMPARE(a.details<QContactHobby>().at(0).hobby(), h.hobby());
-
-    QCOMPARE(a.details<QContactGuid>().count(), 0);
-
-    // Fetch the partial aggregate for this contact
-    syncContacts.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
-    QCOMPARE(syncContacts.count(), 1);
-
-    QContact pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), stc.id());
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 2);
-
-    // Effect some changes to the partial aggregate
-    QContact mpa(pa);
-
-    n.setPrefix("Doctor");
-    n.setFirstName("Alberto");
-
-    n2 = mpa.detail<QContactName>();
-    n2.setPrefix(n.prefix());
-    n2.setFirstName(n.firstName());
-    mpa.saveDetail(&n2);
-
-    QContactNickname nn;
-    nn.setNickname("Smartypants");
-    nn.setValue(QContactDetail__FieldModifiable, true);
-    mpa.saveDetail(&nn);
-
-    QContactEmailAddress e3;
-    e3.setEmailAddress("smartypants@example.org");
-    e3.setValue(QContactDetail__FieldModifiable, true);
-    mpa.saveDetail(&e3);
-
-    QContactEmailAddress e4 = mpa.details<QContactEmailAddress>().at(0);
-    QContactEmailAddress e5 = mpa.details<QContactEmailAddress>().at(1);
-    if (e4.emailAddress() != e.emailAddress()) {
-        e4 = mpa.details<QContactEmailAddress>().at(1);
-        e5 = mpa.details<QContactEmailAddress>().at(0);
-    }
-
-    e4.setEmailAddress("alberto.einstein@example.org");
-    e4.setValue(QContactDetail__FieldModifiable, true);
-    mpa.saveDetail(&e4);
-
-    mpa.removeDetail(&e5);
-
-    modifications.clear();
-    modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
-
-    // The syncTarget should not be reported as updated by storeSyncContacts
-    QVERIFY(!syncSpy.wait(1000));
-
-    // Verify that the expected changes occurred
-    stc = m_cm->contact(retrievalId(stc));
-    QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a.id());
-
-    n2 = stc.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n.prefix());
-    QCOMPARE(n2.firstName(), n.firstName());
-    QCOMPARE(n2.middleName(), n.middleName());
-    QCOMPARE(n2.lastName(), n.lastName());
-    QCOMPARE(n2.suffix(), n.suffix());
-
-    QCOMPARE(stc.details<QContactEmailAddress>().count(), 2);
-    emailAddresses.clear();
-    foreach (const QContactEmailAddress &e, stc.details<QContactEmailAddress>()) {
-        emailAddresses.insert(e.emailAddress());
-    }
-    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e4.emailAddress()).toSet());
-
-    QCOMPARE(stc.details<QContactHobby>().count(), 1);
-    QCOMPARE(stc.details<QContactHobby>().at(0).hobby(), h.hobby());
-
-    QCOMPARE(stc.details<QContactNickname>().count(), 1);
-    QCOMPARE(stc.details<QContactNickname>().at(0).nickname(), nn.nickname());
-
-    a = m_cm->contact(a1Id);
-
-    n2 = a.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n.prefix());
-    QCOMPARE(n2.firstName(), n.firstName());
-    QCOMPARE(n2.middleName(), n.middleName());
-    QCOMPARE(n2.lastName(), n.lastName());
-    QCOMPARE(n2.suffix(), n.suffix());
-
-    QCOMPARE(a.details<QContactEmailAddress>().count(), 2);
-    emailAddresses.clear();
-    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
-        emailAddresses.insert(e.emailAddress());
-    }
-    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e4.emailAddress()).toSet());
-
-    QCOMPARE(a.details<QContactHobby>().count(), 1);
-    QCOMPARE(a.details<QContactHobby>().at(0).hobby(), h.hobby());
-
-    QCOMPARE(a.details<QContactNickname>().count(), 1);
-    QCOMPARE(a.details<QContactNickname>().at(0).nickname(), nn.nickname());
-
-    // Link a local constituent to the sync-test contact
-    QContact lc;
-
-    lc.saveDetail(&n);
-
-    QContactEmailAddress e6;
-    e6.setEmailAddress("aeinstein1879@example.org");
-    lc.saveDetail(&e6);
-
-    QContactTag t;
-    t.setContexts(QContactDetail::ContextWork);
-    t.setTag("Physicist");
-    lc.saveDetail(&t);
-
-    QContactPhoneNumber pn;
-    pn.setNumber("555-PHYSICS");
-    pn.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);
-    lc.saveDetail(&pn);
-
-    QVERIFY(m_cm->saveContact(&lc));
-
-    QTRY_COMPARE(syncSpy.count(), 1);
-    QVariantList signalArgs(syncSpy.takeFirst());
-    syncSpy.clear();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    QStringList changedSyncTargets(signalArgs.first().value<QStringList>());
-    QCOMPARE(changedSyncTargets.count(), 1);
-    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("sync-test"));
-
-    lc = m_cm->contact(retrievalId(lc));
-
-    n2 = lc.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n.prefix());
-    QCOMPARE(n2.firstName(), n.firstName());
-    QCOMPARE(n2.middleName(), n.middleName());
-    QCOMPARE(n2.lastName(), n.lastName());
-    QCOMPARE(n2.suffix(), n.suffix());
-
-    QCOMPARE(lc.details<QContactEmailAddress>().count(), 1);
-    QCOMPARE(lc.details<QContactEmailAddress>().at(0).emailAddress(), e6.emailAddress());
-
-    QCOMPARE(lc.details<QContactTag>().count(), 1);
-    QCOMPARE(lc.details<QContactTag>().at(0).tag(), t.tag());
-    QCOMPARE(lc.details<QContactTag>().at(0).contexts(), t.contexts());
-
-    QCOMPARE(lc.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(lc.details<QContactPhoneNumber>().at(0).number(), pn.number());
-    QCOMPARE(lc.details<QContactPhoneNumber>().at(0).subTypes(), pn.subTypes());
-
-    QCOMPARE(lc.details<QContactGuid>().count(), 1);
-
-    QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a.id());
-
-    a = m_cm->contact(a1Id);
-
-    n2 = a.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n.prefix());
-    QCOMPARE(n2.firstName(), n.firstName());
-    QCOMPARE(n2.middleName(), n.middleName());
-    QCOMPARE(n2.lastName(), n.lastName());
-    QCOMPARE(n2.suffix(), n.suffix());
-
-    QCOMPARE(a.details<QContactEmailAddress>().count(), 3);
-    emailAddresses.clear();
-    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
-        emailAddresses.insert(e.emailAddress());
-    }
-    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e4.emailAddress() << e6.emailAddress()).toSet());
-
-    QCOMPARE(a.details<QContactHobby>().count(), 1);
-    QCOMPARE(a.details<QContactHobby>().at(0).hobby(), h.hobby());
-
-    QCOMPARE(a.details<QContactNickname>().count(), 1);
-    QCOMPARE(a.details<QContactNickname>().at(0).nickname(), nn.nickname());
-
-    QCOMPARE(a.details<QContactTag>().count(), 1);
-    QCOMPARE(a.details<QContactTag>().at(0).tag(), t.tag());
-    QCOMPARE(a.details<QContactTag>().at(0).contexts(), t.contexts());
-
-    QCOMPARE(a.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(a.details<QContactPhoneNumber>().at(0).number(), pn.number());
-    QCOMPARE(a.details<QContactPhoneNumber>().at(0).subTypes(), pn.subTypes());
-
-    QCOMPARE(a.details<QContactGuid>().count(), 0);
-
-    QCOMPARE(a.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count(), 2);
-
-    syncContacts.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
-    QCOMPARE(syncContacts.count(), 1);
-
-    pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), stc.id());
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 3);
-
-    // The local's GUID is not present
-    QCOMPARE(pa.details<QContactGuid>().count(), 0);
-
-    // Make changes that will affect both constituents
-    mpa = QContact(pa);
-
-    n.setPrefix("Herr");
-    n.setFirstName("Albert");
-    n.setMiddleName("J.");
-
-    n2 = mpa.detail<QContactName>();
-    n2.setPrefix(n.prefix());
-    n2.setFirstName(n.firstName());
-    n2.setMiddleName(n.middleName());
-    mpa.saveDetail(&n2);
-
-    nn = mpa.detail<QContactNickname>();
-    nn.setNickname("Cleverclogs");
-    nn.setValue(QContactDetail__FieldModifiable, true);
-    mpa.saveDetail(&nn);
-
-    QContactEmailAddress e7, e8;
-    foreach (const QContactEmailAddress &e, mpa.details<QContactEmailAddress>()) {
-        if (e.emailAddress() == e4.emailAddress()) {
-            e7 = e;
-        } else if (e.emailAddress() == e6.emailAddress()) {
-            e8 = e;
+    QContactCollectionFilter allCollections;
+
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    QVERIFY(m_cm->saveCollection(&testAddressbook));
+
+    QContactCollection trialAddressbook;
+    trialAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("trial"));
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 6);
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/trial");
+    QVERIFY(m_cm->saveCollection(&trialAddressbook));
+
+    // add a new contact
+    QContact testAlice;
+    testAlice.setCollectionId(testAddressbook.id());
+
+    QContactName an;
+    an.setFirstName("Alice");
+    an.setMiddleName("Through The");
+    an.setLastName("Looking-Glass");
+    testAlice.saveDetail(&an);
+
+    QContactPhoneNumber aph;
+    aph.setNumber("34567");
+    testAlice.saveDetail(&aph);
+
+    QVERIFY(m_cm->saveContact(&testAlice));
+
+    // now add the doppelganger from another sync source
+    QContact trialAlice;
+    trialAlice.setCollectionId(trialAddressbook.id());
+
+    QContactName san;
+    san.setFirstName(an.firstName());
+    san.setMiddleName(an.middleName());
+    san.setLastName(an.lastName());
+    trialAlice.saveDetail(&san);
+
+    QContactPhoneNumber saph;
+    saph.setNumber("76543");
+    trialAlice.saveDetail(&saph);
+
+    QVERIFY(m_cm->saveContact(&trialAlice));
+
+    QContact aggregateAlice;
+
+    QList<QContact> contacts = m_cm->contacts(allCollections);
+    foreach (const QContact &curr, contacts) {
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") &&
+            currName.middleName() == QLatin1String("Through The") &&
+            currName.lastName() == QLatin1String("Looking-Glass")) {
+            if (curr.collectionId() == testAddressbook.id()) {
+                testAlice = curr;
+            } else if (curr.collectionId() == trialAddressbook.id()) {
+                trialAlice = curr;
+            } else {
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
+                aggregateAlice = curr;
+            }
         }
     }
 
-    e7.setEmailAddress("albert.j.einstein@example.org");
-    e7.setValue(QContactDetail__FieldModifiable, true);
-    mpa.saveDetail(&e7);
+    // Check that aggregation occurred
+    QVERIFY(testAlice.id() != QContactId());
+    QVERIFY(trialAlice.id() != QContactId());
+    QVERIFY(aggregateAlice.id() != QContactId());
+    QVERIFY(testAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(testAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(trialAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(trialAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count() == 2);
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(testAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(trialAlice.id()));
 
-    e8.setEmailAddress("ajeinstein1879@example.org");
-    e8.setValue(QContactDetail__FieldModifiable, true);
-    mpa.saveDetail(&e8);
+    QCOMPARE(testAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(trialAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 2);
 
-    QContactHobby h2 = mpa.detail<QContactHobby>();
-    mpa.removeDetail(&h2);
+    // Verify the presence of the contact IDs
+    QList<QContactId> contactIds = m_cm->contactIds(allCollections);
+    QVERIFY(contactIds.contains(ContactId::apiId(testAlice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(trialAlice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
 
-    QContactGuid guid;
-    guid.setGuid("I am a unique snowflake");
-    mpa.saveDetail(&guid);
+    contactIds = m_cm->contactIds();
+    QVERIFY(contactIds.contains(ContactId::apiId(testAlice)) == false);
+    QVERIFY(contactIds.contains(ContactId::apiId(trialAlice)) == false);
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
 
-    // Include changes to context and subtype fields
-    t = mpa.detail<QContactTag>();
-    t.setContexts(QContactDetail::ContextOther);
-    t.setValue(QContactDetail__FieldModifiable, true);
-    mpa.saveDetail(&t);
+    QContactId testAliceId = testAlice.id();
 
-    pn = mpa.detail<QContactPhoneNumber>();
-    pn.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypePager);
-    pn.setValue(QContactDetail__FieldModifiable, true);
-    mpa.saveDetail(&pn);
+    // Now delete the test contact
+    QVERIFY(m_cm->removeContact(testAlice.id()));
 
-    modifications.clear();
-    modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
-
-    // Verify that the expected changes occurred
-    stc = m_cm->contact(retrievalId(stc));
-    QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QCOMPARE(stc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a.id());
-
-    n2 = stc.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n.prefix());
-    QCOMPARE(n2.firstName(), n.firstName());
-    QCOMPARE(n2.middleName(), n.middleName());
-    QCOMPARE(n2.lastName(), n.lastName());
-    QCOMPARE(n2.suffix(), n.suffix());
-
-    QCOMPARE(stc.details<QContactEmailAddress>().count(), 2);
-    emailAddresses.clear();
-    foreach (const QContactEmailAddress &e, stc.details<QContactEmailAddress>()) {
-        emailAddresses.insert(e.emailAddress());
-    }
-    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e7.emailAddress()).toSet());
-
-    QCOMPARE(stc.details<QContactHobby>().count(), 0);
-
-    QCOMPARE(stc.details<QContactNickname>().count(), 1);
-    QCOMPARE(stc.details<QContactNickname>().at(0).nickname(), nn.nickname());
-
-    QCOMPARE(stc.details<QContactGuid>().count(), 1);
-    QCOMPARE(stc.details<QContactGuid>().at(0).guid(), guid.guid());
-
-    lc = m_cm->contact(retrievalId(lc));
-    QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QCOMPARE(lc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a.id());
-
-    n2 = lc.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n.prefix());
-    QCOMPARE(n2.firstName(), n.firstName());
-    QCOMPARE(n2.middleName(), n.middleName());
-    QCOMPARE(n2.lastName(), n.lastName());
-    QCOMPARE(n2.suffix(), n.suffix());
-
-    QCOMPARE(lc.details<QContactEmailAddress>().count(), 1);
-    QCOMPARE(lc.details<QContactEmailAddress>().at(0).emailAddress(), e8.emailAddress());
-
-    QCOMPARE(lc.details<QContactTag>().count(), 1);
-    QCOMPARE(lc.details<QContactTag>().at(0).tag(), t.tag());
-    QCOMPARE(lc.details<QContactTag>().at(0).contexts(), t.contexts());
-
-    QCOMPARE(lc.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(lc.details<QContactPhoneNumber>().at(0).number(), pn.number());
-    QCOMPARE(lc.details<QContactPhoneNumber>().at(0).subTypes(), pn.subTypes());
-
-    QCOMPARE(lc.details<QContactGuid>().count(), 1);
-    QVERIFY(lc.details<QContactGuid>().at(0).guid() != guid.guid());
-
-    a = m_cm->contact(a1Id);
-
-    n2 = a.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n.prefix());
-    QCOMPARE(n2.firstName(), n.firstName());
-    QCOMPARE(n2.middleName(), n.middleName());
-    QCOMPARE(n2.lastName(), n.lastName());
-    QCOMPARE(n2.suffix(), n.suffix());
-
-    QCOMPARE(a.details<QContactEmailAddress>().count(), 3);
-    emailAddresses.clear();
-    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
-        emailAddresses.insert(e.emailAddress());
-    }
-    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e7.emailAddress() << e8.emailAddress()).toSet());
-
-    QCOMPARE(a.details<QContactHobby>().count(), 0);
-
-    QCOMPARE(a.details<QContactNickname>().count(), 1);
-    QCOMPARE(a.details<QContactNickname>().at(0).nickname(), nn.nickname());
-
-    QCOMPARE(a.details<QContactTag>().count(), 1);
-    QCOMPARE(a.details<QContactTag>().at(0).tag(), t.tag());
-    QCOMPARE(a.details<QContactTag>().at(0).contexts(), t.contexts());
-
-    QCOMPARE(a.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(a.details<QContactPhoneNumber>().at(0).number(), pn.number());
-    QCOMPARE(a.details<QContactPhoneNumber>().at(0).subTypes(), pn.subTypes());
-
-    QCOMPARE(a.details<QContactGuid>().count(), 0);
-
-    // The sync target partial agregate should contain the sync target GUID
-    syncContacts.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
-    QCOMPARE(syncContacts.count(), 1);
-
-    pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), stc.id());
-    QCOMPARE(pa.details<QContactGuid>().count(), 1);
-    QCOMPARE(pa.detail<QContactGuid>().guid(), stc.detail<QContactGuid>().guid());
-
-    // Link a constituent from a different sync target
-    QContact dstc;
-
-    QContactSyncTarget dstTarget;
-    dstTarget.setSyncTarget("different-sync-target");
-    dstc.saveDetail(&dstTarget);
-
-    dstc.saveDetail(&n);
-
-    QVERIFY(m_cm->saveContact(&dstc));
-
-    QTRY_COMPARE(syncSpy.count(), 1);
-    signalArgs = syncSpy.takeFirst();
-    syncSpy.clear();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    changedSyncTargets = signalArgs.first().value<QStringList>();
-    QCOMPARE(changedSyncTargets.count(), 1);
-    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
-
-    dstc = m_cm->contact(retrievalId(dstc));
-
-    n2 = dstc.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n.prefix());
-    QCOMPARE(n2.firstName(), n.firstName());
-    QCOMPARE(n2.middleName(), n.middleName());
-    QCOMPARE(n2.lastName(), n.lastName());
-    QCOMPARE(n2.suffix(), n.suffix());
-
-    QCOMPARE(dstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QCOMPARE(dstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a.id());
-
-    // Modify the name again
-    syncContacts.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
-    QCOMPARE(syncContacts.count(), 1);
-
-    pa = syncContacts.at(0);
-    mpa = QContact(pa);
-
-    n.setMiddleName("Q.");
-    mpa.saveDetail(&n);
-
-    modifications.clear();
-    modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
-
-    // A sync-target that was not the subject of this update should be reported as having changed
-    QTRY_COMPARE(syncSpy.count(), 1);
-    signalArgs = syncSpy.takeFirst();
-    QCOMPARE(syncSpy.count(), 0);
-    QCOMPARE(signalArgs.count(), 1);
-    changedSyncTargets = signalArgs.first().value<QStringList>();
-    QCOMPARE(changedSyncTargets.count(), 1);
-    QCOMPARE(changedSyncTargets.at(0), QString::fromLatin1("different-sync-target"));
-
-    // Verify that the name changes occurred for the affected constituents, but not the unrelated one
-    stc = m_cm->contact(retrievalId(stc));
-    QCOMPARE(stc.detail<QContactName>().middleName(), n.middleName());
-
-    lc = m_cm->contact(retrievalId(lc));
-    QCOMPARE(lc.detail<QContactName>().middleName(), n.middleName());
-
-    a = m_cm->contact(a1Id);
-    QCOMPARE(a.detail<QContactName>().middleName(), n.middleName());
-
-    dstc = m_cm->contact(retrievalId(dstc));
-    QCOMPARE(dstc.detail<QContactName>().middleName(), QString::fromLatin1("J."));
-
-    // Test conflict resolution - we currently support only PreserveLocalChanges
-    syncContacts.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
-    QCOMPARE(syncContacts.count(), 1);
-    pa = syncContacts.at(0);
-    mpa = QContact(pa);
-
-    // Composited details
-    // Change one field in only the PA, and change another in both
-    n = a.detail<QContactName>();
-    n.setSuffix("Sr.");
-    a.saveDetail(&n);
-
-    // Add conflicting composited details
-    QContactGender g = a.detail<QContactGender>();
-    g.setGender(QContactGender::GenderMale);
-    a.saveDetail(&g);
-
-    // Identified details
-    // Modify in both
-    t = a.detail<QContactTag>();
-    t.setTag("Deceased");
-    a.saveDetail(&t);
-
-    // Remove from local device, modify in sync
-    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
-        if (e.emailAddress() == e8.emailAddress()) {
-            e8 = e;
-            a.removeDetail(&e8);
-            break;
+    testAlice = trialAlice = aggregateAlice = QContact();
+    contacts = m_cm->contacts(allCollections);
+    foreach (const QContact &curr, contacts) {
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") &&
+            currName.middleName() == QLatin1String("Through The") &&
+            currName.lastName() == QLatin1String("Looking-Glass")) {
+            if (curr.collectionId() == testAddressbook.id()) {
+                testAlice = curr;
+            } else if (curr.collectionId() == trialAddressbook.id()) {
+                trialAlice = curr;
+            } else {
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
+                aggregateAlice = curr;
+            }
         }
     }
 
-    // Remove from sync, modify in local device
-    pn = a.detail<QContactPhoneNumber>();
-    pn.setNumber("555-PSYCHIC");
-    a.saveDetail(&pn);
+    // The deleted contact is not found
+    QVERIFY(testAlice.id() == QContactId());
+    QVERIFY(trialAlice.id() != QContactId());
+    QVERIFY(aggregateAlice.id() != QContactId());
+    QVERIFY(trialAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(trialAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count() == 1);
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(trialAlice.id()));
+    QVERIFY(!aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(testAliceId));
 
-    // Store the changes to the local device, stored via the aggregate
+    // Relationships to the deleted contact are not found
+    QList<QContactRelationship> aggRels = m_cm->relationships(aggregateAlice.id());
+    QList<QContactRelationship> testRels = m_cm->relationships(testAliceId);
+    QCOMPARE(aggRels.size(), 1);
+    QCOMPARE(testRels.size(), 0);
+
+    // Check that the aggregate does not contain the deleted details
+    QCOMPARE(trialAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(aggregateAlice.detail<QContactPhoneNumber>().number(), trialAlice.detail<QContactPhoneNumber>().number());
+
+    // Verify that test alice does not exist
+    testAlice = m_cm->contact(testAliceId);
+    QVERIFY(testAlice.id() == QContactId());
+
+    // Verify the presence/absence of the contact IDs
+    contactIds = m_cm->contactIds(allCollections);
+    QVERIFY(contactIds.contains(testAliceId) == false);
+    QVERIFY(contactIds.contains(ContactId::apiId(trialAlice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
+
+    contactIds = m_cm->contactIds(allCollections & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeleted, QContactFilter::MatchContains));
+    QVERIFY(contactIds.contains(testAliceId));
+    QVERIFY(contactIds.contains(ContactId::apiId(trialAlice)) == false);
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)) == false);
+
+    // Undelete
+    testAlice.clearDetails();
+    QContactUndelete undelete;
+    testAlice.saveDetail(&undelete);
+    testAlice.setId(testAliceId);
+    testAlice.setCollectionId(testAddressbook.id());
+    QVERIFY(m_cm->saveContact(&testAlice));
+
+    testAlice = trialAlice = aggregateAlice = QContact();
+    contacts = m_cm->contacts(allCollections);
+    foreach (const QContact &curr, contacts) {
+        QContactName currName = curr.detail<QContactName>();
+        if (currName.firstName() == QLatin1String("Alice") &&
+            currName.middleName() == QLatin1String("Through The") &&
+            currName.lastName() == QLatin1String("Looking-Glass")) {
+            if (curr.collectionId() == testAddressbook.id()) {
+                testAlice = curr;
+            } else if (curr.collectionId() == trialAddressbook.id()) {
+                trialAlice = curr;
+            } else {
+                QCOMPARE(curr.collectionId().localId(), aggregateAddressbookId());
+                aggregateAlice = curr;
+            }
+        }
+    }
+
+    // Check that aggregation remains intact
+    QVERIFY(testAlice.id() != QContactId());
+    QVERIFY(trialAlice.id() != QContactId());
+    QVERIFY(aggregateAlice.id() != QContactId());
+    QVERIFY(testAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(testAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(trialAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).count() == 1);
+    QVERIFY(trialAlice.relatedContacts(aggregatesRelationship, QContactRelationship::First).contains(aggregateAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count() == 2);
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(testAlice.id()));
+    QVERIFY(aggregateAlice.relatedContacts(aggregatesRelationship, QContactRelationship::Second).contains(trialAlice.id()));
+
+    // Re-activated details are now aggregated
+    QCOMPARE(testAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(trialAlice.details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(aggregateAlice.details<QContactPhoneNumber>().count(), 2);
+
+    // Check that the reactivated contact retains the same ID
+    QVERIFY(testAlice.id() == testAliceId);
+
+    // Verify the presence of all contact IDs when queried
+    contactIds = m_cm->contactIds(allCollections);
+    QVERIFY(contactIds.contains(ContactId::apiId(testAlice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(trialAlice)));
+    QVERIFY(contactIds.contains(ContactId::apiId(aggregateAlice)));
+}
+
+void tst_Aggregation::deletionCollections()
+{
+    QContactCollectionFilter allCollections;
+
+    const int count = m_cm->contactIds(allCollections).size();
+    const int deletedCount = m_cm->contactIds(allCollections & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeleted, QContactFilter::MatchContains)).size();
+
+    // create two test collections.  one is aggregable, one is not.
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_AGGREGABLE, false);
+    testAddressbook.setExtendedMetaData("customKey1", "customValue1");
+    QVERIFY(m_cm->saveCollection(&testAddressbook));
+    QContactCollectionId testAddressbookId = testAddressbook.id();
+
+    QContactCollection trialAddressbook;
+    trialAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("trial"));
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 6);
+    trialAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/trial");
+    trialAddressbook.setExtendedMetaData("customKey2", "customValue2");
+    trialAddressbook.setExtendedMetaData("customKey1", "customValue3");
+    QVERIFY(m_cm->saveCollection(&trialAddressbook));
+    QContactCollectionId trialAddressbookId = trialAddressbook.id();
+
+    // add three contacts to each addressbook.
+    QContact a, b, c, x, y, z;
+    a.setCollectionId(testAddressbook.id());
+    b.setCollectionId(testAddressbook.id());
+    c.setCollectionId(testAddressbook.id());
+    x.setCollectionId(trialAddressbook.id());
+    y.setCollectionId(trialAddressbook.id());
+    z.setCollectionId(trialAddressbook.id());
+    QContactName an, bn, cn, xn, yn, zn;
+    an.setFirstName("A"); an.setLastName("A");
+    bn.setFirstName("B"); bn.setLastName("B");
+    cn.setFirstName("C"); cn.setLastName("C");
+    xn.setFirstName("X"); xn.setLastName("X");
+    yn.setFirstName("Y"); yn.setLastName("Y");
+    zn.setFirstName("Z"); zn.setLastName("Z");
+
     QVERIFY(m_cm->saveContact(&a));
-
-    lc = m_cm->contact(retrievalId(lc));
-
-    // Verify the changes
-    n2 = lc.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n.prefix());
-    QCOMPARE(n2.firstName(), n.firstName());
-    QCOMPARE(n2.middleName(), n.middleName());
-    QCOMPARE(n2.lastName(), n.lastName());
-    QCOMPARE(n2.suffix(), n.suffix());
-
-    QCOMPARE(lc.details<QContactGender>().count(), 1);
-    QCOMPARE(lc.detail<QContactGender>().gender(), QContactGender::GenderMale);
-
-    QCOMPARE(lc.details<QContactEmailAddress>().count(), 0);
-
-    QCOMPARE(lc.details<QContactTag>().count(), 1);
-    QCOMPARE(lc.detail<QContactTag>().tag(), t.tag());
-
-    QCOMPARE(lc.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(lc.detail<QContactPhoneNumber>().number(), pn.number());
-
-    a = m_cm->contact(retrievalId(a));
-
-    n2 = a.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n.prefix());
-    QCOMPARE(n2.firstName(), n.firstName());
-    QCOMPARE(n2.middleName(), n.middleName());
-    QCOMPARE(n2.lastName(), n.lastName());
-    QCOMPARE(n2.suffix(), n.suffix());
-
-    QCOMPARE(a.details<QContactGender>().count(), 1);
-    QCOMPARE(a.detail<QContactGender>().gender(), QContactGender::GenderMale);
-
-    QCOMPARE(a.details<QContactEmailAddress>().count(), 2);
-    emailAddresses.clear();
-    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
-        emailAddresses.insert(e.emailAddress());
-    }
-    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e7.emailAddress()).toSet());
-
-    QCOMPARE(a.details<QContactTag>().count(), 1);
-    QCOMPARE(a.detail<QContactTag>().tag(), t.tag());
-
-    QCOMPARE(a.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(a.detail<QContactPhoneNumber>().number(), pn.number());
-
-    // Store the conflicting sync changes
-    n = mpa.detail<QContactName>();
-    n.setSuffix("Jr.");
-    n.setMiddleName("\"Crusher\"");
-    mpa.saveDetail(&n);
-
-    g = mpa.detail<QContactGender>();
-    g.setGender(QContactGender::GenderFemale);
-    mpa.saveDetail(&g);
-
-    QContactTag t2 = mpa.detail<QContactTag>();
-    t2.setTag("Non-operational");
-    t2.setValue(QContactDetail__FieldModifiable, true);
-    mpa.saveDetail(&t2);
-
-    QContactEmailAddress e9;
-    foreach (const QContactEmailAddress &e, mpa.details<QContactEmailAddress>()) {
-        if (e.emailAddress() == e8.emailAddress()) {
-            e9 = e;
-            break;
-        }
-    }
-
-    e9.setEmailAddress("modified@example.org");
-    e9.setValue(QContactDetail__FieldModifiable, true);
-    mpa.saveDetail(&e9);
-
-    QContactPhoneNumber pn2 = mpa.detail<QContactPhoneNumber>();
-    mpa.removeDetail(&pn2);
-
-    modifications.clear();
-    modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
-
-    // Verify that the expected changes occurred
-    stc = m_cm->contact(retrievalId(stc));
-
-    // The composited changes will have been applied to the sync-target contact
-    n2 = stc.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n.prefix());
-    QCOMPARE(n2.firstName(), n.firstName());
-    QCOMPARE(n2.middleName(), n.middleName());
-    QCOMPARE(n2.lastName(), n.lastName());
-    QCOMPARE(n2.suffix(), n.suffix());
-
-    QCOMPARE(stc.details<QContactGender>().count(), 1);
-    QCOMPARE(stc.detail<QContactGender>().gender(), QContactGender::GenderFemale);
-
-    // The aggregate will have combined changes
-    a = m_cm->contact(retrievalId(a));
-
-    n2 = a.detail<QContactName>();
-
-    // The conflict will resolve in favor of the local change
-    QCOMPARE(n2.suffix(), QString::fromLatin1("Sr."));
-
-    // The unconflicting change will be applied
-    QCOMPARE(n2.middleName(), QString::fromLatin1("\"Crusher\""));
-
-    // Gender will resolve to the local change
-    QCOMPARE(a.details<QContactGender>().count(), 1);
-    QCOMPARE(a.detail<QContactGender>().gender(), QContactGender::GenderMale);
-
-    // The conflicting edits will resolve in favor of the local change
-    QCOMPARE(a.details<QContactTag>().count(), 1);
-    QCOMPARE(a.detail<QContactTag>().tag(), t.tag());
-
-    // The locally-removed, remotely-modified detail will be absent
-    QCOMPARE(a.details<QContactEmailAddress>().count(), 2);
-    emailAddresses.clear();
-    foreach (const QContactEmailAddress &e, a.details<QContactEmailAddress>()) {
-        emailAddresses.insert(e.emailAddress());
-    }
-    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e7.emailAddress()).toSet());
-
-    // The remotely-removed, locally-edited detail is still present
-    QCOMPARE(a.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(a.detail<QContactPhoneNumber>().number(), pn.number());
-
-    // Check that the partial aggregate matches the aggregate
-    syncContacts.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
-    QCOMPARE(syncContacts.count(), 1);
-
-    pa = syncContacts.at(0);
-
-    n2 = pa.detail<QContactName>();
-    QCOMPARE(n2.suffix(), QString::fromLatin1("Sr."));
-    QCOMPARE(n2.middleName(), QString::fromLatin1("\"Crusher\""));
-
-    QCOMPARE(pa.details<QContactGender>().count(), 1);
-    QCOMPARE(pa.detail<QContactGender>().gender(), QContactGender::GenderMale);
-
-    QCOMPARE(pa.details<QContactTag>().count(), 1);
-    QCOMPARE(pa.detail<QContactTag>().tag(), t.tag());
-
-    QCOMPARE(pa.details<QContactEmailAddress>().count(), 2);
-    emailAddresses.clear();
-    foreach (const QContactEmailAddress &e, pa.details<QContactEmailAddress>()) {
-        emailAddresses.insert(e.emailAddress());
-    }
-    QCOMPARE(emailAddresses, (QStringList() << e3.emailAddress() << e7.emailAddress()).toSet());
-
-    QCOMPARE(pa.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(pa.detail<QContactPhoneNumber>().number(), pn.number());
-
-    QDateTime nextTime = QDateTime::currentDateTimeUtc();
-    QTest::qWait(1);
-
-    // Create another local contact that we can export
-    QContact alc;
-
-    QContactName n3;
-    n3.setFirstName("Niels");
-    n3.setLastName("Bohr");
-    alc.saveDetail(&n3);
-
-    QContactNote note;
-    note.setNote("Quite tall");
-    alc.saveDetail(&note);
-
-    alc.saveDetail(&t);
-
-    QVERIFY(m_cm->saveContact(&alc));
-    alc = m_cm->contact(alc.id());
-
-    QCOMPARE(alc.details<QContactGuid>().count(), 1);
-
-    QList<QContact> addedContacts;
-
-    syncContacts.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", nextTime, exportedIds, &syncContacts, &addedContacts, 0, &updatedSyncTime, &err));
-    QCOMPARE(addedContacts.count(), 1);
-
-    pa = addedContacts.at(0);
-    QCOMPARE(pa.id(), alc.id());
-
-    // The GUID is not promoted into the the partial aggregate
-    QCOMPARE(pa.details<QContactGuid>().count(), 0);
-
-    // Make changes to this contact
-    mpa = pa;
-
-    QContactTag t3 = mpa.detail<QContactTag>();
-    t3.setTag("Danish Physicist");
-    mpa.saveDetail(&t3);
-
-    QContactHobby h3;
-    h3.setHobby("Football");
-    mpa.saveDetail(&h3);
-
-    modifications.clear();
-    modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
-
-    // The tag should have been modified in the original local contact
-    alc = m_cm->contact(alc.id());
-
-    QCOMPARE(alc.details<QContactTag>().count(), 1);
-    QCOMPARE(alc.details<QContactTag>().at(0).tag(), t3.tag());
-
-    QCOMPARE(alc.details<QContactNote>().count(), 1);
-    QCOMPARE(alc.details<QContactNote>().at(0).note(), note.note());
-
-    QCOMPARE(alc.details<QContactHobby>().count(), 0);
-
-    // A new incidental contact should have been created to contain the hobby
-    QCOMPARE(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-
-    QContactId a2Id(alc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id());
-    QContact a2 = m_cm->contact(a2Id);
-    QCOMPARE(a2.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count(), 2);
-
-    QContactId stId;
-    if (a2.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(0).id() == alc.id()) {
-        stId = a2.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(1).id();
-    } else {
-        stId = a2.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(0).id();
-    }
-
-    QContact stc2 = m_cm->contact(stId);
-
-    n2 = stc2.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n3.prefix());
-    QCOMPARE(n2.firstName(), n3.firstName());
-    QCOMPARE(n2.middleName(), n3.middleName());
-    QCOMPARE(n2.lastName(), n3.lastName());
-    QCOMPARE(n2.suffix(), n3.suffix());
-
-    QCOMPARE(stc2.details<QContactTag>().count(), 0);
-
-    QCOMPARE(stc2.details<QContactNote>().count(), 0);
-
-    QCOMPARE(stc2.details<QContactHobby>().count(), 1);
-    QCOMPARE(stc2.details<QContactHobby>().at(0).hobby(), h3.hobby());
-
-    // Both contacts should now be reported by their sync-target IDs
-    syncContacts.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
-    QCOMPARE(syncContacts.count(), 2);
-    QCOMPARE((QList<QContactId>() << syncContacts.at(0).id() << syncContacts.at(1).id()).toSet(), (QList<QContactId>() << stc.id() << alc.id()).toSet());
-
-    QCOMPARE(alc.details<QContactGuid>().count(), 1);
-
-    // Make a modification to the incidental contact - it should remain incidental
-    if (syncContacts.at(0).id() == alc.id()) {
-        pa = syncContacts.at(0);
-    } else {
-        pa = syncContacts.at(1);
-    }
-    mpa = pa;
-
-    note = mpa.detail<QContactNote>();
-    note.setNote("Quite tall indeed");
-    mpa.saveDetail(&note);
-
-    h3 = mpa.detail<QContactHobby>();
-    h3.setHobby("Ventriloquism");
-    mpa.saveDetail(&h3);
-
-    QContactHobby h4;
-    h4.setHobby("Philately");
-    mpa.saveDetail(&h4);
-
-    QContactGuid stGuid;
-    stGuid.setGuid("I am also a unique snowflake");
-    mpa.saveDetail(&stGuid);
-
-    modifications.clear();
-    modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
-
-    // The changes should be made in their respective contacts
-    alc = m_cm->contact(alc.id());
-
-    QCOMPARE(alc.details<QContactTag>().count(), 1);
-    QCOMPARE(alc.details<QContactTag>().at(0).tag(), t3.tag());
-
-    QCOMPARE(alc.details<QContactNote>().count(), 1);
-    QCOMPARE(alc.details<QContactNote>().at(0).note(), note.note());
-
-    QCOMPARE(alc.details<QContactHobby>().count(), 0);
-
-    stc2 = m_cm->contact(stc2.id());
-
-    QCOMPARE(stc2.details<QContactTag>().count(), 0);
-
-    QCOMPARE(stc2.details<QContactNote>().count(), 0);
-
-    QCOMPARE(stc2.details<QContactHobby>().count(), 2);
-    QCOMPARE((QSet<QString>() << stc2.details<QContactHobby>().at(0).hobby() << stc2.details<QContactHobby>().at(1).hobby()), (QSet<QString>() << h3.hobby() << h4.hobby()));
-
-    QCOMPARE(stc2.details<QContactGuid>().count(), 1);
-    QCOMPARE(stc2.details<QContactGuid>().at(0).guid(), stGuid.guid());
-
-    syncContacts.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
-    QCOMPARE(syncContacts.count(), 2);
-    QCOMPARE((QList<QContactId>() << syncContacts.at(0).id() << syncContacts.at(1).id()).toSet(), (QList<QContactId>() << stc.id() << alc.id()).toSet());
-
-    if (syncContacts.at(0).id() == alc.id()) {
-        pa = syncContacts.at(0);
-    } else {
-        pa = syncContacts.at(1);
-    }
-
-    // Verify that the GUID from the sync-target contact is returned
-    QCOMPARE(pa.details<QContactGuid>().count(), 1);
-    QCOMPARE(pa.details<QContactGuid>().at(0).guid(), stGuid.guid());
-
-    // Test changes to export contacts
-    QList<QContactId> syncExportedIds;
-
-    syncContacts.clear();
-    addedContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("export", initialTime, syncExportedIds, &syncContacts, &addedContacts, 0, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 0);
-    QCOMPARE(addedContacts.count(), 2);
-
-    // The export set contains aggregate IDs
-    QCOMPARE((QList<QContactId>() << addedContacts.at(0).id() << addedContacts.at(1).id()).toSet(), (QList<QContactId>() << a.id() << a2.id()).toSet());
-
-    syncExportedIds.append(a.id());
-    syncExportedIds.append(a2.id());
-
-    pa = addedContacts.at(0);
-    if (pa.id() != a2.id()) {
-        pa = addedContacts.at(1);
-    }
-    QCOMPARE(pa.id(), a2.id());
-
-    QCOMPARE(pa.details<QContactTag>().count(), 1);
-    QCOMPARE(pa.details<QContactTag>().at(0).tag(), t3.tag());
-
-    QCOMPARE(pa.details<QContactHobby>().count(), 2);
-    QCOMPARE((QSet<QString>() << pa.details<QContactHobby>().at(0).hobby() << pa.details<QContactHobby>().at(1).hobby()), (QSet<QString>() << h3.hobby() << h4.hobby()));
-
-    QDateTime modificationTime = QDateTime::currentDateTimeUtc();
-    QTest::qWait(1);
-
-    // Make modifications to the original details from the export contacts
-    mpa = pa;
-
-    t3 = mpa.detail<QContactTag>();
-    t3.setTag("Danelandic Physicist");
-    mpa.saveDetail(&t3);
-
-    h3 = mpa.details<QContactHobby>().at(0);
-    if (h3.hobby() == h4.hobby()) {
-        h3 = mpa.details<QContactHobby>().at(1);
-    }
-    h3.setHobby("Gurning");
-    mpa.saveDetail(&h3);
-
-    QContactNote note2;
-    note2.setNote("Quietly toils");
-    mpa.saveDetail(&note2);
-
-    modifications.clear();
-    modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("export", policy, &modifications, &err));
-
-    // The changes should be applied to the origin details, and additions go to the local constituent
-    stc2 = m_cm->contact(stId);
-
-    QCOMPARE(stc2.details<QContactTag>().count(), 0);
-
-    QCOMPARE(stc2.details<QContactHobby>().count(), 2);
-    QCOMPARE((QSet<QString>() << stc2.details<QContactHobby>().at(0).hobby() << stc2.details<QContactHobby>().at(1).hobby()), (QSet<QString>() << h3.hobby() << h4.hobby()));
-
-    QCOMPARE(stc2.details<QContactNote>().count(), 0);
-
-    alc = m_cm->contact(alc.id());
-
-    QCOMPARE(alc.details<QContactTag>().count(), 1);
-    QCOMPARE(alc.details<QContactTag>().at(0).tag(), t3.tag());
-
-    QCOMPARE(alc.details<QContactHobby>().count(), 0);
-
-    QCOMPARE(alc.details<QContactNote>().count(), 2);
-    QCOMPARE((QSet<QString>() << alc.details<QContactNote>().at(0).note() << alc.details<QContactNote>().at(1).note()), (QSet<QString>() << note.note() << note2.note()));
-
-    syncContacts.clear();
-    addedContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("export", modificationTime, syncExportedIds, &syncContacts, &addedContacts, 0, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 0);
-
-    pa = syncContacts.at(0);
-    QCOMPARE(pa.id(), a2.id());
-
-    QCOMPARE(pa.details<QContactTag>().count(), 1);
-    QCOMPARE(pa.details<QContactTag>().at(0).tag(), t3.tag());
-
-    QCOMPARE(pa.details<QContactHobby>().count(), 2);
-    QCOMPARE((QSet<QString>() << pa.details<QContactHobby>().at(0).hobby() << pa.details<QContactHobby>().at(1).hobby()), (QSet<QString>() << h3.hobby() << h4.hobby()));
-
-    QCOMPARE(pa.details<QContactNote>().count(), 2);
-    QCOMPARE((QSet<QString>() << pa.details<QContactNote>().at(0).note() << pa.details<QContactNote>().at(1).note()), (QSet<QString>() << note.note() << note2.note()));
-
-    // Create a new sync-target contact to be exported
-    QContact adstc;
-    adstc.saveDetail(&dstTarget);
-
-    QContactName n4;
-    n4.setFirstName("Enrico");
-    n4.setLastName("Fermi");
-    adstc.saveDetail(&n4);
-
-    QContactTag t4;
-    t4.setTag("Italian Physicist");
-    adstc.saveDetail(&t4);
-
-    QVERIFY(m_cm->saveContact(&adstc));
-    adstc = m_cm->contact(adstc.id());
-    QCOMPARE(adstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-
-    QContact a3 = m_cm->contact(adstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id());
-    QCOMPARE(a3.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count(), 1);
-
-    syncContacts.clear();
-    addedContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("export", modificationTime, syncExportedIds, &syncContacts, &addedContacts, 0, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 1);
-
-    pa = addedContacts.at(0);
-    QCOMPARE(pa.id(), a3.id());
-
-    QCOMPARE(pa.details<QContactTag>().count(), 1);
-    QCOMPARE(pa.details<QContactTag>().at(0).tag(), t4.tag());
-
-    QCOMPARE(pa.details<QContactHobby>().count(), 0);
-
-    // Make modifications to this contact via the export DB
-    mpa = pa;
-
-    n4 = mpa.detail<QContactName>();
-    n4.setPrefix("Dr");
-    mpa.saveDetail(&n4);
-
-    t4 = mpa.detail<QContactTag>();
-    t4.setTag("Italian-american Physicist");
-    mpa.saveDetail(&t4);
-
-    QContactHobby h5;
-    h5.setHobby("Tennis");
-    mpa.saveDetail(&h5);
-
-    modifications.clear();
-    modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("export", policy, &modifications, &err));
-
-    // The aggregate should be updated
-    a3 = m_cm->contact(a3.id());
-
-    n2 = a3.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n4.prefix());
-    QCOMPARE(n2.firstName(), n4.firstName());
-    QCOMPARE(n2.middleName(), n4.middleName());
-    QCOMPARE(n2.lastName(), n4.lastName());
-    QCOMPARE(n2.suffix(), n4.suffix());
-
-    QCOMPARE(a3.details<QContactTag>().count(), 1);
-    QCOMPARE(a3.details<QContactTag>().at(0).tag(), t4.tag());
-
-    QCOMPARE(a3.details<QContactHobby>().count(), 1);
-    QCOMPARE(a3.details<QContactHobby>().at(0).hobby(), h5.hobby());
-
-    // A local constituent has been created to contain the new detail
-    QCOMPARE(a3.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count(), 2);
-
-    QContact nlc;
-    if (a3.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(0).id() == adstc.id()) {
-        nlc = m_cm->contact(a3.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(1).id());
-    } else {
-        nlc = m_cm->contact(a3.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(0).id());
-    }
-
-    QCOMPARE(nlc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QCOMPARE(nlc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id(), a3.id());
-
-    n2 = nlc.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n4.prefix());
-    QCOMPARE(n2.firstName(), n4.firstName());
-    QCOMPARE(n2.middleName(), n4.middleName());
-    QCOMPARE(n2.lastName(), n4.lastName());
-    QCOMPARE(n2.suffix(), n4.suffix());
-
-    QCOMPARE(nlc.details<QContactTag>().count(), 0);
-
-    QCOMPARE(nlc.details<QContactHobby>().count(), 1);
-    QCOMPARE(nlc.details<QContactHobby>().at(0).hobby(), h5.hobby());
-
-    // The sync target constituent should be updated, although the name remains unchanged
-    adstc = m_cm->contact(adstc.id());
-
-    n2 = adstc.detail<QContactName>();
-    QCOMPARE(n2.prefix(), QString());
-    QCOMPARE(n2.firstName(), n4.firstName());
-    QCOMPARE(n2.lastName(), n4.lastName());
-
-    QCOMPARE(adstc.details<QContactTag>().count(), 1);
-    QCOMPARE(adstc.details<QContactTag>().at(0).tag(), t4.tag());
-
-    QCOMPARE(adstc.details<QContactHobby>().count(), 0);
-
-    // Add a contact in the export DB and sync back to the primary
-    QContact xc;
-
-    QContactName n6;
-    n6.setFirstName("Werner");
-    n6.setLastName("Heisenberg");
-    xc.saveDetail(&n6);
-
-    QContactTag t5;
-    t5.setTag("German Physicist");
-    xc.saveDetail(&t5);
-
-    modifications.clear();
-    modifications.append(qMakePair(QContact(), xc));
-    QVERIFY(cme->storeSyncContacts("export", policy, &modifications, &err));
-
-    syncContacts.clear();
-    addedContacts.clear();
-    QVERIFY(cme->fetchSyncContacts("export", modificationTime, syncExportedIds, &syncContacts, &addedContacts, 0, &updatedSyncTime, &err));
-    QCOMPARE(err, QContactManager::NoError);
-    QCOMPARE(syncContacts.count(), 1);
-    QCOMPARE(addedContacts.count(), 2);
-
-    pa = addedContacts.at(0);
-    if (pa.id() == a3.id()) {
-        pa = addedContacts.at(1);
-    }
-
-    n2 = pa.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n6.prefix());
-    QCOMPARE(n2.firstName(), n6.firstName());
-    QCOMPARE(n2.middleName(), n6.middleName());
-    QCOMPARE(n2.lastName(), n6.lastName());
-    QCOMPARE(n2.suffix(), n6.suffix());
-
-    QCOMPARE(pa.details<QContactTag>().count(), 1);
-    QCOMPARE(pa.details<QContactTag>().at(0).tag(), t5.tag());
-
-    // The exported ID will be the aggregate ID
-    QContact a4 = m_cm->contact(pa.id());
-    QCOMPARE(a4.detail<QContactSyncTarget>().syncTarget(), QString::fromLatin1("aggregate"));
-
-    n2 = a4.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n6.prefix());
-    QCOMPARE(n2.firstName(), n6.firstName());
-    QCOMPARE(n2.middleName(), n6.middleName());
-    QCOMPARE(n2.lastName(), n6.lastName());
-    QCOMPARE(n2.suffix(), n6.suffix());
-
-    QCOMPARE(a4.details<QContactTag>().count(), 1);
-    QCOMPARE(a4.details<QContactTag>().at(0).tag(), t5.tag());
-
-    // A local constituent will have been created
-    QCOMPARE(a4.relatedContacts(aggregatesRelationship, QContactRelationship::Second).count(), 1);
-
-    QContact lxc = m_cm->contact(a4.relatedContacts(aggregatesRelationship, QContactRelationship::Second).at(0).id());
-    QCOMPARE(lxc.detail<QContactSyncTarget>().syncTarget(), QString::fromLatin1("local"));
-
-    n2 = lxc.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n6.prefix());
-    QCOMPARE(n2.firstName(), n6.firstName());
-    QCOMPARE(n2.middleName(), n6.middleName());
-    QCOMPARE(n2.lastName(), n6.lastName());
-    QCOMPARE(n2.suffix(), n6.suffix());
-
-    QCOMPARE(lxc.details<QContactTag>().count(), 1);
-    QCOMPARE(lxc.details<QContactTag>().at(0).tag(), t5.tag());
-
-    // Modify the created local
-    mpa = pa;
-
-    QContactName n7 = mpa.detail<QContactName>();
-    n7.setMiddleName("Karl");
-    mpa.saveDetail(&n7);
-
-    t5 = mpa.detail<QContactTag>();
-    t5.setTag("Quantum Mechanic");
-    mpa.saveDetail(&t5);
-
-    modifications.clear();
-    modifications.append(qMakePair(pa, mpa));
-    QVERIFY(cme->storeSyncContacts("export", policy, &modifications, &err));
-
-    // The local's details should have been updated
-    lxc = m_cm->contact(lxc.id());
-
-    n2 = lxc.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n7.prefix());
-    QCOMPARE(n2.firstName(), n7.firstName());
-    QCOMPARE(n2.middleName(), n7.middleName());
-    QCOMPARE(n2.lastName(), n7.lastName());
-    QCOMPARE(n2.suffix(), n7.suffix());
-
-    QCOMPARE(lxc.details<QContactTag>().count(), 1);
-    QCOMPARE(lxc.details<QContactTag>().at(0).tag(), t5.tag());
-
-    // The aggregate's details should also be updated
-    a4 = m_cm->contact(a4.id());
-
-    n2 = a4.detail<QContactName>();
-    QCOMPARE(n2.prefix(), n7.prefix());
-    QCOMPARE(n2.firstName(), n7.firstName());
-    QCOMPARE(n2.middleName(), n7.middleName());
-    QCOMPARE(n2.lastName(), n7.lastName());
-    QCOMPARE(n2.suffix(), n7.suffix());
-
-    QCOMPARE(a4.details<QContactTag>().count(), 1);
-    QCOMPARE(a4.details<QContactTag>().at(0).tag(), t5.tag());
-
-    // Report the export DB contact as deleted from the export DB
-    modifications.clear();
-    modifications.append(qMakePair(a4, QContact()));
-    QVERIFY(cme->storeSyncContacts("export", policy, &modifications, &err));
-
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
-
-    QList<QContactId> contactIds = m_cm->contactIds(allSyncTargets);
-
-    // The local and aggregate should be removed
-    QVERIFY(!contactIds.contains(lxc.id()));
-    QVERIFY(!contactIds.contains(a4.id()));
-
-    // Report an exported contact as removed from the export DB
-    modifications.clear();
-    modifications.append(qMakePair(a3, QContact()));
-    QVERIFY(cme->storeSyncContacts("export", policy, &modifications, &err));
-
-    // All constituents will be removed except that belonging to another sync target
-    contactIds = m_cm->contactIds(allSyncTargets);
-    QVERIFY(!contactIds.contains(nlc.id()));
-    QVERIFY(!contactIds.contains(a3.id()));
-    QVERIFY(contactIds.contains(adstc.id()));
-
-    // Report both sync-test contacts as remotely-deleted
-    modifications.clear();
-    modifications.append(qMakePair(stc, QContact()));
-    modifications.append(qMakePair(stc2, QContact()));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
-
-    // The sync target constituents should be removed
-    contactIds = m_cm->contactIds(allSyncTargets);
-    QVERIFY(!contactIds.contains(stc.id()));
-    QVERIFY(!contactIds.contains(stc2.id()));
-
-    // The local constituents and those from other sync targets should remain
-    QVERIFY(contactIds.contains(lc.id()));
-    QVERIFY(contactIds.contains(alc.id()));
-    QVERIFY(contactIds.contains(dstc.id()));
-
-    // The aggregates should no longer contain details from sync target contacts
-    // but should still contain details from the local constituents
-    a = m_cm->contact(a1Id);
-    QCOMPARE(a.details<QContactEmailAddress>().count(), 0);
-    QCOMPARE(a.details<QContactHobby>().count(), 0);
-    QCOMPARE(a.details<QContactNickname>().count(), 0);
-    QCOMPARE(a.details<QContactPhoneNumber>().count(), 1);
-    QCOMPARE(a.detail<QContactPhoneNumber>().number(), pn.number());
-    QCOMPARE(a.details<QContactTag>().count(), 1);
-    QCOMPARE(a.detail<QContactTag>().tag(), t.tag());
-
-    a2 = m_cm->contact(a2Id);
-    QCOMPARE(a2.details<QContactEmailAddress>().count(), 0);
-    QCOMPARE(a2.details<QContactTag>().count(), 1);
-    QCOMPARE(a2.details<QContactTag>().at(0).tag(), t3.tag());
-    QCOMPARE(a2.details<QContactNote>().count(), 2);
-    QCOMPARE((QSet<QString>() << a2.details<QContactNote>().at(0).note() << a2.details<QContactNote>().at(1).note()), (QSet<QString>() << note.note() << note2.note()));
-    QCOMPARE(a2.details<QContactHobby>().count(), 0);
-
-    // The next fetch should not return the deleted contacts
-    syncContacts.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", initialTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
-    QCOMPARE(syncContacts.count(), 0);
-
-    // Now ensure that if the sync target constituent is the only constituent,
-    // removing it via storeSyncContacts() will result in the aggregate being removed.
-    QDateTime finalTime = QDateTime::currentDateTimeUtc();
-    QTest::qWait(1);
-
-    // Create a final sync target contact, with no linked constituents
-    QContactName n5;
-    n5.setFirstName("Julius");
-    n5.setLastName("Oppenheimer");
-
-    QContact fstc;
-    fstc.saveDetail(&n5);
-
-    modifications.clear();
-    modifications.append(qMakePair(QContact(), fstc));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
-
-    syncContacts.clear();
-    updatedSyncTime = QDateTime();
-    QVERIFY(cme->fetchSyncContacts("sync-test", finalTime, exportedIds, &syncContacts, 0, 0, &updatedSyncTime, &err));
-    QCOMPARE(syncContacts.count(), 1);
-
-    fstc = m_cm->contact(retrievalId(syncContacts.at(0)));
-
-    // The contact should have an aggregate
-    QCOMPARE(fstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).count(), 1);
-    QContactId faId = fstc.relatedContacts(aggregatesRelationship, QContactRelationship::First).at(0).id();
-
-    contactIds = m_cm->contactIds(allSyncTargets);
-    QVERIFY(contactIds.contains(fstc.id()));
-    QVERIFY(contactIds.contains(faId));
-
-    // Wait for the delivery of any pending delete signals
-    QTest::qWait(500);
-
-    // Now remove the sync target contact
-    QSignalSpy remSpy(m_cm, contactsRemovedSignal);
-    int remSpyCount = remSpy.count();
-    modifications.clear();
-    modifications.append(qMakePair(fstc, QContact()));
-    QVERIFY(cme->storeSyncContacts("sync-test", policy, &modifications, &err));
-
-    // Both the constituent and the aggregate should be removed
-    contactIds = m_cm->contactIds(allSyncTargets);
-    QVERIFY(!contactIds.contains(fstc.id()));
-    QVERIFY(!contactIds.contains(faId));
-    QTRY_COMPARE(remSpy.count(), remSpyCount+1);
+    QVERIFY(m_cm->saveContact(&b));
+    QVERIFY(m_cm->saveContact(&c));
+    QVERIFY(m_cm->saveContact(&x));
+    QVERIFY(m_cm->saveContact(&y));
+    QVERIFY(m_cm->saveContact(&z));
+
+    // ensure that we have the number of contacts we expect, including xyz aggregates.
+    QList<QContactId> ids = m_cm->contactIds(allCollections);
+    QList<QContactId> deletedIds = m_cm->contactIds(allCollections & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeleted, QContactFilter::MatchContains));
+    QCOMPARE(ids.size(), count + 9); // a,b,c,x,xa,y,ya,z,za
+    QVERIFY(ids.contains(a.id()));
+    QVERIFY(ids.contains(b.id()));
+    QVERIFY(ids.contains(c.id()));
+    QVERIFY(ids.contains(x.id()));
+    QVERIFY(ids.contains(y.id()));
+    QVERIFY(ids.contains(z.id()));
+    QCOMPARE(deletedIds.size(), deletedCount + 0);
+
+    // now mark b, x and z for deletion.
+    QVERIFY(m_cm->removeContact(b.id()));
+    QVERIFY(m_cm->removeContact(x.id()));
+    QVERIFY(m_cm->removeContact(z.id()));
+
+    // now modify a and y to set some modification change flags.
+    QContactPhoneNumber ap, yp;
+    ap.setNumber("12345");
+    yp.setNumber("54321");
+    QVERIFY(a.saveDetail(&ap));
+    QVERIFY(y.saveDetail(&yp));
+    QVERIFY(m_cm->saveContact(&a));
+    QVERIFY(m_cm->saveContact(&y));
+
+    // ensure that we have the number of contacts we expect, including y aggregate.
+    // note that aggregates for deleted contacts don't exist, so xa,za won't be returned in deletedIds.
+    ids = m_cm->contactIds(allCollections);
+    deletedIds = m_cm->contactIds(allCollections & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeleted, QContactFilter::MatchContains));
+    QCOMPARE(ids.size(), count + 4); // a,c,y,ya
+    QVERIFY(ids.contains(a.id()));
+    QVERIFY(!ids.contains(b.id()));
+    QVERIFY(ids.contains(c.id()));
+    QVERIFY(!ids.contains(x.id()));
+    QVERIFY(ids.contains(y.id()));
+    QVERIFY(!ids.contains(z.id()));
+    QCOMPARE(deletedIds.size(), deletedCount + 3); // b, x, z
+    QVERIFY(!deletedIds.contains(a.id()));
+    QVERIFY(deletedIds.contains(b.id()));
+    QVERIFY(!deletedIds.contains(c.id()));
+    QVERIFY(deletedIds.contains(x.id()));
+    QVERIFY(!deletedIds.contains(y.id()));
+    QVERIFY(deletedIds.contains(z.id()));
+
+    // now clear the change flags for trialAddressbook.  This should result in x+z being purged.
+    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
+    QContactManager::Error err = QContactManager::NoError;
+    QVERIFY(cme->clearChangeFlags(trialAddressbook.id(), &err));
+
+    // should still be able to access the trialAddressbook itself.
+    QContactCollection reloadedTrialAddressbook = m_cm->collection(trialAddressbookId);
+    QCOMPARE(m_cm->error(), QContactManager::NoError);
+    QCOMPARE(reloadedTrialAddressbook.metaData(QContactCollection::KeyName).toString(), QStringLiteral("trial"));
+    QCOMPARE(reloadedTrialAddressbook.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME).toString(), QStringLiteral("tst_aggregation"));
+    QCOMPARE(reloadedTrialAddressbook.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID).toInt(), 6);
+    QCOMPARE(reloadedTrialAddressbook.extendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH).toString(), QStringLiteral("/addressbooks/trial"));
+    QCOMPARE(reloadedTrialAddressbook.extendedMetaData("customKey2").toString(), QStringLiteral("customValue2"));
+    QCOMPARE(reloadedTrialAddressbook.extendedMetaData("customKey1").toString(), QStringLiteral("customValue3"));
+
+    // ensure x and z have been purged, leaving just a,b,c,y,ya accessible
+    ids = m_cm->contactIds(allCollections);
+    deletedIds = m_cm->contactIds(allCollections & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeleted, QContactFilter::MatchContains));
+    QCOMPARE(ids.size(), count + 4); // a,c,y,ya
+    QVERIFY(ids.contains(a.id()));
+    QVERIFY(!ids.contains(b.id()));
+    QVERIFY(ids.contains(c.id()));
+    QVERIFY(!ids.contains(x.id()));
+    QVERIFY(ids.contains(y.id()));
+    QVERIFY(!ids.contains(z.id()));
+    QCOMPARE(deletedIds.size(), deletedCount + 1); // b
+    QVERIFY(!deletedIds.contains(a.id()));
+    QVERIFY(deletedIds.contains(b.id()));
+    QVERIFY(!deletedIds.contains(c.id()));
+    QVERIFY(!deletedIds.contains(x.id()));
+    QVERIFY(!deletedIds.contains(y.id()));
+    QVERIFY(!deletedIds.contains(z.id()));
+
+    // now delete testAddressbook.  this should also mark a and c as deleted.
+    QVERIFY(m_cm->removeCollection(testAddressbookId));
+    ids = m_cm->contactIds(allCollections);
+    deletedIds = m_cm->contactIds(allCollections & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeleted, QContactFilter::MatchContains));
+    QCOMPARE(ids.size(), count + 2); // y,ya
+    QVERIFY(!ids.contains(a.id()));
+    QVERIFY(!ids.contains(b.id()));
+    QVERIFY(!ids.contains(c.id()));
+    QVERIFY(!ids.contains(x.id()));
+    QVERIFY(ids.contains(y.id()));
+    QVERIFY(!ids.contains(z.id()));
+    QCOMPARE(deletedIds.size(), deletedCount + 3); // a,b,c
+    QVERIFY(deletedIds.contains(a.id()));
+    QVERIFY(deletedIds.contains(b.id()));
+    QVERIFY(deletedIds.contains(c.id()));
+    QVERIFY(!deletedIds.contains(x.id()));
+    QVERIFY(!deletedIds.contains(y.id()));
+    QVERIFY(!deletedIds.contains(z.id()));
+
+    // we should not be able to access testAddressbook any more via the normal accessor.
+    QContactCollection deletedTestAddressbook = m_cm->collection(testAddressbookId);
+    QVERIFY(deletedTestAddressbook.id().isNull());
+    QCOMPARE(m_cm->error(), QContactManager::DoesNotExistError);
+
+    // now clearChangeFlags for testAddressbook.  this should purge that addressbook and a,b,c.
+    QVERIFY(cme->clearChangeFlags(testAddressbookId, &err));
+    ids = m_cm->contactIds(allCollections);
+    deletedIds = m_cm->contactIds(allCollections & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeleted, QContactFilter::MatchContains));
+    QCOMPARE(ids.size(), count + 2); // y,ya
+    QVERIFY(!ids.contains(a.id()));
+    QVERIFY(!ids.contains(b.id()));
+    QVERIFY(!ids.contains(c.id()));
+    QVERIFY(!ids.contains(x.id()));
+    QVERIFY(ids.contains(y.id()));
+    QVERIFY(!ids.contains(z.id()));
+    QCOMPARE(deletedIds.size(), deletedCount + 0); // nothing
+    QVERIFY(!deletedIds.contains(a.id()));
+    QVERIFY(!deletedIds.contains(b.id()));
+    QVERIFY(!deletedIds.contains(c.id()));
+    QVERIFY(!deletedIds.contains(x.id()));
+    QVERIFY(!deletedIds.contains(y.id()));
+    QVERIFY(!deletedIds.contains(z.id()));
+
+    // now delete trialAddressbook and purge it.
+    QVERIFY(m_cm->removeCollection(trialAddressbookId));
+    QVERIFY(cme->clearChangeFlags(trialAddressbookId, &err));
+    ids = m_cm->contactIds(allCollections);
+    deletedIds = m_cm->contactIds(allCollections & QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeleted, QContactFilter::MatchContains));
+    QCOMPARE(ids.size(), count + 0); // nothing
+    QVERIFY(!ids.contains(a.id()));
+    QVERIFY(!ids.contains(b.id()));
+    QVERIFY(!ids.contains(c.id()));
+    QVERIFY(!ids.contains(x.id()));
+    QVERIFY(!ids.contains(y.id()));
+    QVERIFY(!ids.contains(z.id()));
+    QCOMPARE(deletedIds.size(), deletedCount + 0); // nothing
+    QVERIFY(!deletedIds.contains(a.id()));
+    QVERIFY(!deletedIds.contains(b.id()));
+    QVERIFY(!deletedIds.contains(c.id()));
+    QVERIFY(!deletedIds.contains(x.id()));
+    QVERIFY(!deletedIds.contains(y.id()));
+    QVERIFY(!deletedIds.contains(z.id()));
 }
 
 void tst_Aggregation::testOOB()
@@ -6385,429 +4659,6 @@ void tst_Aggregation::testOOB()
     keys.clear();
     QVERIFY(cme->fetchOOBKeys(scope, &keys));
     QCOMPARE(keys, QStringList());
-}
-
-bool haveExpectedContent(const QContact &c, const QString &phone, TestSyncAdapter::PhoneModifiability modifiability, const QString &email)
-{
-    const QContactPhoneNumber &phn(c.detail<QContactPhoneNumber>());
-
-    TestSyncAdapter::PhoneModifiability modif = TestSyncAdapter::ImplicitlyModifiable;
-    if (phn.values().contains(QContactDetail__FieldModifiable)) {
-        modif = phn.value<bool>(QContactDetail__FieldModifiable)
-              ? TestSyncAdapter::ExplicitlyModifiable
-              : TestSyncAdapter::ExplicitlyNonModifiable;
-    }
-
-    return phn.number() == phone && modif == modifiability
-        && c.detail<QContactEmailAddress>().emailAddress() == email;
-}
-
-void tst_Aggregation::testSyncAdapter()
-{
-    QContactDetailFilter allSyncTargets;
-    setFilterDetail<QContactSyncTarget>(allSyncTargets, QContactSyncTarget::FieldSyncTarget);
-    QList<QContactId> originalIds = m_cm->contactIds(allSyncTargets);
-
-    // add some contacts remotely, and downsync them.  It should not result in an upsync.
-    QString accountId(QStringLiteral("1"));
-    TestSyncAdapter tsa(accountId);
-    tsa.addRemoteContact(accountId, "John", "TsaOne", "1111111", TestSyncAdapter::ImplicitlyModifiable);
-    tsa.addRemoteContact(accountId, "Bob", "TsaTwo", "2222222", TestSyncAdapter::ExplicitlyModifiable);
-    tsa.addRemoteContact(accountId, "Mark", "TsaThree", "3333333", TestSyncAdapter::ExplicitlyNonModifiable);
-
-    QSignalSpy finishedSpy(&tsa, SIGNAL(finished()));
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 1);
-
-    // should have 6 more contacts than we had before (aggregate+synctarget x 3)
-    QList<QContact> allContacts = m_cm->contacts(allSyncTargets);
-    QContactId tsaOneStcId, tsaOneAggId, tsaTwoStcId, tsaTwoAggId, tsaThreeStcId, tsaThreeAggId;
-    for (int i = allContacts.size() - 1; i >= 0; --i) {
-        const QContact &c(allContacts[i]);
-        if (originalIds.contains(c.id())) {
-            allContacts.removeAt(i);
-        } else {
-            bool isAggregate = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size() > 0;
-            if (c.detail<QContactName>().firstName() == QStringLiteral("John")) {
-                if (isAggregate) {
-                    tsaOneAggId = c.id();
-                } else {
-                    tsaOneStcId = c.id();
-                }
-            } else if (c.detail<QContactName>().firstName() == QStringLiteral("Bob")) {
-                if (isAggregate) {
-                    tsaTwoAggId = c.id();
-                } else {
-                    tsaTwoStcId = c.id();
-                }
-            } else if (c.detail<QContactName>().firstName() == QStringLiteral("Mark")) {
-                if (isAggregate) {
-                    tsaThreeAggId = c.id();
-                } else {
-                    tsaThreeStcId = c.id();
-                }
-            }
-        }
-    }
-    QCOMPARE(allContacts.size(), 6);
-    QVERIFY(tsaOneStcId != QContactId());
-    QVERIFY(tsaOneAggId != QContactId());
-    QVERIFY(tsaTwoStcId != QContactId());
-    QVERIFY(tsaTwoAggId != QContactId());
-    QVERIFY(tsaThreeStcId != QContactId());
-    QVERIFY(tsaThreeAggId != QContactId());
-
-    // verify that the added IDs were reported
-    QSet<QContactId> reportedIds(tsa.modifiedIds(accountId));
-    QCOMPARE(reportedIds.size(), 3);
-    QVERIFY(reportedIds.contains(tsaOneStcId));
-    QVERIFY(reportedIds.contains(tsaTwoStcId));
-    QVERIFY(reportedIds.contains(tsaThreeStcId));
-
-    // and no upsync of local changes should be required (there shouldn't have been any local changes).
-    QVERIFY(!tsa.upsyncWasRequired(accountId));
-    QVERIFY(tsa.downsyncWasRequired(accountId));
-
-    // ensure that the downsynced contacts have the data we expect
-    // note that aggregate contacts don't have a modifiability flag, since by definition
-    // the modification would "actually" occur to some constituent contact detail,
-    // and thus are considered by the haveExpectedContent function to be ImplicitlyModifiable.
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), TestSyncAdapter::ExplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), TestSyncAdapter::ImplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222222"), TestSyncAdapter::ExplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222222"), TestSyncAdapter::ImplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), TestSyncAdapter::ExplicitlyNonModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), TestSyncAdapter::ImplicitlyModifiable, QString()));
-
-    // now modify tsaTwo's aggregate - should cause the creation of an incidental local.
-    // triggering update should then not require downsync but would require upsync.
-    QContact tsaTwoAggregate = m_cm->contact(tsaTwoAggId);
-    QContactEmailAddress tsaTwoEmail;
-    tsaTwoEmail.setEmailAddress("bob@tsatwo.com");
-    tsaTwoAggregate.saveDetail(&tsaTwoEmail); // new detail, will cause creation of incidental local.
-    m_cm->saveContact(&tsaTwoAggregate);
-    allContacts = m_cm->contacts(allSyncTargets);
-    QContactId tsaTwoLocalId;
-    for (int i = allContacts.size() - 1; i >= 0; --i) {
-        if (originalIds.contains(allContacts[i].id())) {
-            allContacts.removeAt(i);
-        } else if (allContacts[i].detail<QContactName>().firstName() == QStringLiteral("Bob")
-                && allContacts[i].id() != tsaTwoAggId
-                && allContacts[i].id() != tsaTwoStcId) {
-            tsaTwoLocalId = allContacts[i].id();
-        }
-    }
-    QCOMPARE(allContacts.size(), 7); // new incidental local.
-    QVERIFY(tsaTwoLocalId != QContactId());
-
-    // perform the sync.
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 2);
-
-    // downsync should not have been required, but upsync should have been.
-    QVERIFY(!tsa.downsyncWasRequired(accountId));
-    QVERIFY(tsa.upsyncWasRequired(accountId));
-
-    // ensure that the contacts have the data we expect
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), TestSyncAdapter::ExplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), TestSyncAdapter::ImplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222222"), TestSyncAdapter::ExplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("bob@tsatwo.com")));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222222"), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("bob@tsatwo.com")));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), TestSyncAdapter::ExplicitlyNonModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), TestSyncAdapter::ImplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")),
-                                QStringLiteral("2222222"), TestSyncAdapter::ExplicitlyModifiable, QStringLiteral("bob@tsatwo.com")));
-
-    // modify both locally and remotely.
-    // we modify the phone number locally (ie, the synctarget constituent)
-    // and the email address remotely (ie, the local constituent)
-    // and test to ensure that everything is resolved/updated correctly.
-    QContact tsaTwoStc = m_cm->contact(tsaTwoStcId);
-    QContactPhoneNumber tsaTwoStcPhn = tsaTwoStc.detail<QContactPhoneNumber>();
-    tsaTwoStcPhn.setNumber("2222229");
-    tsaTwoStc.saveDetail(&tsaTwoStcPhn);
-    QVERIFY(m_cm->saveContact(&tsaTwoStc));
-
-    tsa.changeRemoteContactEmail(accountId, "Bob", "TsaTwo", "bob2@tsatwo.com");
-
-    // perform the sync.
-    tsa.performTwoWaySync(accountId);
-
-    // ensure that the per-account separation is maintained properly for out of band data etc.
-    tsa.addRemoteContact(QStringLiteral("2"), QStringLiteral("Jerry"), QStringLiteral("TsaTwoTwo"), QStringLiteral("555"));
-    tsa.performTwoWaySync(QStringLiteral("2"));
-    QTRY_COMPARE(finishedSpy.count(), 4); // wait for both to finish
-    tsa.removeRemoteContact(QStringLiteral("2"), QStringLiteral("Jerry"), QStringLiteral("TsaTwoTwo"));
-    tsa.performTwoWaySync(QStringLiteral("2"));
-    QTRY_COMPARE(finishedSpy.count(), 5);
-
-    // downsync and upsync should have been required in the original sync for the "main" account.
-    QVERIFY(tsa.downsyncWasRequired(accountId));
-    QVERIFY(tsa.upsyncWasRequired(accountId));
-
-    // ensure that the contacts have the data we expect
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), TestSyncAdapter::ExplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), TestSyncAdapter::ImplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222229"), TestSyncAdapter::ExplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222229"), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeStcId), QStringLiteral("3333333"), TestSyncAdapter::ExplicitlyNonModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaThreeAggId), QStringLiteral("3333333"), TestSyncAdapter::ImplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")),
-                                QStringLiteral("2222229"), TestSyncAdapter::ExplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
-
-    // remove a contact locally, ensure that the removal is upsynced.
-    QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Mark"), QStringLiteral("TsaThree")) != QContact());
-    QVERIFY(m_cm->removeContact(tsaThreeAggId));
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 6);
-    QVERIFY(tsa.downsyncWasRequired(accountId)); // the previously upsynced changes which were applied will be returned, hence will be downsynced; but discarded as nonsubstantial / already applied.
-    QVERIFY(tsa.upsyncWasRequired(accountId));
-
-    // ensure that the contacts have the data we expect
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneStcId), QStringLiteral("1111111"), TestSyncAdapter::ExplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaOneAggId), QStringLiteral("1111111"), TestSyncAdapter::ImplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoStcId), QStringLiteral("2222229"), TestSyncAdapter::ExplicitlyModifiable, QString()));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoLocalId), QString(), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
-    QVERIFY(haveExpectedContent(m_cm->contact(tsaTwoAggId), QStringLiteral("2222229"), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
-    QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")),
-                                QStringLiteral("2222229"), TestSyncAdapter::ExplicitlyModifiable, QStringLiteral("bob2@tsatwo.com")));
-    QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Mark"), QStringLiteral("TsaThree")) == QContact()); // deleted remotely.
-
-    // add a contact locally, ensure that the addition is upsynced.
-    QContact tsaFourLocal;
-    QContactName tsaFourName;
-    tsaFourName.setFirstName("Jennifer");
-    tsaFourName.setLastName("TsaFour");
-    QContactEmailAddress tsaFourEmail;
-    tsaFourEmail.setEmailAddress("jennifer@tsafour.com");
-    tsaFourLocal.saveDetail(&tsaFourName);
-    tsaFourLocal.saveDetail(&tsaFourEmail);
-    QVERIFY(m_cm->saveContact(&tsaFourLocal));
-    QContactId tsaFourLocalId = tsaFourLocal.id();
-    QContactId tsaFourAggId;
-    allContacts = m_cm->contacts(allSyncTargets);
-    for (int i = allContacts.size() - 1; i >= 0; --i) {
-        if (originalIds.contains(allContacts[i].id())) {
-            allContacts.removeAt(i);
-        } else if (allContacts[i].detail<QContactName>().firstName() == QStringLiteral("Jennifer")
-                && allContacts[i].id() != tsaFourLocalId) {
-            tsaFourAggId = allContacts[i].id();
-        }
-    }
-    QVERIFY(tsaFourAggId != QContactId());
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 7);
-    QVERIFY(!tsa.downsyncWasRequired(accountId)); // there were no remote changes
-    QVERIFY(tsa.upsyncWasRequired(accountId));
-    QVERIFY(haveExpectedContent(tsa.remoteContact(accountId, QStringLiteral("Jennifer"), QStringLiteral("TsaFour")),
-                                QString(), TestSyncAdapter::ImplicitlyModifiable, QStringLiteral("jennifer@tsafour.com")));
-
-    // remove some contacts remotely, ensure the removals are downsynced.
-    QTest::qWait(1);
-    tsa.removeRemoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo"));
-    QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Bob"), QStringLiteral("TsaTwo")) == QContact());
-    tsa.removeRemoteContact(accountId, QStringLiteral("Jennifer"), QStringLiteral("TsaFour"));
-    QVERIFY(tsa.remoteContact(accountId, QStringLiteral("Jennifer"), QStringLiteral("TsaFour")) == QContact());
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 8);
-    QVERIFY(tsa.downsyncWasRequired(accountId));
-    QVERIFY(!tsa.upsyncWasRequired(accountId));
-    QList<QContactId> allIds = m_cm->contactIds(allSyncTargets);
-    // the sync target constituents of two and four should be removed.
-    // the local constituents (and the aggregates) should remain.
-    QVERIFY(!allIds.contains(tsaTwoStcId));
-    // the local constituent of tsaTwo should remain even though it's incidental.
-    QVERIFY(allIds.contains(tsaTwoLocalId));
-    QVERIFY(allIds.contains(tsaTwoAggId));
-    // and the tsaFour contact was originally a pure-local addition, so shouldn't be removed.
-    // it may, after all, have been synced up to other sync sources.
-    // Note: we should NOT sync up either tsaTwo or tsaFour in subsequent syncs.
-    QVERIFY(allIds.contains(tsaFourLocalId));
-    QVERIFY(allIds.contains(tsaFourAggId));
-
-    // modify two and four locally, and ensure they don't get synced up.
-    tsaFourLocal = m_cm->contact(tsaFourLocalId);
-    tsaFourEmail = tsaFourLocal.detail<QContactEmailAddress>();
-    tsaFourEmail.setEmailAddress("jennifer2@tsafour.com");
-    tsaFourLocal.saveDetail(&tsaFourEmail);
-    m_cm->saveContact(&tsaFourLocal);
-    tsaTwoAggregate = m_cm->contact(tsaTwoAggId);
-    tsaTwoEmail = tsaTwoAggregate.detail<QContactEmailAddress>();
-    tsaTwoEmail.setEmailAddress("bob3@tsatwo.com");
-    tsaTwoAggregate.saveDetail(&tsaTwoEmail);
-    m_cm->saveContact(&tsaTwoAggregate);
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 9);
-    QVERIFY(!tsa.downsyncWasRequired(accountId)); // no remote changes since last sync, and last sync didn't upsync any changes.
-    QVERIFY(!tsa.upsyncWasRequired(accountId));   // changes shouldn't have been upsynced.
-
-    // modify (the only remaining) remote contact, delete the local contacts.
-    // the conflict should be resolved in favour of the local device, and the
-    // removal should be upsynced.  TODO: support different conflict resolutions.
-    tsa.changeRemoteContactPhone(accountId, QStringLiteral("John"), QStringLiteral("TsaOne"), QStringLiteral("1111112"));
-    QVERIFY(m_cm->removeContact(tsaOneAggId));
-    QVERIFY(m_cm->removeContact(tsaTwoAggId));
-    QVERIFY(m_cm->removeContact(tsaFourAggId));
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 10);
-    QVERIFY(tsa.downsyncWasRequired(accountId));
-    QVERIFY(tsa.upsyncWasRequired(accountId));
-    allIds = m_cm->contactIds(allSyncTargets);
-    QVERIFY(!allIds.contains(tsaOneStcId));
-    QVERIFY(!allIds.contains(tsaOneAggId));
-    QVERIFY(!allIds.contains(tsaTwoLocalId));
-    QVERIFY(!allIds.contains(tsaTwoAggId));
-    QVERIFY(!allIds.contains(tsaFourLocalId));
-    QVERIFY(!allIds.contains(tsaFourAggId));
-    // should be back to original set of ids prior to test.
-    QCOMPARE(originalIds.size(), allIds.size());
-    foreach (const QContactId &id, allIds) {
-        QVERIFY(originalIds.contains(id));
-    }
-
-    // now add a new contact remotely, which has a name.
-    // remove the name locally, and modify it remotely - this will cause a "composed detail" modification update.
-    tsa.addRemoteContact(accountId, "John", "TsaFive", "555555", TestSyncAdapter::ImplicitlyModifiable);
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 11);
-    allIds = m_cm->contactIds(allSyncTargets);
-    QCOMPARE(allIds.size(), originalIds.size() + 2); // remote + aggregate
-    allContacts = m_cm->contacts(allSyncTargets);
-    QContact tsaFiveStc, tsaFiveAgg;
-    for (int i = allContacts.size() - 1; i >= 0; --i) {
-        const QContact &c(allContacts[i]);
-        if (originalIds.contains(c.id())) {
-            allContacts.removeAt(i);
-        } else {
-            bool isAggregate = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size() > 0;
-            if (isAggregate) {
-                tsaFiveAgg = c;
-            } else {
-                tsaFiveStc = c;
-            }
-        }
-    }
-    QVERIFY(tsaFiveAgg.id() != QContactId());
-    QVERIFY(tsaFiveStc.id() != QContactId());
-    // now remove the name on the local copy
-    QContactName tsaFiveName = tsaFiveStc.detail<QContactName>();
-    tsaFiveStc.removeDetail(&tsaFiveName);
-    QVERIFY(m_cm->saveContact(&tsaFiveStc));
-    // now modify the name on the remote server, and trigger sync.
-    // during this process, the local contact will NOT have a QContactName detail
-    // so the modification pair will be <null, newName>.  This used to trigger a bug.
-    tsa.changeRemoteContactName(accountId, "John", "TsaFive", "Jonathan", "TsaFive");
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 12);
-    // ensure that the contact contains the data we expect
-    // currently, we only support PreserveLocalChanges conflict resolution
-    tsaFiveStc = m_cm->contact(tsaFiveStc.id());
-    QCOMPARE(tsaFiveStc.detail<QContactName>().firstName(), QString());
-    QCOMPARE(tsaFiveStc.detail<QContactName>().lastName(), QString());
-    QCOMPARE(tsaFiveStc.detail<QContactPhoneNumber>().number(), QStringLiteral("555555"));
-    // now do the same test as above, but this time remove the name remotely and modify it locally.
-    tsa.addRemoteContact(accountId, "James", "TsaSix", "666666", TestSyncAdapter::ImplicitlyModifiable);
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 13);
-    allIds = m_cm->contactIds(allSyncTargets);
-    QCOMPARE(allIds.size(), originalIds.size() + 4); // remote + aggregate for Five and Six
-    allContacts = m_cm->contacts(allSyncTargets);
-    QContact tsaSixStc, tsaSixAgg;
-    for (int i = allContacts.size() - 1; i >= 0; --i) {
-        const QContact &c(allContacts[i]);
-        if (originalIds.contains(c.id())) {
-            allContacts.removeAt(i);
-        } else {
-            bool isAggregate = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size() > 0;
-            if (isAggregate && c.id() != tsaFiveAgg.id()) {
-                tsaSixAgg = c;
-            } else if (!isAggregate && c.id() != tsaFiveStc.id()){
-                tsaSixStc = c;
-            }
-        }
-    }
-    QVERIFY(tsaSixAgg.id() != QContactId());
-    QVERIFY(tsaSixStc.id() != QContactId());
-    // now modify the name on the local copy
-    QContactName tsaSixName = tsaSixStc.detail<QContactName>();
-    tsaSixName.setFirstName("Jimmy");
-    tsaSixStc.saveDetail(&tsaSixName);
-    QVERIFY(m_cm->saveContact(&tsaSixStc));
-    // now remove the name on the remote server, and trigger sync.
-    // during this process, the remote contact will NOT have a QContactName detail
-    // so the modification pair will be <newName, null>.
-    tsa.changeRemoteContactName(accountId, "James", "TsaSix", "", "");
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 14);
-    // ensure that the contact contains the data we expect
-    // currently, we only support PreserveLocalChanges conflict resolution
-    tsaSixStc = m_cm->contact(tsaSixStc.id());
-    QCOMPARE(tsaSixStc.detail<QContactName>().firstName(), QStringLiteral("Jimmy"));
-    QCOMPARE(tsaSixStc.detail<QContactName>().lastName(), QStringLiteral("TsaSix"));
-    QCOMPARE(tsaSixStc.detail<QContactPhoneNumber>().number(), QStringLiteral("666666"));
-    // partial clean up, locally remove all contact aggregates from sync adapter.
-    QVERIFY(m_cm->removeContact(tsaFiveAgg.id()));
-    QVERIFY(m_cm->removeContact(tsaSixAgg.id()));
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), originalIds.size());
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 15);
-
-    // the following test ensures that "remote duplicate removal" works correctly.
-    // - have multiple duplicated contacts server-side
-    // - sync them down
-    // - remove all but one duplicate server-side
-    // - sync the changes (removals)
-    // - ensure that the removals are applied correctly device-side.
-    tsa.addRemoteDuplicates(accountId, "John", "Duplicate", "1234321");
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 16);
-    allContacts = m_cm->contacts(allSyncTargets);
-    int syncTargetConstituentsCount = 0, aggCount = 0;
-    QContact tsaSevenAgg;
-    for (int i = allContacts.size() - 1; i >= 0; --i) {
-        const QContact &c(allContacts[i]);
-        if (originalIds.contains(c.id())) {
-            allContacts.removeAt(i);
-        } else {
-            int tempAggCount = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size();
-            if (tempAggCount > 0) {
-                aggCount = tempAggCount;
-                tsaSevenAgg = c;
-            } else {
-                syncTargetConstituentsCount += 1;
-            }
-        }
-    }
-    QVERIFY(tsaSevenAgg.id() != QContactId());
-    QCOMPARE(aggCount, 3); // the aggregate should aggregate the 3 duplicates
-    QCOMPARE(syncTargetConstituentsCount, 3); // there should be 3 duplicates
-    tsa.mergeRemoteDuplicates(accountId);
-    tsa.performTwoWaySync(accountId);
-    QTRY_COMPARE(finishedSpy.count(), 17);
-    allContacts = m_cm->contacts(allSyncTargets);
-    syncTargetConstituentsCount = 0; aggCount = 0;
-    for (int i = allContacts.size() - 1; i >= 0; --i) {
-        const QContact &c(allContacts[i]);
-        if (originalIds.contains(c.id())) {
-            allContacts.removeAt(i);
-        } else {
-            int tempAggCount = c.relatedContacts(QStringLiteral("Aggregates"), QContactRelationship::Second).size();
-            if (tempAggCount > 0) {
-                tsaSevenAgg = c;
-                aggCount = tempAggCount;
-            } else {
-                syncTargetConstituentsCount += 1;
-            }
-        }
-    }
-    QCOMPARE(aggCount, 1); // now there should be just one sync target constituent.
-    QCOMPARE(syncTargetConstituentsCount, 1);
-    // clean up.
-    QVERIFY(m_cm->removeContact(tsaSevenAgg.id()));
-    QCOMPARE(m_cm->contactIds(allSyncTargets).size(), originalIds.size());
-    tsa.removeAllContacts();
 }
 
 QTEST_GUILESS_MAIN(tst_Aggregation)

@@ -43,11 +43,15 @@ namespace QtContactsSqliteExtensions {
 ContactManagerEngine *contactManagerEngine(QContactManager &manager)
 {
     QCoreApplication *app = QCoreApplication::instance();
-    QVariant v = app->property(CONTACT_MANAGER_ENGINE_PROP);
-    QContactManagerEngine *engine = static_cast<QContactManagerEngine*>(v.value<QObject*>());
-    if (engine && engine->managerName() == manager.managerName()) {
-        return static_cast<QtContactsSqliteExtensions::ContactManagerEngine *>(engine);
+    QList<QVariant> engines = app->property(CONTACT_MANAGER_ENGINE_PROP).toList();
+    for (QVariant &v : engines) {
+        QContactManagerEngine *engine = static_cast<QContactManagerEngine*>(v.value<QObject*>());
+        if (engine && engine->managerName() == manager.managerName()) {
+            return static_cast<QtContactsSqliteExtensions::ContactManagerEngine *>(engine);
+        }
     }
+
+    //ContactManagerEngine *cme = dynamic_cast<ContactManagerEngine *>(QContactManagerData::managerData(mgr)->m_engine);
 
     return 0;
 }

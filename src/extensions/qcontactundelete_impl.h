@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd.
- * Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
+ * Copyright (C) 2014 Jolla Ltd.
+ * Copyright (C) 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -30,38 +30,14 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QTCONTACTSSQLITE_CONTACTNOTIFIER_H
-#define QTCONTACTSSQLITE_CONTACTNOTIFIER_H
+#ifndef QCONTACTUNDELETE_IMPL_H
+#define QCONTACTUNDELETE_IMPL_H
 
-#include "contactid_p.h"
-
-#include <QContact>
-#include <QObject>
-#include <QSet>
+#include "qcontactundelete.h"
+#include "qtcontacts-extensions.h"
 
 QTCONTACTS_USE_NAMESPACE
 
-class ContactNotifier
-{
-    bool m_nonprivileged;
-
-public:
-    ContactNotifier(bool nonprivileged);
-
-    void collectionsAdded(const QList<QContactCollectionId> &collectionIds);
-    void collectionsChanged(const QList<QContactCollectionId> &collectionIds);
-    void collectionsRemoved(const QList<QContactCollectionId> &collectionIds);
-    void collectionContactsChanged(const QList<QContactCollectionId> &collectionIds);
-    void contactsAdded(const QList<QContactId> &contactIds);
-    void contactsChanged(const QList<QContactId> &contactIds);
-    void contactsPresenceChanged(const QList<QContactId> &contactIds);
-    void contactsRemoved(const QList<QContactId> &contactIds);
-    void selfContactIdChanged(QContactId oldId, QContactId newId);
-    void relationshipsAdded(const QSet<QContactId> &contactIds);
-    void relationshipsRemoved(const QSet<QContactId> &contactIds);
-    void displayLabelGroupsChanged();
-
-    bool connect(const char *name, const char *signature, QObject *receiver, const char *slot);
-};
+const QContactDetail::DetailType QContactUndelete::Type(static_cast<QContactDetail::DetailType>(QContactDetail__TypeUndelete));
 
 #endif

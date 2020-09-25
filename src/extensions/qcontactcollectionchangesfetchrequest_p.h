@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2013 Jolla Ltd.
- * Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
+ * Copyright (c) 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -30,38 +29,45 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
  */
 
-#ifndef QTCONTACTSSQLITE_CONTACTNOTIFIER_H
-#define QTCONTACTSSQLITE_CONTACTNOTIFIER_H
+#ifndef QCONTACTCOLLECTIONCHANGESFETCHREQUEST_P_H
+#define QCONTACTCOLLECTIONCHANGESFETCHREQUEST_P_H
 
-#include "contactid_p.h"
+#include "./qcontactcollectionchangesfetchrequest.h"
 
-#include <QContact>
-#include <QObject>
-#include <QSet>
+#include <QPointer>
 
-QTCONTACTS_USE_NAMESPACE
+QT_BEGIN_NAMESPACE_CONTACTS
 
-class ContactNotifier
+class QContactCollectionChangesFetchRequestPrivate
 {
-    bool m_nonprivileged;
-
 public:
-    ContactNotifier(bool nonprivileged);
+    static QContactCollectionChangesFetchRequestPrivate *get(QContactCollectionChangesFetchRequest *request) { return request->d_func(); }
 
-    void collectionsAdded(const QList<QContactCollectionId> &collectionIds);
-    void collectionsChanged(const QList<QContactCollectionId> &collectionIds);
-    void collectionsRemoved(const QList<QContactCollectionId> &collectionIds);
-    void collectionContactsChanged(const QList<QContactCollectionId> &collectionIds);
-    void contactsAdded(const QList<QContactId> &contactIds);
-    void contactsChanged(const QList<QContactId> &contactIds);
-    void contactsPresenceChanged(const QList<QContactId> &contactIds);
-    void contactsRemoved(const QList<QContactId> &contactIds);
-    void selfContactIdChanged(QContactId oldId, QContactId newId);
-    void relationshipsAdded(const QSet<QContactId> &contactIds);
-    void relationshipsRemoved(const QSet<QContactId> &contactIds);
-    void displayLabelGroupsChanged();
+    QContactCollectionChangesFetchRequestPrivate(
+            QContactCollectionChangesFetchRequest *q,
+            void (QContactCollectionChangesFetchRequest::*stateChanged)(QContactAbstractRequest::State state),
+            void (QContactCollectionChangesFetchRequest::*resultsAvailable)())
+        : q_ptr(q)
+        , stateChanged(stateChanged)
+        , resultsAvailable(resultsAvailable)
+    {
+    }
 
-    bool connect(const char *name, const char *signature, QObject *receiver, const char *slot);
+    QContactCollectionChangesFetchRequest * const q_ptr;
+    void (QContactCollectionChangesFetchRequest::* const stateChanged)(QContactAbstractRequest::State state);
+    void (QContactCollectionChangesFetchRequest::* const resultsAvailable)();
+
+    int accountId = 0;
+    QString applicationName;
+    QPointer<QContactManager> manager;
+    QContactAbstractRequest::State state = QContactAbstractRequest::InactiveState;
+    QContactManager::Error error = QContactManager::NoError;
+    QList<QContactCollection> addedCollections;
+    QList<QContactCollection> modifiedCollections;
+    QList<QContactCollection> removedCollections;
+    QList<QContactCollection> unmodifiedCollections;
 };
 
-#endif
+QT_END_NAMESPACE_CONTACTS
+
+#endif // QCONTACTCOLLECTIONCHANGESFETCHREQUEST_P_H

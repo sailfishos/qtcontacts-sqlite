@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <andrew.den.exter@jollamobile.com>
+ * Copyright (C) 2013 Jolla Ltd.
+ * Copyright (C) 2019 - 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -80,12 +81,49 @@ QVector<quint32> idVector(const QList<QContactId> &contactIds)
     return ids;
 }
 
+QVector<quint32> idVector(const QList<QContactCollectionId> &collectionIds)
+{
+    QVector<quint32> ids;
+    ids.reserve(collectionIds.size());
+    foreach (const QContactCollectionId &id, collectionIds) {
+        ids.append(ContactCollectionId::databaseId(id));
+    }
+    return ids;
+}
+
 }
 
 ContactNotifier::ContactNotifier(bool nonprivileged)
     : m_nonprivileged(nonprivileged)
 {
     initialize();
+}
+
+void ContactNotifier::collectionsAdded(const QList<QContactCollectionId> &collectionIds)
+{
+    if (!collectionIds.isEmpty()) {
+        QDBusMessage message = createSignal("collectionsAdded", m_nonprivileged);
+        message.setArguments(QVariantList() << QVariant::fromValue(idVector(collectionIds)));
+        QDBusConnection::sessionBus().send(message);
+    }
+}
+
+void ContactNotifier::collectionsChanged(const QList<QContactCollectionId> &collectionIds)
+{
+    if (!collectionIds.isEmpty()) {
+        QDBusMessage message = createSignal("collectionsChanged", m_nonprivileged);
+        message.setArguments(QVariantList() << QVariant::fromValue(idVector(collectionIds)));
+        QDBusConnection::sessionBus().send(message);
+    }
+}
+
+void ContactNotifier::collectionsRemoved(const QList<QContactCollectionId> &collectionIds)
+{
+    if (!collectionIds.isEmpty()) {
+        QDBusMessage message = createSignal("collectionsRemoved", m_nonprivileged);
+        message.setArguments(QVariantList() << QVariant::fromValue(idVector(collectionIds)));
+        QDBusConnection::sessionBus().send(message);
+    }
 }
 
 void ContactNotifier::contactsAdded(const QList<QContactId> &contactIds)
@@ -115,11 +153,12 @@ void ContactNotifier::contactsPresenceChanged(const QList<QContactId> &contactId
     }
 }
 
-void ContactNotifier::syncContactsChanged(const QStringList &syncTargets)
+// notify that synced contacts have changed in the given collections
+void ContactNotifier::collectionContactsChanged(const QList<QContactCollectionId> &collectionIds)
 {
-    if (!syncTargets.isEmpty()) {
-        QDBusMessage message = createSignal("syncContactsChanged", m_nonprivileged);
-        message.setArguments(QVariantList() << syncTargets);
+    if (!collectionIds.isEmpty()) {
+        QDBusMessage message = createSignal("collectionContactsChanged", m_nonprivileged);
+        message.setArguments(QVariantList() << QVariant::fromValue(idVector(collectionIds)));
         QDBusConnection::sessionBus().send(message);
     }
 }

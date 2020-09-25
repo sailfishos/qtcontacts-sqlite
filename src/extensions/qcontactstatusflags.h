@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <mattthew.vogt@jollamobile.com>
+ * Copyright (C) 2013 - 2014 Jolla Ltd.
+ * Copyright (C) 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -52,7 +53,9 @@ public:
         HasOnlineAccount = (1 << 2),
         IsOnline = (1 << 3),
         IsDeactivated = (1 << 4),
-        IsIncidental = (1 << 5),
+        IsAdded = (1 << 5),
+        IsModified = (1 << 6),
+        IsDeleted = (1 << 7)
     };
     Q_DECLARE_FLAGS(Flags, Flag)
 

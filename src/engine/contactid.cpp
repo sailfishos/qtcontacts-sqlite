@@ -1,5 +1,6 @@
 /*
- * Copyright (C) 2013 Jolla Ltd. <chris.adams@jollamobile.com>
+ * Copyright (C) 2013 - 2014 Jolla Ltd.
+ * Copyright (C) 2020 Open Mobile Platform LLC.
  *
  * You may use this file under the terms of the BSD license as follows:
  *
@@ -37,131 +38,144 @@
 
 namespace {
 
-const QString default_uri = QString::fromLatin1("org.nemomobile.contacts.sqlite");
-
-QString dbIdToString(quint32 dbId)
+QString dbIdToString(quint32 dbId, bool isCollection = false)
 {
-    return QString::fromLatin1("sql-%1").arg(dbId);
+    return isCollection ? QStringLiteral("col-%1").arg(dbId)
+                        : QStringLiteral("sql-%1").arg(dbId);
 }
 
-quint32 dbIdFromString(const QString &s)
+quint32 dbIdFromString(const QString &s, bool isCollection = false)
 {
-    if (s.startsWith(QString::fromLatin1("sql-"))) {
+    if ((isCollection && s.startsWith(QStringLiteral("col-")))
+            || (!isCollection && s.startsWith(QStringLiteral("sql-")))) {
         return s.mid(4).toUInt();
     }
     return 0;
 }
 
+QByteArray dbIdToByteArray(quint32 dbId, bool isCollection = false)
+{
+    return isCollection ? (QByteArrayLiteral("col-") + QByteArray::number(dbId))
+                        : (QByteArrayLiteral("sql-") + QByteArray::number(dbId));
 }
 
-#include <QContactManagerEngine>
-
-QContactId ContactId::apiId(const QContact &contact)
+quint32 dbIdFromByteArray(const QByteArray &b, bool isCollection = false)
 {
-    return contact.id();
-}
-
-QContactId ContactId::apiId(quint32 dbId)
-{
-    ContactId *eid = new ContactId(dbId);
-    return QContactId(eid);
-}
-
-quint32 ContactId::databaseId(const QContact &contact)
-{
-    return databaseId(contact.id());
-}
-
-quint32 ContactId::databaseId(const QContactId &apiId)
-{
-    if (const QContactEngineId *eid = QContactManagerEngine::engineId(apiId)) {
-        const ContactId *iid = static_cast<const ContactId*>(eid);
-        return iid->m_databaseId;
+    if ((isCollection && b.startsWith(QByteArrayLiteral("col-")))
+            || (!isCollection && b.startsWith(QByteArrayLiteral("sql-")))) {
+        return b.mid(4).toUInt();
     }
     return 0;
 }
 
-const QContactId &ContactId::contactId(const QContactId &apiId)
-{
-    return apiId;
 }
 
-QContactId ContactId::fromString(const QString &s)
+
+namespace ContactId {
+
+QContactId apiId(const QContact &contact)
 {
-    return apiId(dbIdFromString(s));
+    return contact.id();
 }
 
-ContactId::ContactId(quint32 dbId)
-    : QContactEngineId()
-    , m_databaseId(dbId)
+QContactId apiId(quint32 dbId, const QString &manager_uri)
 {
+    return QContactId(manager_uri, dbIdToByteArray(dbId));
 }
 
-ContactId::ContactId(const QString &s)
-    : QContactEngineId()
-    , m_databaseId(dbIdFromString(s))
+quint32 databaseId(const QContact &contact)
 {
+    return databaseId(contact.id());
 }
 
-bool ContactId::isEqualTo(const QContactEngineId *other) const
+quint32 databaseId(const QContactId &apiId)
 {
-    return m_databaseId == static_cast<const ContactId*>(other)->m_databaseId;
+    return dbIdFromByteArray(apiId.localId());
 }
 
-bool ContactId::isLessThan(const QContactEngineId *other) const
-{
-    return m_databaseId < static_cast<const ContactId*>(other)->m_databaseId;
-}
-
-QString ContactId::managerUri() const
-{
-    return QContactManager::buildUri(default_uri, QMap<QString, QString>());
-}
-
-QContactEngineId* ContactId::clone() const
-{
-    return new ContactId(m_databaseId);
-}
-
-QString ContactId::toString() const
-{
-    return dbIdToString(m_databaseId);
-}
-
-uint ContactId::hash() const
-{
-    return m_databaseId;
-}
-
-#ifndef QT_NO_DEBUG_STREAM
-QDebug &ContactId::debugStreamOut(QDebug &dbg) const
-{
-    return dbg << dbIdToString(m_databaseId);
-}
-#endif // QT_NO_DEBUG_STREAM
-
-bool ContactId::isValid(const QContact &contact)
-{
-    return isValid(databaseId(contact));
-}
-
-bool ContactId::isValid(const QContactId &contactId)
-{
-    return isValid(databaseId(contactId));
-}
-
-bool ContactId::isValid(quint32 dbId)
-{
-    return (dbId != 0);
-}
-
-QString ContactId::toString(const QContactId &apiId)
+QString toString(const QContactId &apiId)
 {
     return dbIdToString(databaseId(apiId));
 }
 
-QString ContactId::toString(const QContact &c)
+QString toString(const QContact &c)
 {
     return toString(c.id());
 }
 
+QContactId fromString(const QString &s, const QString &manager_uri)
+{
+    return apiId(dbIdFromString(s), manager_uri);
+}
+
+bool isValid(const QContact &contact)
+{
+    return isValid(databaseId(contact));
+}
+
+bool isValid(const QContactId &contactId)
+{
+    return isValid(databaseId(contactId));
+}
+
+bool isValid(quint32 dbId)
+{
+    return (dbId != 0);
+}
+
+} // namespace ContactId
+
+
+namespace ContactCollectionId {
+
+QContactCollectionId apiId(const QContactCollection &collection)
+{
+    return collection.id();
+}
+
+QContactCollectionId apiId(quint32 dbId, const QString &manager_uri)
+{
+    return QContactCollectionId(manager_uri, dbIdToByteArray(dbId, true));
+}
+
+quint32 databaseId(const QContactCollection &collection)
+{
+    return databaseId(collection.id());
+}
+
+quint32 databaseId(const QContactCollectionId &apiId)
+{
+    return dbIdFromByteArray(apiId.localId(), true);
+}
+
+QString toString(const QContactCollectionId &apiId)
+{
+    return dbIdToString(databaseId(apiId), true);
+}
+
+QString toString(const QContactCollection &c)
+{
+    return toString(c.id());
+}
+
+QContactCollectionId fromString(const QString &s, const QString &manager_uri)
+{
+    return apiId(dbIdFromString(s, true), manager_uri);
+}
+
+bool isValid(const QContactCollection &collection)
+{
+    return isValid(databaseId(collection));
+}
+
+bool isValid(const QContactCollectionId &collectionId)
+{
+    return isValid(databaseId(collectionId));
+}
+
+bool isValid(quint32 dbId)
+{
+    return (dbId != 0);
+}
+
+} // namespace ContactCollectionId
