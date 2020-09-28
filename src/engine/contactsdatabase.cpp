@@ -1602,6 +1602,44 @@ static const char *upgradeVersion20[] = {
     0 // NULL-terminated
 };
 
+static const char *upgradeVersion21[] = {
+    // the previous version upgrade could result in aggregates left over which had no constituents
+    // (as all non-local constituents would have been deleted).
+    // delete all of the associated data now.
+    // also delete all synced contacts, require user to resync again.
+    "DELETE FROM Contacts WHERE collectionId NOT IN (1, 2)", // delete synced contacts
+    "DELETE FROM Contacts WHERE contactId IN (SELECT contactId FROM Contacts WHERE collectionId = 1 AND contactId NOT IN (SELECT firstId FROM Relationships))",
+    "DELETE FROM Addresses WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Anniversaries WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Avatars WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Birthdays WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM DisplayLabels WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM EmailAddresses WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Families WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Favorites WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Genders WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM GeoLocations WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM GlobalPresences WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Guids WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Hobbies WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Names WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Nicknames WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Notes WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM OnlineAccounts WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Organizations WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM PhoneNumbers WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Presences WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Ringtones WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Tags WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Urls WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM OriginMetadata WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM ExtendedDetails WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Details WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "DELETE FROM Identities WHERE contactId NOT IN (SELECT contactId FROM Contacts)",
+    "PRAGMA user_version=22",
+    0 // NULL-terminated
+};
+
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
 struct UpdatePhoneNormalization
@@ -2121,9 +2159,10 @@ static UpgradeOperation upgradeVersions[] = {
     { forceRegenDisplayLabelGroups, upgradeVersion18 },
     { forceRegenDisplayLabelGroups, upgradeVersion19 },
     { 0,                            upgradeVersion20 },
+    { 0,                            upgradeVersion21 },
 };
 
-static const int currentSchemaVersion = 21;
+static const int currentSchemaVersion = 22;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
