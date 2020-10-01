@@ -133,6 +133,7 @@ protected:
             const QString &table,
             QList<QContact> *contacts,
             const QContactFetchHint &fetchHint,
+            const QList<quint32> &orderedIds,
             bool relaxConstraints = false,
             bool ignoreDeleted = false,
             bool keepChangeFlags = false);
@@ -141,6 +142,7 @@ protected:
             const QString &table,
             QList<QContact> *contacts,
             const QContactFetchHint &fetchHint,
+            const QList<quint32> &orderedIds,
             bool relaxConstraints,
             bool keepChangeFlags,
             QSqlQuery &query,

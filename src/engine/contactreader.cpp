@@ -91,6 +91,7 @@ static const QString aggregateSyncTarget(QStringLiteral("aggregate"));
 static const QString localSyncTarget(QStringLiteral("local"));
 static const QString wasLocalSyncTarget(QStringLiteral("was_local"));
 
+namespace {
 enum FieldType {
     StringField = 0,
     StringListField,
@@ -110,6 +111,13 @@ struct FieldInfo
     int field;
     const char *column;
     FieldType fieldType;
+};
+
+// Structure to store temporary data while performing queryContacts()
+struct CacheContactData {
+    QContact contact;
+    QSet<QContactDetail::DetailType> transientTypes;
+    bool syncable;
 };
 
 static void setValue(QContactDetail *detail, int key, const QVariant &value)
@@ -838,6 +846,8 @@ static const DetailInfo detailInfo[] =
     DEFINE_DETAIL(QContactGlobalPresence, GlobalPresences, presenceFields      , false, true),
     DEFINE_DETAIL(QContactExtendedDetail, ExtendedDetails, extendedDetailFields, false, false),
 };
+
+} // anonymous namespace
 
 #undef DEFINE_DETAIL_PRIMARY_TABLE
 #undef DEFINE_DETAIL
@@ -2306,10 +2316,11 @@ QContactManager::Error ContactReader::readContacts(
     const int maximumCount = fetchHint.maxCountHint();
 
     QContactManager::Error error = QContactManager::NoError;
-    if (!m_database.createTemporaryContactIdsTable(table, join, where, orderBy, bindings, maximumCount)) {
+    QList<quint32> orderedIds;
+    if (!m_database.createTemporaryContactIdsTable(table, join, where, orderBy, bindings, maximumCount, &orderedIds)) {
         error = QContactManager::UnspecifiedError;
     } else {
-        error = queryContacts(table, contacts, fetchHint,
+        error = queryContacts(table, contacts, fetchHint, orderedIds,
                               false /* relax constraints */,
                               false /* ignore deleted - however they will be omitted unless filter specifically requires */,
                               keepChangeFlags);
@@ -2343,10 +2354,12 @@ QContactManager::Error ContactReader::readContacts(
 {
     QMutexLocker locker(m_database.accessMutex());
 
+    QList<quint32> orderedIds;
     QVariantList boundIds;
     boundIds.reserve(databaseIds.size());
     foreach (quint32 id, databaseIds) {
         boundIds.append(id);
+        orderedIds.append(id);
     }
 
     contacts->reserve(databaseIds.size());
@@ -2359,7 +2372,9 @@ QContactManager::Error ContactReader::readContacts(
     if (!m_database.createTemporaryContactIdsTable(table, boundIds, maximumCount)) {
         error = QContactManager::UnspecifiedError;
     } else {
-        error = queryContacts(table, contacts, fetchHint, relaxConstraints, true /* ignore deleted */);
+        error = queryContacts(table, contacts, fetchHint, orderedIds,
+                              relaxConstraints,
+                              true /* ignore deleted */);
     }
 
     // the ordering of the queried contacts is identical to
@@ -2384,6 +2399,7 @@ QContactManager::Error ContactReader::queryContacts(
         const QString &tableName,
         QList<QContact> *contacts,
         const QContactFetchHint &fetchHint,
+        const QList<quint32> &orderedIds,
         bool relaxConstraints,
         bool ignoreDeleted,
         bool keepChangeFlags)
@@ -2469,7 +2485,7 @@ QContactManager::Error ContactReader::queryContacts(
             }
 
             if (err == QContactManager::NoError) {
-                err = queryContacts(tableName, contacts, fetchHint, relaxConstraints, keepChangeFlags, contactQuery, relationshipQuery);
+                err = queryContacts(tableName, contacts, fetchHint, orderedIds, relaxConstraints, keepChangeFlags, contactQuery, relationshipQuery);
             }
 
             contactQuery.finish();
@@ -2486,11 +2502,14 @@ QContactManager::Error ContactReader::queryContacts(
         const QString &tableName,
         QList<QContact> *contacts,
         const QContactFetchHint &fetchHint,
+        const QList<quint32> &orderedIds,
         bool relaxConstraints,
         bool keepChangeFlags,
         QSqlQuery &contactQuery,
         QSqlQuery &relationshipQuery)
 {
+    QHash<quint32, CacheContactData> cachedContacts;
+
     // Formulate the query to fetch the contact details
     const QString detailQueryTemplate(QStringLiteral(
         "SELECT "
@@ -2509,8 +2528,7 @@ QContactManager::Error ContactReader::queryContacts(
         "FROM temp.%2 "
         "CROSS JOIN Details ON Details.contactId = temp.%2.contactId " // Cross join ensures we scan the temp table first
         "%3 "
-        "%4 "
-        "ORDER BY temp.%2.rowId ASC"));
+        "%4"));
 
     const QString selectTemplate(QStringLiteral(
         "%1.*"));
@@ -2566,14 +2584,10 @@ QContactManager::Error ContactReader::queryContacts(
         if (!ContactsDatabase::execute(detailQuery)) {
             detailQuery.reportError(QStringLiteral("Failed to prepare query for joined details"));
             return QContactManager::UnspecifiedError;
-        } else {
-            // Move to the first row
-            detailQuery.next();
         }
     }
 
     const bool includeRelationships(relationshipQuery.isValid());
-    const bool includeDetails(detailQuery.isValid());
 
     // We need to report our retrievals periodically
     int unreportedCount = 0;
@@ -2689,46 +2703,6 @@ QContactManager::Error ContactReader::queryContacts(
             contact.saveDetail(&timestamp);
         }
 
-        // Add the details of this contact from the detail tables
-        if (includeDetails) {
-            if (detailQuery.isValid()) {
-                quint32 firstContactDetailId = 0;
-                do {
-                    const quint32 contactId = detailQuery.value(1).toUInt();
-                    if (contactId != dbId) {
-                        break;
-                    }
-
-                    const quint32 detailId = detailQuery.value(0).toUInt();
-                    if (firstContactDetailId == 0) {
-                        firstContactDetailId = detailId;
-                    } else if (firstContactDetailId == detailId) {
-                        // the client must have requested the same contact twice in a row, by id.
-                        // we have already processed all of this contact's details, so break.
-                        break;
-                    }
-
-                    const QString detailName = detailQuery.value(2).toString();
-
-                    // Are we reporting this detail type?
-                    const QPair<ReadDetail, int> properties(readProperties[detailName]);
-                    if (properties.first && properties.second) {
-                        // Are there transient details of this type for this contact?
-                        const QContactDetail::DetailType detailType(detailIdentifier(detailName));
-                        if (transientTypes.contains(detailType)) {
-                            // This contact has transient details of this type; skip the extraction
-                            continue;
-                        }
-
-                        // Extract the values from the result row (readDetail()).
-                        properties.first(&contact, detailQuery, contactId, detailId, syncable,
-                                         apiCollectionId, relaxConstraints, keepChangeFlags,
-                                         properties.second);
-                    }
-                } while (detailQuery.next());
-            }
-        }
-
         if (includeRelationships) {
             // Find any relationships for this contact
             if (relationshipQuery.isValid()) {
@@ -2759,17 +2733,87 @@ QContactManager::Error ContactReader::queryContacts(
             }
         }
 
-        // Append this contact to the output set
-        contacts->append(contact);
+        // We cache the results so that we can order them later
+        // This uses more memory during execution, but avoids the need for a
+        // costly ORDER BY on the detailQuery.
+        CacheContactData cached = {contact, transientTypes, syncable};
+        cachedContacts.insert(dbId, cached);
+    }
 
-        // Periodically report our retrievals
-        if (++unreportedCount == batchSize) {
-            unreportedCount = 0;
-            contactsAvailable(*contacts);
+    // Add the details of this contact from the detail tables
+    // This will only execute if detailQuery was executed and returned entries
+    // e.g. it won't be executed if selectSpec() is empty
+    quint32 currentContactId = 0;
+    quint32 firstContactDetailId = 0;
+    bool skipThisContact = false;
+    while (detailQuery.next()) {
+        // We make no assumptions here about the order the results turn up in
+        const quint32 contactId = detailQuery.value(1).toUInt();
+        if (!cachedContacts.contains(contactId)) {
+            // This contact has ChangeFlags::IsDeleted set and so was filtered out at the dataQuery stage
+            continue;
+        } else if (contactId != currentContactId) {
+            currentContactId = contactId;
+            firstContactDetailId = 0;
+            skipThisContact = false;
+        } else if (skipThisContact) {
+            continue;
+        }
+
+        const quint32 detailId = detailQuery.value(0).toUInt();
+        if (firstContactDetailId == 0) {
+            firstContactDetailId = detailId;
+        } else if (detailId == firstContactDetailId) {
+            // we have seen this detail for this contact before.
+            // we must need to return the same contact twice in a row.
+            // as we have already updated the cached version of this
+            // contact with all of the required details, we can
+            // skip the following duplicated details.
+            skipThisContact = true;
+            continue;
+        }
+
+        // Make direct changes to a reference instances
+        CacheContactData &cached = cachedContacts[contactId];
+        QContact &contact = cached.contact;
+
+        const QString detailName = detailQuery.value(2).toString();
+
+        // Are we reporting this detail type?
+        const QPair<ReadDetail, int> properties(readProperties[detailName]);
+        if (properties.first && properties.second) {
+            // Are there transient details of this type for this contact?
+            const QContactDetail::DetailType detailType(detailIdentifier(detailName));
+            if (cached.transientTypes.contains(detailType)) {
+                // This contact has transient details of this type; skip the extraction
+                continue;
+            }
+
+            const QContactCollectionId apiCollectionId = contact.collectionId();
+
+            // Extract the values from the result row (readDetail()).
+            properties.first(&contact, detailQuery, contactId, detailId, cached.syncable,
+                             apiCollectionId, relaxConstraints, keepChangeFlags,
+                             properties.second);
         }
     }
 
     detailQuery.finish();
+
+    for (const quint32 contactId : orderedIds) {
+        // if the client manually specified an already-deleted contact id
+        // in the list of contacts to retrieve, orderedIds can contain
+        // contacts which will not exist in the result set.
+        if (cachedContacts.contains(contactId)) {
+            contacts->append(cachedContacts[contactId].contact);
+
+            // Periodically report our retrievals
+            if (++unreportedCount == batchSize) {
+                unreportedCount = 0;
+                contactsAvailable(*contacts);
+            }
+        }
+    }
 
     // If any retrievals are not yet reported, do so now
     if (unreportedCount > 0) {
