@@ -199,6 +199,7 @@ private:
     QMutex m_mutex;
     mutable QScopedPointer<ProcessMutex> m_processMutex;
     bool m_nonprivileged;
+    bool m_autoTest;
     QString m_localeName;
     QHash<QString, QSqlQuery> m_preparedQueries;
     QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> m_dlgGenerators;
