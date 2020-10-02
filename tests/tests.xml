@@ -5,25 +5,37 @@
        <set name="unit-tests" feature="qtcontacts-sqlite-qt5">
            <description>Backend correctness automatic tests</description>
            <case manual="false" name="aggregation">
-               <step>/usr/sbin/run-blts-root /bin/su -g privileged -c 'rm -rf /home/nemo/.local/share/system/privileged/Contacts/qtcontacts-sqlite-test' nemo</step>
-               <step>/usr/sbin/run-blts-root /bin/su -g privileged -c '/opt/tests/qtcontacts-sqlite-qt5/tst_aggregation' nemo</step>
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "rm -rf /home/$DEVICEUSER/.local/share/system/privileged/Contacts/qtcontacts-sqlite-test" $DEVICEUSER'</step>
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "/opt/tests/qtcontacts-sqlite-qt5/tst_aggregation" $DEVICEUSER'</step>
+           </case>
+           <case manual="false" name="synctransactions">
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "rm -rf /home/$DEVICEUSER/.local/share/system/privileged/Contacts/qtcontacts-sqlite-test" $DEVICEUSER'</step>
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "/opt/tests/qtcontacts-sqlite-qt5/tst_synctransactions" $DEVICEUSER'</step>
+           </case>
+           <case manual="false" name="displaylabelgroups">
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "rm -rf /home/$DEVICEUSER/.local/share/system/privileged/Contacts/qtcontacts-sqlite-test" $DEVICEUSER'</step>
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "/opt/tests/qtcontacts-sqlite-qt5/tst_displaylabelgroups" $DEVICEUSER'</step>
+           </case>
+           <case manual="false" name="detailfetchrequest">
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "rm -rf /home/$DEVICEUSER/.local/share/system/privileged/Contacts/qtcontacts-sqlite-test" $DEVICEUSER'</step>
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "/opt/tests/qtcontacts-sqlite-qt5/tst_detailfetchrequest" $DEVICEUSER'</step>
            </case>
            <case manual="false" name="contactmanager">
-               <step>/usr/sbin/run-blts-root /bin/su -g privileged -c 'rm -rf /home/nemo/.local/share/system/privileged/Contacts/qtcontacts-sqlite-test' nemo</step>
-               <step>/usr/sbin/run-blts-root /bin/su -g privileged -c '/opt/tests/qtcontacts-sqlite-qt5/tst_qcontactmanager' nemo</step>
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "rm -rf /home/$DEVICEUSER/.local/share/system/privileged/Contacts/qtcontacts-sqlite-test" $DEVICEUSER'</step>
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "/opt/tests/qtcontacts-sqlite-qt5/tst_qcontactmanager" $DEVICEUSER'</step>
            </case>
            <case manual="false" name="contactmanagerfiltering">
-               <step>rm -rf /home/nemo/.local/share/system/Contacts/qtcontacts-sqlite-test</step>
-               <step>/opt/tests/qtcontacts-sqlite-qt5/tst_qcontactmanagerfiltering</step>
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "rm -rf /home/$DEVICEUSER/.local/share/system/Contacts/qtcontacts-sqlite-test" $DEVICEUSER'</step>
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "/opt/tests/qtcontacts-sqlite-qt5/tst_qcontactmanagerfiltering" $DEVICEUSER'</step>
            </case>
            <case manual="false" name="database">
-               <step>/opt/tests/qtcontacts-sqlite-qt5/tst_database -perfcounter tickcounter</step>
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "/opt/tests/qtcontacts-sqlite-qt5/tst_database -perfcounter tickcounter" $DEVICEUSER'</step>
            </case>
            <case manual="false" name="memorytable">
-               <step>/opt/tests/qtcontacts-sqlite-qt5/tst_memorytable</step>
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "/opt/tests/qtcontacts-sqlite-qt5/tst_memorytable" $DEVICEUSER'</step>
            </case>
            <case manual="false" name="phonenumber">
-               <step>/opt/tests/qtcontacts-sqlite-qt5/tst_phonenumber</step>
+               <step>DEVICEUSER=$(getent passwd $(grep "^UID_MIN" /etc/login.defs |  tr -s " " | cut -d " " -f2) | sed 's/:.*//') bash -c '/usr/sbin/run-blts-root /bin/su -g privileged -c "/opt/tests/qtcontacts-sqlite-qt5/tst_phonenumber" $DEVICEUSER'</step>
            </case>
        </set>
    </suite>
