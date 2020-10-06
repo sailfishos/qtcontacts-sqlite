@@ -3189,6 +3189,7 @@ ContactsDatabase::ContactsDatabase(ContactsEngine *engine)
     : m_engine(engine)
     , m_mutex(QMutex::Recursive)
     , m_nonprivileged(false)
+    , m_autoTest(false)
     , m_localeName(QLocale().name())
     , m_defaultGenerator(new DefaultDlgGenerator)
 #ifdef HAS_MLITE
@@ -3249,9 +3250,10 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
 {
     QMutexLocker locker(accessMutex());
 
+    m_autoTest = autoTest;
     if (m_dlgGenerators.isEmpty()) {
         for (auto generator : s_dlgGenerators) {
-            if (generator && (generator->name().contains(QStringLiteral("test")) == autoTest)) {
+            if (generator && (generator->name().contains(QStringLiteral("test")) == m_autoTest)) {
                 m_dlgGenerators.append(generator);
             }
         }
@@ -3302,7 +3304,7 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
     const QString privilegedDataDirPath(systemDataDirPath + QTCONTACTS_SQLITE_PRIVILEGED_DIR + "/");
 
     QString databaseSubdir(QStringLiteral(QTCONTACTS_SQLITE_DATABASE_DIR));
-    if (autoTest) {
+    if (m_autoTest) {
         databaseSubdir.append(QStringLiteral("-test"));
     }
 
@@ -3832,7 +3834,7 @@ QString ContactsDatabase::displayLabelGroupPreferredProperty() const
         }
     }
 #endif
-    return retn;
+    return m_autoTest ? QStringLiteral("QContactName::FieldLastName") : retn;
 }
 
 QString ContactsDatabase::determineDisplayLabelGroup(const QContact &c, bool *emitDisplayLabelGroupChange)
