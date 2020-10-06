@@ -1343,7 +1343,8 @@ ContactsEngine::~ContactsEngine()
     QCoreApplication *app = QCoreApplication::instance();
     QList<QVariant> engines = app->property(CONTACT_MANAGER_ENGINE_PROP).toList();
     for (int i = 0; i < engines.size(); ++i) {
-        if (engines[i] == QVariant::fromValue(this)) {
+        QContactManagerEngine *engine = static_cast<QContactManagerEngine*>(engines[i].value<QObject*>());
+        if (engine == this) {
             engines.removeAt(i);
             break;
         }
