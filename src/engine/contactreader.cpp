@@ -2272,6 +2272,9 @@ QContactManager::Error ContactReader::fetchContacts(const QContactCollectionId &
     return error;
 }
 
+static qint64 cummulativeTime = 0;
+static qint64 cummulativeCount = 0;
+
 QContactManager::Error ContactReader::readContacts(
         const QString &table,
         QList<QContact> *contacts,
@@ -2280,6 +2283,9 @@ QContactManager::Error ContactReader::readContacts(
         const QContactFetchHint &fetchHint,
         bool keepChangeFlags)
 {
+    qWarning() << "CONTACTSPERF: building contacts from queried data...";
+    QElapsedTimer elapsedTimer; elapsedTimer.start();
+
     QMutexLocker locker(m_database.accessMutex());
 
     m_database.clearTemporaryContactIdsTable(table);
@@ -2294,6 +2300,7 @@ QContactManager::Error ContactReader::readContacts(
     QString where = buildContactWhere(filter, m_database, table, QContactDetail::TypeUndefined, &bindings, &whereFailed, &transientModifiedRequired, &globalPresenceRequired);
     if (whereFailed) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
+        qWarning() << "CONTACTSPERF: Error, early return";
         return QContactManager::UnspecifiedError;
     }
 
@@ -2302,6 +2309,7 @@ QContactManager::Error ContactReader::readContacts(
     if (transientModifiedRequired || globalPresenceRequired) {
         // Provide the temporary transient state information to filter/sort on
         if (!m_database.populateTemporaryTransientState(transientModifiedRequired, globalPresenceRequired)) {
+            qWarning() << "CONTACTSPERF: Error, early return";
             return QContactManager::UnspecifiedError;
         }
 
@@ -2326,6 +2334,12 @@ QContactManager::Error ContactReader::readContacts(
                               keepChangeFlags);
     }
 
+    qint64 timeTaken = elapsedTimer.elapsed();
+    cummulativeTime += timeTaken;
+    cummulativeCount += contacts->size();
+    qWarning() << "CONTACTSPERF: finished, took: " << timeTaken << " msec, total: " << cummulativeTime;
+    qWarning() << "CONTACTSPERF: finished, count: " << contacts->size() << " contacts, total: " << cummulativeCount;
+
     return error;
 }
 
@@ -2335,6 +2349,8 @@ QContactManager::Error ContactReader::readContacts(
         const QList<QContactId> &contactIds,
         const QContactFetchHint &fetchHint)
 {
+    qWarning() << "CONTACTSPERF: readContacts() using contactIds";
+
     QList<quint32> databaseIds;
     databaseIds.reserve(contactIds.size());
 
@@ -2352,6 +2368,8 @@ QContactManager::Error ContactReader::readContacts(
         const QContactFetchHint &fetchHint,
         bool relaxConstraints)
 {
+    qWarning() << "CONTACTSPERF: readContacts() using databaseIds";
+
     QMutexLocker locker(m_database.accessMutex());
 
     QList<quint32> orderedIds;
