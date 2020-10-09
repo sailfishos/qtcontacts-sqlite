@@ -1371,6 +1371,9 @@ void tst_QContactManager::batch()
     QCOMPARE(batchFetch.at(0).detail<QContactName>().value(nameField), na.value(nameField));
     QCOMPARE(batchFetch.at(1).detail<QContactName>().value(nameField), nb.value(nameField));
     QCOMPARE(batchFetch.at(2).detail<QContactName>().value(nameField), nc.value(nameField));
+    QCOMPARE(batchFetch.at(0).details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(batchFetch.at(1).details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(batchFetch.at(2).details<QContactPhoneNumber>().count(), 1);
 
     /* Now an empty id */
     batchIds.clear();
@@ -1407,6 +1410,20 @@ void tst_QContactManager::batch()
     QCOMPARE(batchFetch.at(3).detail<QContactName>().value(nameField), na.value(nameField));
     QCOMPARE(batchFetch.at(4).detail<QContactName>().value(nameField), na.value(nameField));
     QCOMPARE(batchFetch.at(5).detail<QContactName>().value(nameField), nb.value(nameField));
+
+    QCOMPARE(batchFetch.at(0).details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(batchFetch.at(1).details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(batchFetch.at(2).details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(batchFetch.at(3).details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(batchFetch.at(4).details<QContactPhoneNumber>().count(), 1);
+    QCOMPARE(batchFetch.at(5).details<QContactPhoneNumber>().count(), 1);
+
+    QCOMPARE(batchFetch.at(0).details<QContactPhoneNumber>().at(0).number(), QString::fromLatin1("34567"));
+    QCOMPARE(batchFetch.at(1).details<QContactPhoneNumber>().at(0).number(), QString::fromLatin1("234567"));
+    QCOMPARE(batchFetch.at(2).details<QContactPhoneNumber>().at(0).number(), QString::fromLatin1("34567"));
+    QCOMPARE(batchFetch.at(3).details<QContactPhoneNumber>().at(0).number(), QString::fromLatin1("1234567"));
+    QCOMPARE(batchFetch.at(4).details<QContactPhoneNumber>().at(0).number(), QString::fromLatin1("1234567"));
+    QCOMPARE(batchFetch.at(5).details<QContactPhoneNumber>().at(0).number(), QString::fromLatin1("234567"));
 
     /* Now delete them all */
     QList<QContactId> ids;
