@@ -81,6 +81,8 @@
 
 #include <QSqlError>
 #include <QVector>
+#include <QBuffer>
+#include <QDataStream>
 
 #include <QtDebug>
 #include <QElapsedTimer>
@@ -624,7 +626,15 @@ static const FieldInfo extendedDetailFields[] =
 static void setValues(QContactExtendedDetail *detail, QSqlQuery *query, const int offset)
 {
     setValue(detail, QContactExtendedDetail::FieldName, query->value(offset + 0));
-    setValue(detail, QContactExtendedDetail::FieldData, query->value(offset + 1));
+
+    QByteArray bytes = query->value(offset + 1).toByteArray();
+    QBuffer buffer(&bytes);
+    buffer.open(QIODevice::ReadOnly);
+    QDataStream in(&buffer);
+    in.setVersion(QDataStream::Qt_5_6);
+    QVariant deserialized;
+    in >> deserialized;
+    setValue(detail, QContactExtendedDetail::FieldData, deserialized);
 }
 
 static QMap<QString, int> contextTypes()
