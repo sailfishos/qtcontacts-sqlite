@@ -55,6 +55,8 @@
 
 #include <QSqlError>
 #include <QUuid>
+#include <QBuffer>
+#include <QDataStream>
 
 #include <algorithm>
 #include <cmath>
@@ -3218,7 +3220,15 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.bindValue(":detailId", detailId);
     query.bindValue(":contactId", contactId);
     query.bindValue(":name", detailValue(detail, T::FieldName));
-    query.bindValue(":data", detailValue(detail, T::FieldData));
+
+    QByteArray serialized;
+    QBuffer buffer(&serialized);
+    buffer.open(QIODevice::WriteOnly);
+    QDataStream out(&buffer);
+    out.setVersion(QDataStream::Qt_5_6);
+    out << detailValue(detail, T::FieldData);
+    query.bindValue(":data", serialized);
+
     return query;
 }
 
