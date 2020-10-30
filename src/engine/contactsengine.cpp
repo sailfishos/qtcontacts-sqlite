@@ -2033,11 +2033,6 @@ QString ContactsEngine::synthesizedDisplayLabel(const QContact &contact, QContac
 
     QContactName name = contact.detail<QContactName>();
 
-    // If a custom label has been set, return that
-    const QString customLabel = name.value<QString>(QContactName::FieldCustomLabel);
-    if (!customLabel.isEmpty())
-        return customLabel;
-
     QString displayLabel;
 
     if (!name.firstName().isEmpty())
@@ -2052,6 +2047,11 @@ QString ContactsEngine::synthesizedDisplayLabel(const QContact &contact, QContac
     if (!displayLabel.isEmpty()) {
         return displayLabel;
     }
+
+    // If a custom label has been set, return that
+    const QString customLabel = name.value<QString>(QContactName::FieldCustomLabel);
+    if (!customLabel.isEmpty())
+        return customLabel;
 
     foreach (const QContactNickname& nickname, contact.details<QContactNickname>()) {
         if (!nickname.nickname().isEmpty()) {
