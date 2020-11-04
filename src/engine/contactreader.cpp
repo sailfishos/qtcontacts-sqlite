@@ -627,14 +627,23 @@ static void setValues(QContactExtendedDetail *detail, QSqlQuery *query, const in
 {
     setValue(detail, QContactExtendedDetail::FieldName, query->value(offset + 0));
 
-    QByteArray bytes = query->value(offset + 1).toByteArray();
-    QBuffer buffer(&bytes);
-    buffer.open(QIODevice::ReadOnly);
-    QDataStream in(&buffer);
-    in.setVersion(QDataStream::Qt_5_6);
-    QVariant deserialized;
-    in >> deserialized;
-    setValue(detail, QContactExtendedDetail::FieldData, deserialized);
+    QVariant rawValue = query->value(offset + 1);
+    if (rawValue.type() == QVariant::Type(QMetaType::QByteArray)) {
+        QByteArray bytes = rawValue.toByteArray();
+        QBuffer buffer(&bytes);
+        buffer.open(QIODevice::ReadOnly);
+        QDataStream in(&buffer);
+        in.setVersion(QDataStream::Qt_5_6);
+        QVariant deserialized;
+        in >> deserialized;
+
+        if (deserialized.isValid()) {
+            setValue(detail, QContactExtendedDetail::FieldData, deserialized);
+            return;
+        }
+    }
+
+    setValue(detail, QContactExtendedDetail::FieldData, rawValue);
 }
 
 static QMap<QString, int> contextTypes()
