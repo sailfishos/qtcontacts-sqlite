@@ -398,6 +398,7 @@ void tst_synctransactions::singleCollection_multipleCycles()
     remoteAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_synctransactions");
     remoteAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
     remoteAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    remoteAddressbook.setExtendedMetaData(QStringLiteral("SyncToken"), "synctoken-one");
 
     QContact syncAlice;
     QContactName an;
@@ -487,6 +488,27 @@ void tst_synctransactions::singleCollection_multipleCycles()
 
     // now perform a second sync cycle.
     // first, retrieve local changes we need to push to remote server.
+    QList<QContactCollection> addedCollections;
+    QList<QContactCollection> modifiedCollections;
+    QList<QContactCollection> deletedCollections;
+    QList<QContactCollection> unmodifiedCollections;
+    QVERIFY(cme->fetchCollectionChanges(
+            5,
+            "tst_synctransactions",
+            &addedCollections,
+            &modifiedCollections,
+            &deletedCollections,
+            &unmodifiedCollections,
+            &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(addedCollections.count(), 0);
+    QCOMPARE(modifiedCollections.count(), 0);
+    QCOMPARE(deletedCollections.count(), 0);
+    QCOMPARE(unmodifiedCollections.count(), 1);
+    QCOMPARE(unmodifiedCollections.first().extendedMetaData().value(
+            QStringLiteral("SyncToken")).toString(),
+            QStringLiteral("synctoken-one"));
+
     QList<QContact> addedContacts;
     QList<QContact> modifiedContacts;
     QList<QContact> deletedContacts;
@@ -540,6 +562,9 @@ void tst_synctransactions::singleCollection_multipleCycles()
     cf.setFlag(QContactStatusFlags::IsDeleted, true);
     syncCharlie.saveDetail(&cf, QContact::IgnoreAccessConstraints);
 
+    // specify an updated ctag for the addressbook.
+    remoteAddressbook.setExtendedMetaData(QStringLiteral("SyncToken"), "synctoken-two");
+
     // write the remote changes to the local database.
     additions.clear();
     modifications.clear();
@@ -568,6 +593,27 @@ void tst_synctransactions::singleCollection_multipleCycles()
     // now perform another sync cycle.
     // there should be no local changes reported since the last clearChangeFlags()
     // (in this case, since the last storeChanges() call).
+    addedCollections.clear();
+    modifiedCollections.clear();
+    deletedCollections.clear();
+    unmodifiedCollections.clear();
+    QVERIFY(cme->fetchCollectionChanges(
+            5,
+            "tst_synctransactions",
+            &addedCollections,
+            &modifiedCollections,
+            &deletedCollections,
+            &unmodifiedCollections,
+            &err));
+    QCOMPARE(err, QContactManager::NoError);
+    QCOMPARE(addedCollections.count(), 0);
+    QCOMPARE(modifiedCollections.count(), 0);
+    QCOMPARE(deletedCollections.count(), 0);
+    QCOMPARE(unmodifiedCollections.count(), 1);
+    QCOMPARE(unmodifiedCollections.first().extendedMetaData().value(
+            QStringLiteral("SyncToken")).toString(),
+            QStringLiteral("synctoken-two"));
+
     addedContacts.clear();
     modifiedContacts.clear();
     deletedContacts.clear();
