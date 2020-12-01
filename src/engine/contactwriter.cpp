@@ -3235,13 +3235,18 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.bindValue(":contactId", contactId);
     query.bindValue(":name", detailValue(detail, T::FieldName));
 
-    QByteArray serialized;
-    QBuffer buffer(&serialized);
-    buffer.open(QIODevice::WriteOnly);
-    QDataStream out(&buffer);
-    out.setVersion(QDataStream::Qt_5_6);
-    out << detailValue(detail, T::FieldData);
-    query.bindValue(":data", serialized);
+    const QVariant variantValue = detailValue(detail, T::FieldData);
+    if (variantValue.isNull()) {
+        query.bindValue(":data", variantValue);
+    } else {
+        QByteArray serialized;
+        QBuffer buffer(&serialized);
+        buffer.open(QIODevice::WriteOnly);
+        QDataStream out(&buffer);
+        out.setVersion(QDataStream::Qt_5_6);
+        out << detailValue(detail, T::FieldData);
+        query.bindValue(":data", serialized);
+    }
 
     return query;
 }
