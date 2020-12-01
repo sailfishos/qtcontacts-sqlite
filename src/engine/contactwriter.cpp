@@ -3549,8 +3549,8 @@ QContactManager::Error ContactWriter::save(
                 dbId = ContactId::databaseId(contactId);
                 m_addedIds.insert(contactId);
             } else {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error creating contact: %1 collectionId: %2")
-                                          .arg(err).arg(ContactCollectionId::toString(contact.collectionId())));
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error creating contact in collection: %2 : %3")
+                                          .arg(ContactCollectionId::toString(contact.collectionId())).arg(err));
             }
         } else {
             err = update(&contact, definitionMask, &aggregateUpdated, true, withinAggregateUpdate, withinSyncUpdate, recordUnhandledChangeFlags, presenceOnlyUpdate);
@@ -3717,7 +3717,7 @@ static QContactManager::Error enforceDetailConstraints(QContact *contact)
             if (!detailUri.isEmpty()) {
                 if (detailUris.contains(detailUri)) {
                     // This URI conflicts with one already present in the contact
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Detail URI confict on: %1 %2 %3").arg(detailUri).arg(detailTypeName(det)).arg(det.type()));
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Detail URI conflict on: %1 %2 %3").arg(detailUri).arg(detailTypeName(det)).arg(det.type()));
                     return QContactManager::InvalidDetailError;
                 }
 
@@ -4513,6 +4513,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
             if (!aggregable) {
                 writeErr = collectionIsAggregable(contact->collectionId(), &aggregable);
                 if (writeErr != QContactManager::NoError) {
+                    contact->setId(QContactId()); // reset to null id as the transaction will rolled back.
                     return writeErr;
                 }
             }
@@ -4520,6 +4521,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
             if (aggregable) {
                 writeErr = setAggregate(contact, contactId, false, definitionMask, withinTransaction, withinSyncUpdate);
                 if (writeErr != QContactManager::NoError) {
+                    contact->setId(QContactId()); // reset to null id as the transaction will rolled back.
                     return writeErr;
                 }
             }
