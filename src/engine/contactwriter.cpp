@@ -2217,14 +2217,17 @@ template <typename T> bool removeSpecificDetails(ContactsDatabase &db, quint32 c
     return removeSpecificDetails(db, contactId, RemoveStatement<T>::statement, detailTypeName<T>(), error);
 }
 
-static void adjustAggregateDetailProperties(QContactDetail &detail)
+static void adjustAggregateDetailProperties(QContactDetail &detail, const QContact &constituent)
 {
     // Modify this detail URI to preserve uniqueness - the result must not clash with the
-    // URI in the constituent's copy (there won't be any other aggregator of the same detail)
+    // URI in the constituent's copy (there won't be any other aggregator of the same detail).
+    // Also, since the detail URI only needs to be unique-per-contact, if an aggregate
+    // aggregates two contacts, each of those contacts may have a detail which has a particular
+    // detail URI.  Thus, to disambiguate, we need to prefix with the constituent contact id.
 
     // If a detail URI is modified for aggregation, we need to insert a prefix
     const QString aggregateTag(QStringLiteral("aggregate"));
-    const QString prefix(aggregateTag + QStringLiteral(":"));
+    const QString prefix(QStringLiteral("%1-%2:").arg(aggregateTag).arg(ContactId::databaseId(constituent)));
 
     QString detailUri = detail.detailUri();
     if (!detailUri.isEmpty() && !detailUri.startsWith(prefix)) {
@@ -3232,13 +3235,18 @@ ContactsDatabase::Query bindDetail(ContactsDatabase &db, quint32 contactId, quin
     query.bindValue(":contactId", contactId);
     query.bindValue(":name", detailValue(detail, T::FieldName));
 
-    QByteArray serialized;
-    QBuffer buffer(&serialized);
-    buffer.open(QIODevice::WriteOnly);
-    QDataStream out(&buffer);
-    out.setVersion(QDataStream::Qt_5_6);
-    out << detailValue(detail, T::FieldData);
-    query.bindValue(":data", serialized);
+    const QVariant variantValue = detailValue(detail, T::FieldData);
+    if (variantValue.isNull()) {
+        query.bindValue(":data", variantValue);
+    } else {
+        QByteArray serialized;
+        QBuffer buffer(&serialized);
+        buffer.open(QIODevice::WriteOnly);
+        QDataStream out(&buffer);
+        out.setVersion(QDataStream::Qt_5_6);
+        out << detailValue(detail, T::FieldData);
+        query.bindValue(":data", serialized);
+    }
 
     return query;
 }
@@ -3303,10 +3311,6 @@ template <typename T> bool ContactWriter::writeDetails(
                 return false;
             }
 
-            if (aggregateContact) {
-                adjustAggregateDetailProperties(detail);
-            }
-
             if (!writeCommonDetails(contactId, detailId, detail, syncable, wasLocal, aggregateContact, recordUnhandledChangeFlags, error)) {
                 return false;
             }
@@ -3338,9 +3342,6 @@ template <typename T> bool ContactWriter::writeDetails(
         typename QList<T>::iterator ait = additions.begin(), aend = additions.end();
         for ( ; ait != aend; ++ait) {
             T &detail(*ait);
-            if (aggregateContact) {
-                adjustAggregateDetailProperties(detail);
-            }
 
             const quint32 detailId = writeCommonDetails(contactId, 0, detail, syncable, wasLocal, aggregateContact, recordUnhandledChangeFlags, error);
             if (detailId == 0) {
@@ -3383,10 +3384,6 @@ template <typename T> bool ContactWriter::writeDetails(
         typename QList<T>::iterator it = contactDetails.begin(), end = contactDetails.end();
         for ( ; it != end; ++it) {
             T &detail(*it);
-
-            if (aggregateContact) {
-                adjustAggregateDetailProperties(detail);
-            }
 
             const quint32 detailId = writeCommonDetails(contactId, 0, detail, syncable, wasLocal, aggregateContact, recordUnhandledChangeFlags, error);
             if (detailId == 0) {
@@ -3549,8 +3546,8 @@ QContactManager::Error ContactWriter::save(
                 dbId = ContactId::databaseId(contactId);
                 m_addedIds.insert(contactId);
             } else {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error creating contact: %1 collectionId: %2")
-                                          .arg(err).arg(ContactCollectionId::toString(contact.collectionId())));
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Error creating contact in collection: %2 : %3")
+                                          .arg(ContactCollectionId::toString(contact.collectionId())).arg(err));
             }
         } else {
             err = update(&contact, definitionMask, &aggregateUpdated, true, withinAggregateUpdate, withinSyncUpdate, recordUnhandledChangeFlags, presenceOnlyUpdate);
@@ -3717,7 +3714,7 @@ static QContactManager::Error enforceDetailConstraints(QContact *contact)
             if (!detailUri.isEmpty()) {
                 if (detailUris.contains(detailUri)) {
                     // This URI conflicts with one already present in the contact
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Detail URI confict on: %1 %2 %3").arg(detailUri).arg(detailTypeName(det)).arg(det.type()));
+                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Detail URI conflict on: %1 %2 %3").arg(detailUri).arg(detailTypeName(det)).arg(det.type()));
                     return QContactManager::InvalidDetailError;
                 }
 
@@ -3850,6 +3847,7 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
                 // Store the provenance of this promoted detail
                 det.setValue(QContactDetail::FieldProvenance, original.value<QString>(QContactDetail::FieldProvenance));
 
+                adjustAggregateDetailProperties(det, contact);
                 aggregate->saveDetail(&det, QContact::IgnoreAccessConstraints);
             }
         }
@@ -4267,6 +4265,7 @@ QContactManager::Error ContactWriter::regenerateAggregates(const QList<quint32> 
                     QContactDetail currDet = currDetails.at(j);
                     if (promoteDetailType(currDet.type(), definitionMask, false)) {
                         // unconditionally promote this detail to the aggregate.
+                        adjustAggregateDetailProperties(currDet, curr);
                         aggregateContact.saveDetail(&currDet, QContact::IgnoreAccessConstraints);
                     }
                 }
@@ -4513,6 +4512,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
             if (!aggregable) {
                 writeErr = collectionIsAggregable(contact->collectionId(), &aggregable);
                 if (writeErr != QContactManager::NoError) {
+                    contact->setId(QContactId()); // reset to null id as the transaction will rolled back.
                     return writeErr;
                 }
             }
@@ -4520,6 +4520,7 @@ QContactManager::Error ContactWriter::create(QContact *contact, const DetailList
             if (aggregable) {
                 writeErr = setAggregate(contact, contactId, false, definitionMask, withinTransaction, withinSyncUpdate);
                 if (writeErr != QContactManager::NoError) {
+                    contact->setId(QContactId()); // reset to null id as the transaction will rolled back.
                     return writeErr;
                 }
             }
@@ -4662,14 +4663,6 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
                         || definitionMask.contains(generatorType(detail.type()))) {
                     // Only store the details indicated by the detail type mask
                     transientDetails.append(detail);
-                }
-            }
-
-            if (oldCollectionId == ContactCollectionId::apiId(ContactsDatabase::AggregateAddressbookCollectionId, m_managerUri)) {
-                // We need to modify the detail URIs in these details
-                QList<QContactDetail>::iterator it = transientDetails.begin(), end = transientDetails.end();
-                for ( ; it != end; ++it) {
-                    adjustAggregateDetailProperties(*it);
                 }
             }
 

@@ -125,10 +125,6 @@ private slots:
     void deletionMultiple();
     void deletionCollections();
 
-/*
-    void testSyncAdapter();
-*/
-
     void testOOB();
 
 private:
@@ -3139,14 +3135,15 @@ void tst_Aggregation::detailUris()
     // now check to ensure that the detail uris and links were updated correctly
     // in the aggregate.  Those uris need to be unique in the database.
     QCOMPARE(localAlice.detail<QContactPhoneNumber>().detailUri(), QLatin1String("alice9PhoneNumberDetailUri"));
-    QVERIFY(aggregateAlice.detail<QContactPhoneNumber>().detailUri().startsWith(QLatin1String("aggregate:")));
+    QVERIFY(aggregateAlice.detail<QContactPhoneNumber>().detailUri().startsWith(QStringLiteral("aggregate-%1:").arg(QString::fromLatin1(localAlice.id().localId()).remove(0,4))));
     QVERIFY(aggregateAlice.detail<QContactPhoneNumber>().detailUri().endsWith(QLatin1String(":alice9PhoneNumberDetailUri")));
     QCOMPARE(localAlice.detail<QContactEmailAddress>().linkedDetailUris(), QStringList() << QLatin1String("alice9PhoneNumberDetailUri"));
     QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().linkedDetailUris().count(), 1);
-    QVERIFY(aggregateAlice.detail<QContactEmailAddress>().linkedDetailUris().at(0).startsWith(QLatin1String("aggregate:")));
+    QVERIFY(aggregateAlice.detail<QContactEmailAddress>().linkedDetailUris().at(0).startsWith(QStringLiteral("aggregate-%1:").arg(QString::fromLatin1(localAlice.id().localId()).remove(0,4))));
     QVERIFY(aggregateAlice.detail<QContactEmailAddress>().linkedDetailUris().at(0).endsWith(QLatin1String(":alice9PhoneNumberDetailUri")));
 
-    // try to add another detail with a conflicting detail URI
+    // try to add another detail with a conflicting detail URI.
+    // this should cause save to fail, as the detail URI must be unique within the contact.
     QContact failAlice(alice);
 
     QContactTag at;
@@ -3190,15 +3187,50 @@ void tst_Aggregation::detailUris()
     // now check to ensure that the detail uris and links were updated correctly
     // in the aggregate.  Those uris need to be unique in the database.
     QCOMPARE(localAlice.detail<QContactPhoneNumber>().detailUri(), QLatin1String("alice9PhoneNumberDetailUri"));
-    QVERIFY(aggregateAlice.detail<QContactPhoneNumber>().detailUri().startsWith(QLatin1String("aggregate:")));
+    QVERIFY(aggregateAlice.detail<QContactPhoneNumber>().detailUri().startsWith(QStringLiteral("aggregate-%1:").arg(QString::fromLatin1(localAlice.id().localId()).remove(0,4))));
     QVERIFY(aggregateAlice.detail<QContactPhoneNumber>().detailUri().endsWith(QLatin1String(":alice9PhoneNumberDetailUri")));
     QCOMPARE(localAlice.detail<QContactEmailAddress>().linkedDetailUris(), QStringList() << QLatin1String("alice9PhoneNumberDetailUri"));
     QCOMPARE(aggregateAlice.detail<QContactEmailAddress>().linkedDetailUris().count(), 1);
-    QVERIFY(aggregateAlice.detail<QContactEmailAddress>().linkedDetailUris().at(0).startsWith(QLatin1String("aggregate:")));
+    QVERIFY(aggregateAlice.detail<QContactEmailAddress>().linkedDetailUris().at(0).startsWith(QStringLiteral("aggregate-%1:").arg(QString::fromLatin1(localAlice.id().localId()).remove(0,4))));
     QVERIFY(aggregateAlice.detail<QContactEmailAddress>().linkedDetailUris().at(0).endsWith(QLatin1String(":alice9PhoneNumberDetailUri")));
     QCOMPARE(localAlice.detail<QContactHobby>().detailUri(), QLatin1String("alice9HobbyDetailUri"));
-    QVERIFY(aggregateAlice.detail<QContactHobby>().detailUri().startsWith(QLatin1String("aggregate:")));
+    QVERIFY(aggregateAlice.detail<QContactHobby>().detailUri().startsWith(QStringLiteral("aggregate-%1:").arg(QString::fromLatin1(localAlice.id().localId()).remove(0,4))));
     QVERIFY(aggregateAlice.detail<QContactHobby>().detailUri().endsWith(QLatin1String(":alice9HobbyDetailUri")));
+
+    // now create a contact in a separate collection
+    // which should get aggregated into the same contact.
+    // because the aggregate already exists, its id will
+    // be lower than the id of the new constituent, and
+    // thus the regenerateAggregates() codepath should be hit.
+    QContactCollection testAddressbook;
+    testAddressbook.setMetaData(QContactCollection::KeyName, QStringLiteral("test"));
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_APPLICATIONNAME, "tst_aggregation");
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_ACCOUNTID, 5);
+    testAddressbook.setExtendedMetaData(COLLECTION_EXTENDEDMETADATA_KEY_REMOTEPATH, "/addressbooks/test");
+    QVERIFY(m_cm->saveCollection(&testAddressbook));
+
+    QContact syncAlice;
+    syncAlice.setCollectionId(testAddressbook.id());
+
+    QContactName san;
+    san.setFirstName("Alice9");
+    san.setMiddleName("In");
+    san.setLastName("Wonderland");
+    syncAlice.saveDetail(&san);
+
+    QContactPhoneNumber saph;
+    saph.setNumber("999111999");
+
+    // try re-using the same detail uri; save should succeed,
+    // as it needs only be unique within the contact.
+    // thus, the aggregation promotion should mutate the
+    // detail uri appropriately to ensure that no conflict occurs.
+    saph.setDetailUri("alice9PhoneNumberDetailUri");
+    syncAlice.saveDetail(&saph);
+
+    QVERIFY(syncAlice.id().isNull());
+    QVERIFY(m_cm->saveContact(&syncAlice));
+    QVERIFY(!syncAlice.id().isNull());
 }
 
 void tst_Aggregation::correctDetails()
