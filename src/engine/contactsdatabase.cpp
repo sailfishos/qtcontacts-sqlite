@@ -545,7 +545,7 @@ static const char *createRemoveTrigger_21 =
 static const char *createRemoveTrigger = createRemoveTrigger_21;
 
 // better if we had used foreign key constraints with cascade delete...
-static const char *createRemoveDetailsTrigger_21 =
+static const char *createRemoveDetailsTrigger_22 =
         "\n CREATE TRIGGER CascadeRemoveSpecificDetails"
         "\n BEFORE DELETE"
         "\n ON Details"
@@ -578,7 +578,7 @@ static const char *createRemoveDetailsTrigger_21 =
         "\n  DELETE FROM ExtendedDetails WHERE detailId = old.detailId;"
         "\n END;";
 
-static const char *createRemoveDetailsTrigger = createRemoveDetailsTrigger_21;
+static const char *createRemoveDetailsTrigger = createRemoveDetailsTrigger_22;
 
 static const char *createLocalSelfContact =
         "\n INSERT INTO Contacts ("
@@ -782,6 +782,7 @@ static const char *createStatements[] =
     createOOBTable,
     createDbSettingsTable,
     createRemoveTrigger,
+    createRemoveDetailsTrigger,
     createContactsCollectionIdIndex,
     createContactsChangeFlagsIndex,
     createFirstNameIndex,
@@ -1640,6 +1641,41 @@ static const char *upgradeVersion21[] = {
     0 // NULL-terminated
 };
 
+static const char *upgradeVersion22[] = {
+    // the previous version didn't add the trigger to automatically remove details from the specific
+    // tables when they were removed from the common details table, so remove those stale details now.
+    "DELETE FROM Addresses WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Anniversaries WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Avatars WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Birthdays WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM DisplayLabels WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM EmailAddresses WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Families WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Favorites WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Genders WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM GeoLocations WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM GlobalPresences WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Guids WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Hobbies WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Names WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Nicknames WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Notes WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM OnlineAccounts WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Organizations WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM PhoneNumbers WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Presences WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Ringtones WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM SyncTargets WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Tags WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM Urls WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM OriginMetadata WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    "DELETE FROM ExtendedDetails WHERE detailId NOT IN (SELECT detailId FROM Details)",
+    // recreate the remove details trigger.
+    createRemoveDetailsTrigger_22,
+    "PRAGMA user_version=23",
+    0 // NULL-terminated
+};
+
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
 struct UpdatePhoneNormalization
@@ -2160,9 +2196,10 @@ static UpgradeOperation upgradeVersions[] = {
     { forceRegenDisplayLabelGroups, upgradeVersion19 },
     { 0,                            upgradeVersion20 },
     { 0,                            upgradeVersion21 },
+    { 0,                            upgradeVersion22 },
 };
 
-static const int currentSchemaVersion = 22;
+static const int currentSchemaVersion = 23;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
