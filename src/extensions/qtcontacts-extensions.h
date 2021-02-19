@@ -54,6 +54,8 @@ static const int QContactDetail__FieldNonexportable = (QContactDetail::FieldLink
 static const int QContactDetail__FieldChangeFlags = (QContactDetail::FieldLinkedDetailUris+4);
 static const int QContactDetail__FieldUnhandledChangeFlags = (QContactDetail::FieldLinkedDetailUris+5);
 static const int QContactDetail__FieldDatabaseId = (QContactDetail::FieldLinkedDetailUris+6);
+static const int QContactDetail__FieldCreated = (QContactDetail::FieldLinkedDetailUris+7);
+static const int QContactDetail__FieldModified = (QContactDetail::FieldLinkedDetailUris+8);
 
 // The following change types can be reported for a detail when fetched via the synchronization plugin fetch API.
 static const int QContactDetail__ChangeFlag_IsAdded    = 1 << 0;

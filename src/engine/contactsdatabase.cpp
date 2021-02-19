@@ -337,7 +337,9 @@ static const char *createDetailsTable =
         "\n modifiable BOOL,"
         "\n nonexportable BOOL,"
         "\n changeFlags INTEGER DEFAULT 0,"
-        "\n unhandledChangeFlags INTEGER DEFAULT 0);";
+        "\n unhandledChangeFlags INTEGER DEFAULT 0,"
+        "\n created DATETIME,"
+        "\n modified DATETIME);";
 
 static const char *createDetailsRemoveIndex =
         "\n CREATE INDEX DetailsRemoveIndex ON Details(contactId, detail);";
@@ -1676,6 +1678,13 @@ static const char *upgradeVersion22[] = {
     0 // NULL-terminated
 };
 
+static const char *upgradeVersion23[] = {
+    "\n ALTER TABLE Details ADD COLUMN created DATETIME",
+    "\n ALTER TABLE Details ADD COLUMN modified DATETIME",
+    "PRAGMA user_version=24",
+    0 // NULL-terminated
+};
+
 typedef bool (*UpgradeFunction)(QSqlDatabase &database);
 
 struct UpdatePhoneNormalization
@@ -2197,9 +2206,10 @@ static UpgradeOperation upgradeVersions[] = {
     { 0,                            upgradeVersion20 },
     { 0,                            upgradeVersion21 },
     { 0,                            upgradeVersion22 },
+    { 0,                            upgradeVersion23 },
 };
 
-static const int currentSchemaVersion = 23;
+static const int currentSchemaVersion = 24;
 
 static bool execute(QSqlDatabase &database, const QString &statement)
 {
