@@ -2001,7 +2001,9 @@ quint32 writeCommonDetails(ContactsDatabase &db, quint32 contactId, quint32 deta
             "  modifiable,"
             "  nonexportable,"
             "  changeFlags,"
-            "  unhandledChangeFlags)"
+            "  unhandledChangeFlags,"
+            "  created,"
+            "  modified)"
             " VALUES ("
             "  :contactId,"
             "  :detail,"
@@ -2013,7 +2015,10 @@ quint32 writeCommonDetails(ContactsDatabase &db, quint32 contactId, quint32 deta
             "  :modifiable,"
             "  :nonexportable,"
             "  %1,"
-            "  %2)").arg(aggregateContact ? QStringLiteral("0") : QStringLiteral("1"))  // ChangeFlags::IsAdded
+            "  %2,"
+            "  :created,"
+            "  :modified)"
+              ).arg(aggregateContact ? QStringLiteral("0") : QStringLiteral("1"))  // ChangeFlags::IsAdded
                     .arg((aggregateContact || !recordUnhandledChangeFlags) ? QStringLiteral("0") : QStringLiteral("1"))
         : QStringLiteral(
             " UPDATE Details SET"
@@ -2025,7 +2030,8 @@ quint32 writeCommonDetails(ContactsDatabase &db, quint32 contactId, quint32 deta
             "  provenance = :provenance,"
             "  modifiable = :modifiable,"
             "  nonexportable = :nonexportable"
-            " %1 %2"
+            "  %1 %2,"
+            "  modified = :modified"
             " WHERE contactId = :contactId AND detailId = :detailId")
                 .arg(aggregateContact ? QString() : QStringLiteral(", ChangeFlags = ChangeFlags | 2")) // ChangeFlags::IsModified
                 .arg((aggregateContact || !recordUnhandledChangeFlags) ? QString() : QStringLiteral(", UnhandledChangeFlags = UnhandledChangeFlags | 2")));
@@ -2041,9 +2047,14 @@ quint32 writeCommonDetails(ContactsDatabase &db, quint32 contactId, quint32 deta
                                                    ? detailValue(detail, QContactDetail__FieldModifiable)
                                                    : QVariant());
     const QVariant nonexportable = detailValue(detail, QContactDetail__FieldNonexportable);
+    const QVariant modified = aggregateContact
+            ? detailValue(detail, QContactDetail__FieldModified)
+            : ContactsDatabase::dateTimeString(QDateTime::currentDateTimeUtc());
 
     if (detailId > 0) {
         query.bindValue(":detailId", detailId);
+    } else {
+        query.bindValue(":created", modified);
     }
 
     query.bindValue(":contactId", contactId);
@@ -2055,6 +2066,7 @@ quint32 writeCommonDetails(ContactsDatabase &db, quint32 contactId, quint32 deta
     query.bindValue(":provenance", provenance);
     query.bindValue(":modifiable", modifiable);
     query.bindValue(":nonexportable", nonexportable);
+    query.bindValue(":modified", modified);
 
     if (!ContactsDatabase::execute(query)) {
         query.reportError(QStringLiteral("Failed to write common details for %1\ndetailUri: %2, linkedDetailUris: %3")

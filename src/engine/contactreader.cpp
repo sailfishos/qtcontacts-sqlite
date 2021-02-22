@@ -689,6 +689,8 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
     const QVariant modifiableVariant = query.value(col++);
     const bool nonexportable = query.value(col++).toBool();
     const int changeFlags = query.value(col++).toInt();
+    const QDateTime created = query.value(col++).toDateTime();
+    const QDateTime modified = query.value(col++).toDateTime();
 
     // only save the detail to the contact if it hasn't been deleted,
     // or if we are part of a sync fetch (i.e. keepChangeFlags is true)
@@ -738,6 +740,9 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
     if (keepChangeFlags) {
         setValue(&detail, QContactDetail__FieldChangeFlags, changeFlags);
     }
+
+    setValue(&detail, QContactDetail__FieldCreated, created);
+    setValue(&detail, QContactDetail__FieldModified, modified);
 
     // Constraints should be applied unless generating a partial aggregate; the partial aggregate
     // is intended for modification, so adding constraints prevents it from being used correctly.
@@ -2524,6 +2529,8 @@ QContactManager::Error ContactReader::queryContacts(
             "Details.modifiable,"
             "COALESCE(Details.nonexportable, 0),"
             "Details.changeFlags, "
+            "Details.created, "
+            "Details.modified, "
             "%1 "
         "FROM temp.%2 "
         "CROSS JOIN Details ON Details.contactId = temp.%2.contactId " // Cross join ensures we scan the temp table first
@@ -2545,7 +2552,7 @@ QContactManager::Error ContactReader::queryContacts(
     QHash<QString, QPair<ReadDetail, int> > readProperties;
 
     // Skip the Details table fields, and the indexing fields of the first join table
-    int offset = 11 + 2;
+    int offset = 13 + 2;
 
     const ContactWriter::DetailList &definitionMask = fetchHint.detailTypesHint();
 
@@ -2632,6 +2639,10 @@ QContactManager::Error ContactReader::queryContacts(
             setDetailImmutableIfAggregate(aggregateContact, &deactivated);
             contact.saveDetail(&deactivated);
         }
+
+        // ignore created and modified timestamps, will be saved by readDetail()
+        col++;
+        col++;
 
         int contactType = contactQuery.value(col++).toInt();
         QContactType typeDetail = contact.detail<QContactType>();
