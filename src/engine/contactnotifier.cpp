@@ -34,12 +34,15 @@
 #include "trace_p.h"
 
 #include <QDBusConnection>
+#include <QDBusConnectionInterface>
 #include <QDBusMessage>
 #include <QDBusMetaType>
 #include <QVector>
+#include <QUuid>
 
 #include <QDebug>
 
+#define NOTIFIER_NAME "org.nemomobile.contacts.sqlite.uuid_%1"
 #define NOTIFIER_PATH "/org/nemomobile/contacts/sqlite"
 #define NOTIFIER_INTERFACE "org.nemomobile.contacts.sqlite"
 
@@ -97,6 +100,23 @@ ContactNotifier::ContactNotifier(bool nonprivileged)
     : m_nonprivileged(nonprivileged)
 {
     initialize();
+
+    // Register a unique name for this signal source on the session bus.
+    // Remove surrounding braces and hyphens from the generated uuid.
+    const QString uuid = QUuid::createUuid().toString();
+    const QString serviceName = QString(NOTIFIER_NAME)
+            .arg(uuid.mid(1, uuid.length() - 2).replace('-', QString()));
+    if (QDBusConnection::sessionBus().registerService(serviceName)) {
+        m_serviceName = serviceName;
+    } else {
+        qWarning() << "Failed to register D-Bus service name for contact change notifications:"
+                   << serviceName << QDBusConnection::sessionBus().lastError();
+    }
+}
+
+ContactNotifier::~ContactNotifier()
+{
+    QDBusConnection::sessionBus().unregisterService(m_serviceName);
 }
 
 void ContactNotifier::collectionsAdded(const QList<QContactCollectionId> &collectionIds)

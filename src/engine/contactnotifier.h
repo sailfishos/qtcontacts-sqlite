@@ -47,6 +47,7 @@ class ContactNotifier
 
 public:
     ContactNotifier(bool nonprivileged);
+    ~ContactNotifier();
 
     void collectionsAdded(const QList<QContactCollectionId> &collectionIds);
     void collectionsChanged(const QList<QContactCollectionId> &collectionIds);
@@ -62,6 +63,9 @@ public:
     void displayLabelGroupsChanged();
 
     bool connect(const char *name, const char *signature, QObject *receiver, const char *slot);
+
+private:
+    QString m_serviceName;
 };
 
 #endif
