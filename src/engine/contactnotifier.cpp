@@ -100,23 +100,13 @@ ContactNotifier::ContactNotifier(bool nonprivileged)
     : m_nonprivileged(nonprivileged)
 {
     initialize();
-
-    // Register a unique name for this signal source on the session bus.
-    // Remove surrounding braces and hyphens from the generated uuid.
-    const QString uuid = QUuid::createUuid().toString();
-    const QString serviceName = QString(NOTIFIER_NAME)
-            .arg(uuid.mid(1, uuid.length() - 2).replace('-', QString()));
-    if (QDBusConnection::sessionBus().registerService(serviceName)) {
-        m_serviceName = serviceName;
-    } else {
-        qWarning() << "Failed to register D-Bus service name for contact change notifications:"
-                   << serviceName << QDBusConnection::sessionBus().lastError();
-    }
 }
 
 ContactNotifier::~ContactNotifier()
 {
-    QDBusConnection::sessionBus().unregisterService(m_serviceName);
+    if (QDBusConnection::sessionBus().isConnected() && !m_serviceName.isEmpty()) {
+        QDBusConnection::sessionBus().unregisterService(m_serviceName);
+    }
 }
 
 void ContactNotifier::collectionsAdded(const QList<QContactCollectionId> &collectionIds)
@@ -124,7 +114,7 @@ void ContactNotifier::collectionsAdded(const QList<QContactCollectionId> &collec
     if (!collectionIds.isEmpty()) {
         QDBusMessage message = createSignal("collectionsAdded", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(collectionIds)));
-        QDBusConnection::sessionBus().send(message);
+        sendMessage(message);
     }
 }
 
@@ -133,7 +123,7 @@ void ContactNotifier::collectionsChanged(const QList<QContactCollectionId> &coll
     if (!collectionIds.isEmpty()) {
         QDBusMessage message = createSignal("collectionsChanged", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(collectionIds)));
-        QDBusConnection::sessionBus().send(message);
+        sendMessage(message);
     }
 }
 
@@ -142,7 +132,7 @@ void ContactNotifier::collectionsRemoved(const QList<QContactCollectionId> &coll
     if (!collectionIds.isEmpty()) {
         QDBusMessage message = createSignal("collectionsRemoved", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(collectionIds)));
-        QDBusConnection::sessionBus().send(message);
+        sendMessage(message);
     }
 }
 
@@ -151,7 +141,7 @@ void ContactNotifier::contactsAdded(const QList<QContactId> &contactIds)
     if (!contactIds.isEmpty()) {
         QDBusMessage message = createSignal("contactsAdded", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds)));
-        QDBusConnection::sessionBus().send(message);
+        sendMessage(message);
     }
 }
 
@@ -160,7 +150,7 @@ void ContactNotifier::contactsChanged(const QList<QContactId> &contactIds)
     if (!contactIds.isEmpty()) {
         QDBusMessage message = createSignal("contactsChanged", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds)));
-        QDBusConnection::sessionBus().send(message);
+        sendMessage(message);
     }
 }
 
@@ -169,7 +159,7 @@ void ContactNotifier::contactsPresenceChanged(const QList<QContactId> &contactId
     if (!contactIds.isEmpty()) {
         QDBusMessage message = createSignal("contactsPresenceChanged", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds)));
-        QDBusConnection::sessionBus().send(message);
+        sendMessage(message);
     }
 }
 
@@ -179,7 +169,7 @@ void ContactNotifier::collectionContactsChanged(const QList<QContactCollectionId
     if (!collectionIds.isEmpty()) {
         QDBusMessage message = createSignal("collectionContactsChanged", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(collectionIds)));
-        QDBusConnection::sessionBus().send(message);
+        sendMessage(message);
     }
 }
 
@@ -188,7 +178,7 @@ void ContactNotifier::contactsRemoved(const QList<QContactId> &contactIds)
     if (!contactIds.isEmpty()) {
         QDBusMessage message = createSignal("contactsRemoved", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds)));
-        QDBusConnection::sessionBus().send(message);
+        sendMessage(message);
     }
 }
 
@@ -197,7 +187,7 @@ void ContactNotifier::selfContactIdChanged(QContactId oldId, QContactId newId)
     if (oldId != newId) {
         QDBusMessage message = createSignal("selfContactIdChanged", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(ContactId::databaseId(oldId)) << QVariant::fromValue(ContactId::databaseId(newId)));
-        QDBusConnection::sessionBus().send(message);
+        sendMessage(message);
     }
 }
 
@@ -206,7 +196,7 @@ void ContactNotifier::relationshipsAdded(const QSet<QContactId> &contactIds)
     if (!contactIds.isEmpty()) {
         QDBusMessage message = createSignal("relationshipsAdded", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds.toList())));
-        QDBusConnection::sessionBus().send(message);
+        sendMessage(message);
     }
 }
 
@@ -215,14 +205,14 @@ void ContactNotifier::relationshipsRemoved(const QSet<QContactId> &contactIds)
     if (!contactIds.isEmpty()) {
         QDBusMessage message = createSignal("relationshipsRemoved", m_nonprivileged);
         message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds.toList())));
-        QDBusConnection::sessionBus().send(message);
+        sendMessage(message);
     }
 }
 
 void ContactNotifier::displayLabelGroupsChanged()
 {
     QDBusMessage message = createSignal("displayLabelGroupsChanged", m_nonprivileged);
-    QDBusConnection::sessionBus().send(message);
+    sendMessage(message);
 }
 
 bool ContactNotifier::connect(const char *name, const char *signature, QObject *receiver, const char *slot)
@@ -246,4 +236,34 @@ bool ContactNotifier::connect(const char *name, const char *signature, QObject *
     }
 
     return true;
+}
+
+void ContactNotifier::sendMessage(const QDBusMessage &message)
+{
+    static QDBusConnection connection(QDBusConnection::sessionBus());
+
+    if (!connection.isConnected()) {
+        QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Session Bus is not connected"));
+        return;
+    }
+
+    if (m_serviceName.isEmpty()) {
+        // Register a unique name for this signal source on the session bus.
+        // Remove surrounding braces and hyphens from the generated uuid.
+        const QString uuid = QUuid::createUuid().toString();
+        const QString serviceName = QString(NOTIFIER_NAME)
+                .arg(uuid.mid(1, uuid.length() - 2).replace('-', QString()));
+        if (connection.registerService(serviceName)) {
+            m_serviceName = serviceName;
+        } else {
+            QTCONTACTS_SQLITE_DEBUG(
+                    QString::fromLatin1("Failed to register D-Bus service name %1 for contact change notifications: %2 %3")
+                        .arg(serviceName)
+                        .arg(connection.lastError().name())
+                        .arg(connection.lastError().message()));
+            return;
+        }
+    }
+
+    connection.send(message);
 }
