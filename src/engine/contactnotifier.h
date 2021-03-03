@@ -39,6 +39,8 @@
 #include <QObject>
 #include <QSet>
 
+class QDBusMessage;
+
 QTCONTACTS_USE_NAMESPACE
 
 class ContactNotifier
@@ -65,6 +67,8 @@ public:
     bool connect(const char *name, const char *signature, QObject *receiver, const char *slot);
 
 private:
+    void sendMessage(const QDBusMessage &message);
+
     QString m_serviceName;
 };
 
