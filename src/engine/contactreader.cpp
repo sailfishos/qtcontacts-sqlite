@@ -1148,9 +1148,8 @@ static QString buildWhere(
             globValue = QContactFilter::MatchContains;
         }
 
-        // We need to perform case-insensitive matching if MatchFixedString is specified (unless
-        // CaseSensitive is also specified)
-        bool caseInsensitive = stringField && fixedString && ((filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0);
+        // We need to perform case-insensitive matching unless CaseSensitive is specified
+        bool caseInsensitive = stringField && ((filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0);
 
         QString clause(detail.where(queryContacts));
         QString comparison = QStringLiteral("%1");
@@ -1300,7 +1299,6 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, bool queryCon
     bool dateField = field.fieldType == DateField;
     bool stringField = field.fieldType == StringField || field.fieldType == LocalizedField;
     bool caseInsensitive = stringField &&
-                           filter.matchFlags() & QContactFilter::MatchFixedString &&
                            (filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0;
 
     bool needsAnd = false;
