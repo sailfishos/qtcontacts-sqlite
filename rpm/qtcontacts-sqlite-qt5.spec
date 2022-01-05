@@ -3,7 +3,7 @@ Version: 0.3.9
 Release: 0
 Summary: SQLite-based plugin for QtPIM Contacts
 License: BSD
-URL: https://git.sailfishos.org/mer-core/qtcontacts-sqlite
+URL: https://github.com/sailfishos/qtcontacts-sqlite
 Source0: %{name}-%{version}.tar.gz
 BuildRequires: pkgconfig(Qt5Core)
 BuildRequires: pkgconfig(Qt5Sql)
@@ -17,6 +17,7 @@ Requires: qt5-plugin-sqldriver-sqlite
 
 %files
 %defattr(-,root,root,-)
+%license LICENSE.BSD
 %{_libdir}/qt5/plugins/contacts/*.so*
 
 %package tests
@@ -54,6 +55,5 @@ This package contains extension headers for the qtcontacts-sqlite-qt5 library.
 make %{?_smp_mflags}
 
 %install
-rm -rf %{buildroot}
 %qmake5_install
 
