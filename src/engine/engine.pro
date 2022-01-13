@@ -25,10 +25,7 @@ isEmpty(PKGCONFIG_LIB) {
     message("PKGCONFIG_LIB is unset, assuming $$PKGCONFIG_LIB")
 }
 
-CONFIG(load_icu) {
-    PKGCONFIG += sqlite3
-    DEFINES += QTCONTACTS_SQLITE_LOAD_ICU
-}
+PKGCONFIG += sqlite3
 
 # we hardcode this for Qt4 as there's no GenericDataLocation offered by QDesktopServices
 DEFINES += 'QTCONTACTS_SQLITE_PRIVILEGED_DIR=\'\"privileged\"\''
