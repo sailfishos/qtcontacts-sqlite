@@ -47,10 +47,15 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QLocale>
+#include <QSqlDriver>
 #include <QSqlError>
 #include <QSqlQuery>
 
 #include <QtDebug>
+
+#ifdef QTCONTACTS_SQLITE_LOAD_ICU
+#include <sqlite3.h>
+#endif
 
 static const char *setupEncoding =
         "\n PRAGMA encoding = \"UTF-16\";";
@@ -2539,6 +2544,27 @@ static bool upgradeDatabase(QSqlDatabase &database, ContactsDatabase *cdb)
 
 static bool configureDatabase(QSqlDatabase &database, QString &localeName)
 {
+#ifdef QTCONTACTS_SQLITE_LOAD_ICU
+    // Load the ICU extension
+    QVariant v = database.driver()->handle();
+    if (v.isValid()) {
+        // v.data() returns a pointer to the handle
+        sqlite3 *handle = *static_cast<sqlite3 **>(v.data());
+        if (handle) {
+            sqlite3_enable_load_extension(handle, 1);
+            char *err = nullptr;
+            int rc = sqlite3_load_extension(handle,
+                                            "libSqliteIcu",
+                                            "sqlite3_icu_init", &err);
+            if (rc != SQLITE_OK) {
+                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to load ICU extension: %1")
+                        .arg(err));
+                sqlite3_free(err);
+            }
+        }
+    }
+#endif
+
     if (!execute(database, QLatin1String(setupEncoding))
         || !execute(database, QLatin1String(setupTempStore))
         || !execute(database, QLatin1String(setupJournal))
