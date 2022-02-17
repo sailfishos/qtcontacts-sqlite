@@ -53,7 +53,9 @@
 
 #include <QtDebug>
 
+#ifdef QTCONTACTS_SQLITE_LOAD_ICU
 #include <sqlite3.h>
+#endif
 
 static const char *setupEncoding =
         "\n PRAGMA encoding = \"UTF-16\";";
@@ -2542,6 +2544,7 @@ static bool upgradeDatabase(QSqlDatabase &database, ContactsDatabase *cdb)
 
 static bool configureDatabase(QSqlDatabase &database, QString &localeName)
 {
+#ifdef QTCONTACTS_SQLITE_LOAD_ICU
     // Load the ICU extension
     QVariant v = database.driver()->handle();
     if (v.isValid()) {
@@ -2560,6 +2563,7 @@ static bool configureDatabase(QSqlDatabase &database, QString &localeName)
             }
         }
     }
+#endif
 
     if (!execute(database, QLatin1String(setupEncoding))
         || !execute(database, QLatin1String(setupTempStore))
