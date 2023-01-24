@@ -3202,7 +3202,7 @@ void tst_QContactManager::changeSet()
     changeSet.insertChangedContacts(l2, QList<QContactDetail::DetailType>() << QContactBirthday::Type << QContactName::Type << QContactBirthday::Type);
     QCOMPARE(changeSet.changedContacts().size(), 1);
     QList<QContactId> expected((l1.toSet() | l2.toSet()).toList());
-    qSort(expected);
+    std::sort(expected.begin(), expected.end());
     QCOMPARE(changeSet.changedContacts().first().second, expected);
 
     changeSet.insertRemovedContacts(QList<QContactId>() << id);
