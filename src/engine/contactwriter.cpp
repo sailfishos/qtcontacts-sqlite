@@ -65,37 +65,115 @@
 #include <QElapsedTimer>
 
 namespace {
-    void dumpContact(const QContact &c)
-    {
-        Q_FOREACH (const QContactDetail &det, c.details()) {
-            dumpContactDetail(det);
+
+void dumpContactDetail(const QContactDetail &d)
+{
+    qWarning() << "++ ---------" << d.type();
+    QMap<int, QVariant> values = d.values();
+    foreach (int key, values.keys()) {
+        qWarning() << "    " << key << "=" << values.value(key);
+    }
+}
+
+void dumpContact(const QContact &c)
+{
+    Q_FOREACH (const QContactDetail &det, c.details()) {
+        dumpContactDetail(det);
+    }
+}
+
+double log2(double n)
+{
+    const double scale = 1.44269504088896340736;
+    return std::log(n) * scale;
+}
+
+double entropy(QByteArray::const_iterator it, QByteArray::const_iterator end, size_t total)
+{
+    // Shannon's entropy formula, yields [0..1] (low to high information density)
+    double entropy = 0.0;
+
+    int frequency[256] = { 0 };
+    for ( ; it != end; ++it) {
+        frequency[static_cast<unsigned char>(*it)] += 1;
+    }
+    for (int i = 0; i < 256; ++i) {
+        if (frequency[i] != 0) {
+            double p = static_cast<double>(frequency[i]) / total;
+            entropy -= p * log2(p);
         }
     }
 
-    double log2(double n)
-    {
-        const double scale = 1.44269504088896340736;
-        return std::log(n) * scale;
-    }
+    return entropy / 8;
+}
 
-    double entropy(QByteArray::const_iterator it, QByteArray::const_iterator end, size_t total)
-    {
-        // Shannon's entropy formula, yields [0..1] (low to high information density)
-        double entropy = 0.0;
+typedef QMap<int, QVariant> DetailMap;
 
-        int frequency[256] = { 0 };
-        for ( ; it != end; ++it) {
-            frequency[static_cast<unsigned char>(*it)] += 1;
-        }
-        for (int i = 0; i < 256; ++i) {
-            if (frequency[i] != 0) {
-                double p = static_cast<double>(frequency[i]) / total;
-                entropy -= p * log2(p);
+DetailMap detailValues(const QContactDetail &detail, bool includeProvenance = true, bool includeModifiable = true)
+{
+    DetailMap rv(detail.values());
+
+    if (!includeProvenance || !includeModifiable) {
+        DetailMap::iterator it = rv.begin();
+        while (it != rv.end()) {
+            if (!includeProvenance && it.key() == QContactDetail::FieldProvenance) {
+                it = rv.erase(it);
+            } else if (!includeModifiable && it.key() == QContactDetail__FieldModifiable) {
+                it = rv.erase(it);
+            } else {
+                ++it;
             }
         }
-
-        return entropy / 8;
     }
+
+    return rv;
+}
+
+bool variantEqual(const QVariant &lhs, const QVariant &rhs)
+{
+    // Work around incorrect result from QVariant::operator== when variants contain QList<int>
+    static const int QListIntType = QMetaType::type("QList<int>");
+
+    const int lhsType = lhs.userType();
+    if (lhsType != rhs.userType()) {
+        return false;
+    }
+
+    if (lhsType == QListIntType) {
+        return (lhs.value<QList<int> >() == rhs.value<QList<int> >());
+    }
+    return (lhs == rhs);
+}
+
+bool detailValuesEqual(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    const DetailMap lhsValues(detailValues(lhs, false, false));
+    const DetailMap rhsValues(detailValues(rhs, false, false));
+
+    if (lhsValues.count() != rhsValues.count()) {
+        return false;
+    }
+
+    // Because of map ordering, matching fields should be in the same order in both details
+    DetailMap::const_iterator lit = lhsValues.constBegin(), lend = lhsValues.constEnd();
+    DetailMap::const_iterator rit = rhsValues.constBegin();
+    for ( ; lit != lend; ++lit, ++rit) {
+        if (lit.key() != rit.key() || !variantEqual(*lit, *rit)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool detailsEquivalent(const QContactDetail &lhs, const QContactDetail &rhs)
+{
+    // Same as operator== except ignores differences in certain field values
+    if (lhs.type() != rhs.type())
+        return false;
+    return detailValuesEqual(lhs, rhs);
+}
+
 }
 
 static const QString aggregateSyncTarget(QStringLiteral("aggregate"));

@@ -198,19 +198,6 @@ void registerTypes()
     }
 }
 
-// Input must be UTC
-QString dateTimeString(const QDateTime &qdt)
-{
-    return QLocale::c().toString(qdt, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
-}
-
-QDateTime fromDateTimeString(const QString &s)
-{
-    QDateTime rv(QLocale::c().toDateTime(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
-    rv.setTimeSpec(Qt::UTC);
-    return rv;
-}
-
 QMap<QString, QString> checkParams(const QMap<QString, QString> &params)
 {
     QMap<QString, QString> rv(params);
@@ -222,85 +209,6 @@ QMap<QString, QString> checkParams(const QMap<QString, QString> &params)
     }
 
     return rv;
-}
-
-void modifyContactDetail(const QContactDetail &original, const QContactDetail &modified,
-                         QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
-                         QContactDetail *recipient)
-{
-    // Apply changes field-by-field
-    DetailMap originalValues(detailValues(original, false));
-    DetailMap modifiedValues(detailValues(modified, false));
-
-    DetailMap::const_iterator mit = modifiedValues.constBegin(), mend = modifiedValues.constEnd();
-    for ( ; mit != mend; ++mit) {
-        const int field(mit.key());
-
-        const QVariant originalValue(originalValues[field]);
-        originalValues.remove(field);
-
-        const QVariant currentValue(recipient->value(field));
-        if (!variantEqual(currentValue, originalValue)) {
-            // The local value has changed since this data was exported
-            if (conflictPolicy == QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges) {
-                // Ignore this remote change
-                continue;
-            }
-        }
-
-        // Update the result value
-        recipient->setValue(field, mit.value());
-    }
-
-    DetailMap::const_iterator oit = originalValues.constBegin(), oend = originalValues.constEnd();
-    for ( ; oit != oend; ++oit) {
-        // Any previously existing values that are no longer present should be removed
-        const int field(oit.key());
-        const QVariant originalValue(oit.value());
-
-        const QVariant currentValue(recipient->value(field));
-        if (!variantEqual(currentValue, originalValue)) {
-            // The local value has changed since this data was exported
-            if (conflictPolicy == QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges) {
-                // Ignore this remote removal
-                continue;
-            }
-        }
-
-        recipient->removeValue(field);
-    }
-
-    // set the modifiable flag to true unless the sync adapter has set it explicitly
-    if (!recipient->values().contains(QContactDetail__FieldModifiable)) {
-        recipient->setValue(QContactDetail__FieldModifiable, true);
-    }
-}
-
-void removeEquivalentDetails(QList<QContactDetail> &original, QList<QContactDetail> &updated, QList<QContact> &equivalent)
-{
-    Q_UNUSED(equivalent);
-
-    // Determine which details are in the update contact which aren't in the database contact:
-    // Detail order is not defined, so loop over the entire set for each, removing matches or
-    // superset details (eg, backend added a field (like lastModified to timestamp) on previous save)
-    QList<QContactDetail>::iterator oit = original.begin(), oend = original.end();
-    while (oit != oend) {
-        QList<QContactDetail>::iterator uit = updated.begin(), uend = updated.end();
-        while (uit != uend) {
-            if (detailsEquivalent(*oit, *uit)) {
-                // These details match - remove from the lists
-                uit = updated.erase(uit);
-                break;
-            }
-            ++uit;
-        }
-        if (uit != uend) {
-            // We found a match
-            oit = original.erase(oit);
-        } else {
-            ++oit;
-        }
-    }
 }
 
 }
