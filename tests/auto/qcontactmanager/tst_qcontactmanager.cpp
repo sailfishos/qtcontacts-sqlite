@@ -4798,7 +4798,7 @@ void tst_QContactManager::constituentOfSelf()
     // Find the aggregate contact created by saving
     QContactRelationshipFilter relationshipFilter;
     setFilterType(relationshipFilter, QContactRelationship::Aggregates);
-    setFilterContactId(relationshipFilter, constituent.id());
+    relationshipFilter.setRelatedContactId(constituent.id());
     relationshipFilter.setRelatedContactRole(QContactRelationship::Second);
 
     // Now connect our contact to the real self contact

@@ -1161,7 +1161,7 @@ void tst_Aggregation::updateAggregateOfLocalAndSync()
 
     // now grab the aggregate alice
     QContactRelationshipFilter aggf;
-    setFilterContactId(aggf, alice.id());
+    aggf.setRelatedContactId(alice.id());
     aggf.setRelatedContactRole(QContactRelationship::Second);
     setFilterType(aggf, QContactRelationship::Aggregates);
     QList<QContact> allAggregatesOfAlice = m_cm->contacts(aggf);
@@ -1333,7 +1333,7 @@ void tst_Aggregation::updateAggregateOfLocalAndModifiableSync()
     QContact aggregateAlice;
     {
         QContactRelationshipFilter filter;
-        setFilterContactId(filter, alice.id());
+        filter.setRelatedContactId(alice.id());
         filter.setRelatedContactRole(QContactRelationship::Second);
         setFilterType(filter, QContactRelationship::Aggregates);
         QList<QContact> allAggregatesOfAlice = m_cm->contacts(filter);

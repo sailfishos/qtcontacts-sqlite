@@ -229,11 +229,6 @@ void setFilterType(QContactRelationshipFilter &filter, T type)
     filter.setRelationshipType(relationshipString(type));
 }
 
-void setFilterContactId(QContactRelationshipFilter &filter, const QContactId &contactId)
-{
-    filter.setRelatedContactId(contactId);
-}
-
 QContactRelationship makeRelationship(const QContactId &firstId, const QContactId &secondId)
 {
     QContactRelationship relationship;
