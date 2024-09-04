@@ -3771,7 +3771,8 @@ static bool promoteDetailType(QContactDetail::DetailType type, const ContactWrit
     Note that QContactSyncTarget and QContactGuid details will NOT be promoted,
     nor will QContactDisplayLabel or QContactType details.
 */
-static void promoteDetailsToAggregate(const QContact &contact, QContact *aggregate, const ContactWriter::DetailList &definitionMask, bool forcePromotion)
+static void promoteDetailsToAggregate(const QContact &contact, QContact *aggregate,
+                                      const ContactWriter::DetailList &definitionMask, bool forcePromotion)
 {
     foreach (const QContactDetail &original, contact.details()) {
         if (!promoteDetailType(original.type(), definitionMask, forcePromotion)) {

@@ -669,7 +669,9 @@ static int contextType(const QString &type)
 }
 
 template <typename T>
-static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable, const QContactCollectionId &apiCollectionId, bool relaxConstraints, bool keepChangeFlags, int offset)
+static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId,
+                       bool syncable, const QContactCollectionId &apiCollectionId, bool relaxConstraints,
+                       bool keepChangeFlags, int offset)
 {
     const quint32 collectionId = ContactCollectionId::databaseId(apiCollectionId);
     const bool aggregateContact(collectionId == ContactsDatabase::AggregateAddressbookCollectionId);
@@ -724,7 +726,10 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
     }
 
     // If the detail is not aggregated from another, then its provenance should match its ID.
-    setValue(&detail, QContactDetail::FieldProvenance, aggregateContact ? provenance : QStringLiteral("%1:%2:%3").arg(collectionId).arg(contactId).arg(dbId));
+    setValue(&detail, QContactDetail::FieldProvenance,
+             aggregateContact
+             ? provenance
+             : QStringLiteral("%1:%2:%3").arg(collectionId).arg(contactId).arg(dbId));
 
     // Only report modifiable state for non-local contacts.
     // local contacts are always (implicitly) modifiable.
@@ -748,7 +753,8 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
     // is intended for modification, so adding constraints prevents it from being used correctly.
     // Normal aggregate contact details are always immutable.
     if (!relaxConstraints) {
-        QContactManagerEngine::setDetailAccessConstraints(&detail, static_cast<QContactDetail::AccessConstraints>(accessConstraints));
+        QContactManagerEngine::setDetailAccessConstraints(&detail,
+                                                          static_cast<QContactDetail::AccessConstraints>(accessConstraints));
     }
 
     setValues(&detail, &query, offset);
@@ -766,7 +772,8 @@ static void appendUniqueDetail(QList<QContactDetail> *details, QSqlQuery &query)
     details->append(detail);
 }
 
-static QContactRelationship makeRelationship(const QString &type, quint32 firstId, quint32 secondId, const QString &manager_uri)
+static QContactRelationship makeRelationship(const QString &type, quint32 firstId, quint32 secondId,
+                                             const QString &manager_uri)
 {
     QContactRelationship relationship;
     relationship.setRelationshipType(type);
@@ -777,7 +784,9 @@ static QContactRelationship makeRelationship(const QString &type, quint32 firstI
     return relationship;
 }
 
-typedef void (*ReadDetail)(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable, const QContactCollectionId &collectionId, bool relaxConstraints, bool keepChangeFlags, int offset);
+typedef void (*ReadDetail)(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable,
+                           const QContactCollectionId &collectionId, bool relaxConstraints, bool keepChangeFlags,
+                           int offset);
 typedef void (*AppendUniqueDetail)(QList<QContactDetail> *details, QSqlQuery &query);
 
 struct DetailInfo
@@ -1589,7 +1598,8 @@ static QString buildWhere(
 
     QStringList fragments;
     foreach (const QContactFilter &filter, filters) {
-        const QString fragment = buildWhere(filter, db, table, detailType, bindings, failed, transientModifiedRequired, globalPresenceRequired);
+        const QString fragment = buildWhere(filter, db, table, detailType, bindings, failed,
+                                            transientModifiedRequired, globalPresenceRequired);
         if (filter.type() != QContactFilter::DefaultFilter && !*failed) {
             // default filter gets special (permissive) treatment by the intersection filter.
             fragments.append(fragment.isEmpty() ? QStringLiteral("NULL") : fragment);
@@ -1599,8 +1609,9 @@ static QString buildWhere(
     return fragments.join(QStringLiteral(" AND "));
 }
 
-static QString buildContactWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QContactDetail::DetailType detailType, QVariantList *bindings,
-                          bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired)
+static QString buildContactWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table,
+                                 QContactDetail::DetailType detailType, QVariantList *bindings,
+                                 bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired)
 {
     Q_ASSERT(failed);
     Q_ASSERT(globalPresenceRequired);
@@ -1610,7 +1621,8 @@ static QString buildContactWhere(const QContactFilter &filter, ContactsDatabase 
     case QContactFilter::DefaultFilter:
         return QString();
     case QContactFilter::ContactDetailFilter:
-        return buildWhere(static_cast<const QContactDetailFilter &>(filter), true, bindings, failed, transientModifiedRequired, globalPresenceRequired);
+        return buildWhere(static_cast<const QContactDetailFilter &>(filter), true, bindings, failed,
+                          transientModifiedRequired, globalPresenceRequired);
     case QContactFilter::ContactDetailRangeFilter:
         return buildWhere(static_cast<const QContactDetailRangeFilter &>(filter), true, bindings, failed);
     case QContactFilter::ChangeLogFilter:
@@ -1618,9 +1630,11 @@ static QString buildContactWhere(const QContactFilter &filter, ContactsDatabase 
     case QContactFilter::RelationshipFilter:
         return buildWhere(static_cast<const QContactRelationshipFilter &>(filter), bindings, failed);
     case QContactFilter::IntersectionFilter:
-        return buildWhere(buildContactWhere, static_cast<const QContactIntersectionFilter &>(filter), db, table, detailType, bindings, failed, transientModifiedRequired, globalPresenceRequired);
+        return buildWhere(buildContactWhere, static_cast<const QContactIntersectionFilter &>(filter), db, table,
+                          detailType, bindings, failed, transientModifiedRequired, globalPresenceRequired);
     case QContactFilter::UnionFilter:
-        return buildWhere(buildContactWhere, static_cast<const QContactUnionFilter &>(filter), db, table, detailType, bindings, failed, transientModifiedRequired, globalPresenceRequired);
+        return buildWhere(buildContactWhere, static_cast<const QContactUnionFilter &>(filter), db, table, detailType,
+                          bindings, failed, transientModifiedRequired, globalPresenceRequired);
     case QContactFilter::IdFilter:
         return buildWhere(static_cast<const QContactIdFilter &>(filter), db, table, bindings, failed);
     case QContactFilter::CollectionFilter:
@@ -2245,10 +2259,10 @@ QContactManager::Error ContactReader::fetchContacts(const QContactCollectionId &
     // we can save some memory by only fetching added/modified/deleted contacts.
     const QContactFilter filter = unmodifiedContacts
                                 ? (collectionFilter
-                                  |deletedContactsFilter)
+                                   | deletedContactsFilter)
                                 : (addedContactsFilter
-                                  |modifiedContactsFilter
-                                  |deletedContactsFilter);
+                                   | modifiedContactsFilter
+                                   | deletedContactsFilter);
 
     const bool keepChangeFlags = true;
 
@@ -2305,7 +2319,8 @@ QContactManager::Error ContactReader::readContacts(
 
     bool whereFailed = false;
     QVariantList bindings;
-    QString where = buildContactWhere(filter, m_database, table, QContactDetail::TypeUndefined, &bindings, &whereFailed, &transientModifiedRequired, &globalPresenceRequired);
+    QString where = buildContactWhere(filter, m_database, table, QContactDetail::TypeUndefined, &bindings, &whereFailed,
+                                      &transientModifiedRequired, &globalPresenceRequired);
     if (whereFailed) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
         return QContactManager::UnspecifiedError;
@@ -2931,7 +2946,8 @@ QContactManager::Error ContactReader::readContactIds(
 
     bool failed = false;
     QVariantList bindings;
-    QString where = buildContactWhere(filter, m_database, tableName, QContactDetail::TypeUndefined, &bindings, &failed, &transientModifiedRequired, &globalPresenceRequired);
+    QString where = buildContactWhere(filter, m_database, tableName, QContactDetail::TypeUndefined, &bindings,
+                                      &failed, &transientModifiedRequired, &globalPresenceRequired);
     if (failed) {
         QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
         return QContactManager::UnspecifiedError;

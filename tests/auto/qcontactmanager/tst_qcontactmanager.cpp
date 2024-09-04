@@ -861,7 +861,7 @@ void tst_QContactManager::add()
 
     QVERIFY(!alice.id().managerUri().isEmpty());
     QVERIFY(ContactId::isValid(alice.id()));
-    QCOMPARE(cm->contactIds().count(), currCount+1);
+    QCOMPARE(cm->contactIds().count(), currCount + 1);
 
     // Test that the ID is roundtripped via string correctly
     QCOMPARE(QContactId::fromString(alice.id().toString()), alice.id());
