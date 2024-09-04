@@ -1,5 +1,5 @@
 Name: qtcontacts-sqlite-qt5
-Version: 0.3.9
+Version: 0.3.20
 Release: 0
 Summary: SQLite-based plugin for QtPIM Contacts
 License: BSD
@@ -24,11 +24,13 @@ Requires:   %{name} = %{version}-%{release}
 %description tests
 This package contains unit tests for the qtcontacts-sqlite-qt5 library.
 
-%package extensions
+%package extensions-devel
 Summary:    QtContacts extension headers for qtcontacts-sqlite-qt5
 Requires:   %{name} = %{version}-%{release}
+Provides:   qtcontacts-sqlite-qt5-extensions > 0.3.19
+Obsoletes:  qtcontacts-sqlite-qt5-extensions <= 0.3.19
 
-%description extensions
+%description extensions-devel
 This package contains extension headers for the qtcontacts-sqlite-qt5 library.
 
 %prep
@@ -49,7 +51,7 @@ This package contains extension headers for the qtcontacts-sqlite-qt5 library.
 /opt/tests/qtcontacts-sqlite-qt5/*
 %{_libdir}/qtcontacts-sqlite-qt5/libtestdlgg.so
 
-%files extensions
+%files extensions-devel
 %{_libdir}/pkgconfig/qtcontacts-sqlite-qt5-extensions.pc
 %{_includedir}/qtcontacts-sqlite-qt5-extensions/*
 
