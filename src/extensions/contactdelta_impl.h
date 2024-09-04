@@ -122,7 +122,6 @@ void removeDatabaseIdsFromList(QList<QContactDetail> *dets)
     }
 }
 
-
 void dumpContactDetail(const QContactDetail &d)
 {
     qWarning() << "++ ---------" << d.type();
