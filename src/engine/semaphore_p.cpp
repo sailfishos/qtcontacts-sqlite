@@ -30,7 +30,6 @@
  */
 
 #include "semaphore_p.h"
-#include "trace_p.h"
 
 #include <errno.h>
 #include <unistd.h>
@@ -54,7 +53,7 @@ union semun {
 
 void semaphoreError(const char *msg, const char *id, int error)
 {
-    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("%1 %2: %3 (%4)").arg(msg).arg(id).arg(::strerror(error)).arg(error));
+    qWarning() << QString::fromLatin1("%1 %2: %3 (%4)").arg(msg).arg(id).arg(::strerror(error)).arg(error);
 }
 
 int semaphoreInit(const char *id, size_t count, const int *initialValues)

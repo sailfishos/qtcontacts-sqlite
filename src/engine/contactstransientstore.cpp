@@ -34,7 +34,6 @@
 
 #include "memorytable_p.h"
 #include "semaphore_p.h"
-#include "trace_p.h"
 
 #include <QContactDetail>
 
@@ -196,8 +195,7 @@ bool SharedMemoryManager::open(const QString &identifier, bool createIfNecessary
 
     const QString semaphoreToken(getNativeIdentifier(identifier + QStringLiteral("-semaphore"), true));
     if (semaphoreToken.isEmpty()) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create semaphore token for %1")
-                .arg(identifier));
+        qWarning() << "Failed to create semaphore token for" << identifier;
         return false;
     }
 
@@ -206,15 +204,13 @@ bool SharedMemoryManager::open(const QString &identifier, bool createIfNecessary
 
     m_semaphore.reset(new Semaphore(semaphoreToken.toLatin1(), 2, initialSemaphoreValues));
     if (!m_semaphore) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create semaphore for %1")
-                .arg(identifier));
+        qWarning() << "Failed to create semaphore for" << identifier;
         return false;
     }
 
     const QString nativeKey(getNativeIdentifier(identifier, true));
     if (nativeKey.isEmpty()) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create key token for %1")
-                .arg(identifier));
+        qWarning() << "Failed to create key token for" << identifier;
         return false;
     }
 
@@ -230,23 +226,22 @@ bool SharedMemoryManager::open(const QString &identifier, bool createIfNecessary
         // Lock the region, so that only one process can find the region nonexisting
         SemaphoreLock keyLock(lockKeyRegion());
         if (!keyLock) {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock key memory region for %1")
-                    .arg(identifier));
+            qWarning() << "Failed to lock key memory region for %1" << identifier;
             return false;
         }
 
         if (!keyRegion->isAttached() && !keyRegion->attach()) {
             if (keyRegion->error() != QSharedMemory::NotFound || !createIfNecessary) {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to attach key memory region for %1: %2")
-                        .arg(identifier).arg(keyRegion->errorString()));
+                qWarning() << QStringLiteral("Failed to attach key memory region for %1: %2")
+                        .arg(identifier).arg(keyRegion->errorString());
                 return false;
             }
 
             // Allow far more space than we need in the key region, in case we want to use it for something else
             const int keyRegionSize = 512;
             if (!keyRegion->create(keyRegionSize)) {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create key memory region for %1: %2")
-                        .arg(identifier).arg(keyRegion->errorString()));
+                qWarning() << QStringLiteral("Failed to create key memory region for %1: %2")
+                        .arg(identifier).arg(keyRegion->errorString());
                 return false;
             } else {
                 // Write the key details to the key region
@@ -265,8 +260,8 @@ bool SharedMemoryManager::open(const QString &identifier, bool createIfNecessary
         if (formatVersion == keyDataFormatVersion) {
             is >> regionGeneration;
         } else {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Invalid key data format in key region for %1: %2")
-                    .arg(identifier).arg(formatVersion));
+            qWarning() << QStringLiteral("Invalid key data format in key region for %1: %2")
+                    .arg(identifier).arg(formatVersion);
             return false;
         }
 
@@ -274,12 +269,11 @@ bool SharedMemoryManager::open(const QString &identifier, bool createIfNecessary
         SemaphoreLock dataLock(lockDataRegion(100));
         if (!dataLock) {
             if (++lockAttempts >= 50) {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock data memory region during open for %1")
-                        .arg(identifier));
+                qWarning() << "Failed to lock data memory region during open for" << identifier;
                 return false;
             } else if ((lockAttempts % 10) == 0) {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock data memory region for %1 after %2 attempts")
-                        .arg(identifier).arg(lockAttempts));
+                qWarning() << QStringLiteral("Failed to lock data memory region for %1 after %2 attempts")
+                        .arg(identifier).arg(lockAttempts);
             }
             continue;
         }
@@ -312,15 +306,13 @@ SharedMemoryManager::TableHandle SharedMemoryManager::table(const QString &ident
     while (true) {
         SemaphoreLock keyLock(lockKeyRegion());
         if (!keyLock) {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock key memory region for %1")
-                    .arg(identifier));
+            qWarning() << "Failed to lock key memory region for %1" << identifier;
             return TableHandle();
         }
 
         QMap<QString, TableData>::iterator it = m_tables.find(identifier);
         if (it == m_tables.end()) {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot open unknown shared memory table: %1")
-                    .arg(identifier));
+            qWarning() << "Cannot open unknown shared memory table:" << identifier;
             return TableHandle();
         }
 
@@ -333,12 +325,11 @@ SharedMemoryManager::TableHandle SharedMemoryManager::table(const QString &ident
         Function dataRelease(lockDataRegion(100));
         if (!dataRelease) {
             if (++lockAttempts >= 50) {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock data region for table access for %1")
-                        .arg(identifier));
+                qWarning() << "Failed to lock data region for table access for" << identifier;
                 return TableHandle();
             } else if ((lockAttempts % 10) == 0) {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock data region for table access for %1 after %2 attempts")
-                        .arg(identifier).arg(lockAttempts));
+                qWarning() << QStringLiteral("Failed to lock data region for table access for %1 after %2 attempts")
+                        .arg(identifier).arg(lockAttempts);
             }
             continue;
         }
@@ -356,8 +347,7 @@ SharedMemoryManager::TableHandle SharedMemoryManager::table(const QString &ident
             // We need to attach to the new version of the table
             QSharedPointer<QSharedMemory> newRegion(getDataRegion(identifier, regionGeneration, false));
             if (!newRegion || !newRegion->isAttached()) {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to attach to new data region for %1")
-                        .arg(identifier));
+                qWarning() << "Failed to attach to new data region for" << identifier;
                 return TableHandle();
             }
 
@@ -380,8 +370,7 @@ SharedMemoryManager::TableHandle SharedMemoryManager::reallocateTable(const QStr
 
     QMap<QString, TableData>::iterator it = m_tables.find(identifier);
     if (it == m_tables.end()) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot reallocate unknown table: %1")
-                .arg(identifier));
+        qWarning() << "Cannot reallocate unknown table:" << identifier;
         return TableHandle();
     }
 
@@ -390,8 +379,7 @@ SharedMemoryManager::TableHandle SharedMemoryManager::reallocateTable(const QStr
     // We already hold the data lock, we need the key lock also
     SemaphoreLock keyLock(lockKeyRegion());
     if (!keyLock) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to lock key memory region for %1")
-                .arg(identifier));
+        qWarning() << "Failed to lock key memory region for" << identifier;
         return TableHandle();
     }
 
@@ -401,8 +389,8 @@ SharedMemoryManager::TableHandle SharedMemoryManager::reallocateTable(const QStr
     // We need to create a new, bigger region to migrate the table to
     QSharedPointer<QSharedMemory> nextRegion(getDataRegion(identifier, nextGeneration, true, nextSize, false));
     if (!nextRegion) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot allocate new shared memory region for table: %1 %2 %3")
-                .arg(identifier).arg(nextGeneration).arg(nextSize));
+        qWarning() << QStringLiteral("Cannot allocate new shared memory region for table: %1 %2 %3")
+                .arg(identifier).arg(nextGeneration).arg(nextSize);
         return TableHandle();
     }
 
@@ -412,8 +400,8 @@ SharedMemoryManager::TableHandle SharedMemoryManager::reallocateTable(const QStr
     // Migrate the existing data to the new region
     MemoryTable::Error error = tableData.m_dataTable->m_table.migrateTo(nextDataTable->m_table);
     if (error != MemoryTable::NoError) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot migrate to new shared memory region for table: %1")
-                .arg(identifier));
+        qWarning() << QStringLiteral("Cannot migrate to new shared memory region for table: %1")
+                .arg(identifier);
         return TableHandle();
     }
 
@@ -440,8 +428,8 @@ QString SharedMemoryManager::getNativeIdentifier(const QString &identifier, bool
             pathFile.setFileName(path);
             pathFile.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ReadGroup | QFileDevice::WriteGroup);
             if (!pathFile.open(QIODevice::WriteOnly)) {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create native lock file %1: %2")
-                        .arg(identifier).arg(path));
+                qWarning() << QStringLiteral("Failed to create native lock file %1: %2")
+                        .arg(identifier).arg(path);
                 path = QString();
             } else {
                 pathFile.close();
@@ -488,7 +476,7 @@ QSharedPointer<QSharedMemory> SharedMemoryManager::getDataRegion(const QString &
 
     const QString nativeKey(getNativeIdentifier(dataIdentifier, true));
     if (nativeKey.isEmpty()) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to open token file: %1").arg(dataIdentifier));
+        qWarning() << "Failed to open token file:" << dataIdentifier;
         return QSharedPointer<QSharedMemory>();
     }
 
@@ -513,15 +501,15 @@ QSharedPointer<QSharedMemory> SharedMemoryManager::getDataRegion(const QString &
     if (!attached) {
         // Only the initial process can create the key region
         if (memoryRegion->error() != QSharedMemory::NotFound || !createIfNecessary) {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to attach data memory region for %1: %2")
-                    .arg(dataIdentifier).arg(memoryRegion->errorString()));
+            qWarning() << QStringLiteral("Failed to attach data memory region for %1: %2")
+                    .arg(dataIdentifier).arg(memoryRegion->errorString());
             return memoryRegion;
         }
 
         memoryRegion->setNativeKey(nativeKey);
         if (!memoryRegion->create(dataSize)) {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to create data memory region for %1 (%2): %3")
-                    .arg(dataIdentifier).arg(dataSize).arg(memoryRegion->errorString()));
+            qWarning() << QStringLiteral("Failed to create data memory region for %1 (%2): %3")
+                    .arg(dataIdentifier).arg(dataSize).arg(memoryRegion->errorString());
             return memoryRegion;
         }
 
@@ -529,8 +517,7 @@ QSharedPointer<QSharedMemory> SharedMemoryManager::getDataRegion(const QString &
         MemoryTable mt(memoryRegion->data(), memoryRegion->size(), true);
 
         if (!mt.isValid()) {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to initialize table in data memory region for %1")
-                    .arg(dataIdentifier));
+            qWarning() << "Failed to initialize table in data memory region for" << dataIdentifier;
             memoryRegion->detach();
         }
     } else {
@@ -538,8 +525,7 @@ QSharedPointer<QSharedMemory> SharedMemoryManager::getDataRegion(const QString &
         MemoryTable mt(memoryRegion->data(), memoryRegion->size(), reinitialize);
 
         if (!mt.isValid()) {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Failed to initialize table in existing data memory region for %1")
-                    .arg(dataIdentifier));
+            qWarning() << "Failed to initialize table in existing data memory region for" << dataIdentifier;
             memoryRegion->detach();
         }
     }
@@ -574,7 +560,7 @@ void SharedMemoryManager::release(int index) const
         if (index >= keyIndex && index <= dataIndex) {
             m_semaphore->increment(index);
         } else {
-            QTCONTACTS_SQLITE_WARNING(QStringLiteral("Invalid index to release: %1").arg(index));
+            qWarning() << "Invalid index to release:" << index;
         }
     }
 }
@@ -663,8 +649,8 @@ bool ContactsTransientStore::open(bool nonprivileged, bool createIfNecessary, bo
     const QString identifier(nonprivileged ? QStringLiteral("qtcontacts-sqlite-np") : QStringLiteral("qtcontacts-sqlite"));
 
     if (!m_identifier.isNull()) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot re-open active transient store: %1 (%2)")
-                .arg(identifier).arg(m_identifier));
+        qWarning() << QStringLiteral("Cannot re-open active transient store: %1 (%2)")
+                .arg(identifier).arg(m_identifier);
         return false;
     }
 
@@ -719,16 +705,14 @@ bool ContactsTransientStore::setContactDetails(quint32 contactId, const QDateTim
                 // Perform the write to the new table
                 err = newTable->insert(contactId, data);
             } else {
-                QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot reallocate exhausted transient store: %1")
-                        .arg(m_identifier));
+                qWarning() << "Cannot reallocate exhausted transient store:" << m_identifier;
                 return false;
             }
         }
         if (err == MemoryTable::NoError)
             return true;
 
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot store contact details to transient store: %1")
-                .arg(m_identifier));
+        qWarning() << "Cannot store contact details to transient store:" << m_identifier;
     }
 
     return false;
@@ -767,8 +751,7 @@ ContactsTransientStore::DataLock ContactsTransientStore::dataLock() const
 ContactsTransientStore::const_iterator ContactsTransientStore::constBegin(const DataLock &lock) const
 {
     if (!lock) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot iterate over unlocked data: %1")
-                .arg(m_identifier));
+        qWarning() << "Cannot iterate over unlocked data:" << m_identifier;
         return const_iterator(0, 0);
     }
 
@@ -779,8 +762,7 @@ ContactsTransientStore::const_iterator ContactsTransientStore::constBegin(const 
 ContactsTransientStore::const_iterator ContactsTransientStore::constEnd(const DataLock &lock) const
 {
     if (!lock) {
-        QTCONTACTS_SQLITE_WARNING(QStringLiteral("Cannot iterate over unlocked data: %1")
-                .arg(m_identifier));
+        qWarning() << "Cannot iterate over unlocked data:" << m_identifier;
         return const_iterator(0, 0);
     }
 
