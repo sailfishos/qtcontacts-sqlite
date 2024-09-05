@@ -32,7 +32,6 @@
 
 #include "contactreader.h"
 #include "contactsengine.h"
-#include "trace_p.h"
 
 #include "../extensions/qtcontacts-extensions.h"
 #include "../extensions/qcontactdeactivated.h"
@@ -669,7 +668,9 @@ static int contextType(const QString &type)
 }
 
 template <typename T>
-static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable, const QContactCollectionId &apiCollectionId, bool relaxConstraints, bool keepChangeFlags, int offset)
+static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId,
+                       bool syncable, const QContactCollectionId &apiCollectionId, bool relaxConstraints,
+                       bool keepChangeFlags, int offset)
 {
     const quint32 collectionId = ContactCollectionId::databaseId(apiCollectionId);
     const bool aggregateContact(collectionId == ContactsDatabase::AggregateAddressbookCollectionId);
@@ -724,7 +725,10 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
     }
 
     // If the detail is not aggregated from another, then its provenance should match its ID.
-    setValue(&detail, QContactDetail::FieldProvenance, aggregateContact ? provenance : QStringLiteral("%1:%2:%3").arg(collectionId).arg(contactId).arg(dbId));
+    setValue(&detail, QContactDetail::FieldProvenance,
+             aggregateContact
+             ? provenance
+             : QStringLiteral("%1:%2:%3").arg(collectionId).arg(contactId).arg(dbId));
 
     // Only report modifiable state for non-local contacts.
     // local contacts are always (implicitly) modifiable.
@@ -748,7 +752,8 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
     // is intended for modification, so adding constraints prevents it from being used correctly.
     // Normal aggregate contact details are always immutable.
     if (!relaxConstraints) {
-        QContactManagerEngine::setDetailAccessConstraints(&detail, static_cast<QContactDetail::AccessConstraints>(accessConstraints));
+        QContactManagerEngine::setDetailAccessConstraints(&detail,
+                                                          static_cast<QContactDetail::AccessConstraints>(accessConstraints));
     }
 
     setValues(&detail, &query, offset);
@@ -766,7 +771,8 @@ static void appendUniqueDetail(QList<QContactDetail> *details, QSqlQuery &query)
     details->append(detail);
 }
 
-static QContactRelationship makeRelationship(const QString &type, quint32 firstId, quint32 secondId, const QString &manager_uri)
+static QContactRelationship makeRelationship(const QString &type, quint32 firstId, quint32 secondId,
+                                             const QString &manager_uri)
 {
     QContactRelationship relationship;
     relationship.setRelationshipType(type);
@@ -777,7 +783,9 @@ static QContactRelationship makeRelationship(const QString &type, quint32 firstI
     return relationship;
 }
 
-typedef void (*ReadDetail)(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable, const QContactCollectionId &collectionId, bool relaxConstraints, bool keepChangeFlags, int offset);
+typedef void (*ReadDetail)(QContact *contact, QSqlQuery &query, quint32 contactId, quint32 detailId, bool syncable,
+                           const QContactCollectionId &collectionId, bool relaxConstraints, bool keepChangeFlags,
+                           int offset);
 typedef void (*AppendUniqueDetail)(QList<QContactDetail> *details, QSqlQuery &query);
 
 struct DetailInfo
@@ -1014,7 +1022,7 @@ static QString buildWhere(const QContactCollectionFilter &filter, QVariantList *
         return statement + QStringLiteral(")");
     } else {
         *failed = true;
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with too large collection ID list"));
+        qWarning() << "Cannot buildWhere with too large collection ID list";
         return QStringLiteral("FALSE");
     }
 }
@@ -1029,14 +1037,14 @@ static QString buildWhere(
 {
     if (filter.matchFlags() & QContactFilter::MatchKeypadCollation) {
         *failed = true;
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with filter requiring keypad collation"));
+        qWarning() << "Cannot buildWhere with filter requiring keypad collation";
         return QStringLiteral("FAILED");
     }
 
     const DetailInfo &detail(detailInformation(filter.detailType()));
     if (detail.detailType == QContactDetail::TypeUndefined) {
         *failed = true;
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown detail type: %1").arg(filter.detailType()));
+        qWarning() << "Cannot buildWhere with unknown detail type:" << filter.detailType();
         return QStringLiteral("FAILED");
     }
 
@@ -1048,7 +1056,7 @@ static QString buildWhere(
     const FieldInfo &field(fieldInformation(detail, filter.detailField()));
     if (field.field == invalidField) {
         *failed = true;
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown detail field: %1").arg(filter.detailField()));
+        qWarning() << QString::fromLatin1("Cannot buildWhere with unknown detail field: %1").arg(filter.detailField());
         return QStringLiteral("FAILED");
     }
 
@@ -1125,7 +1133,7 @@ static QString buildWhere(
                         }
                     }
                 } else {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unsupported flags matching contact status flags"));
+                    qWarning() << "Unsupported flags matching contact status flags";
                     break;
                 }
 
@@ -1181,7 +1189,7 @@ static QString buildWhere(
                 bindValue = ContactsEngine::normalizedPhoneNumber(stringValue);
                 if (bindValue.isEmpty()) {
                     *failed = true;
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed with invalid phone number: %1").arg(stringValue));
+                    qWarning() << QString::fromLatin1("Failed with invalid phone number: %1").arg(stringValue);
                     return QStringLiteral("FAILED");
                 }
                 if (caseInsensitive) {
@@ -1265,7 +1273,7 @@ static QString buildWhere(
     } while (false);
 
     *failed = true;
-    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to buildWhere with DetailFilter detail: %1 field: %2").arg(filter.detailType()).arg(filter.detailField()));
+    qWarning() << QString::fromLatin1("Failed to buildWhere with DetailFilter detail: %1 field: %2").arg(filter.detailType()).arg(filter.detailField());
     return QStringLiteral("FALSE");
 }
 
@@ -1274,7 +1282,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, bool queryCon
     const DetailInfo &detail(detailInformation(filter.detailType()));
     if (detail.detailType == QContactDetail::TypeUndefined) {
         *failed = true;
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown detail type: %1").arg(filter.detailType()));
+        qWarning() << QString::fromLatin1("Cannot buildWhere with unknown detail type:") << filter.detailType();
         return QStringLiteral("FAILED");
     }
 
@@ -1286,7 +1294,7 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, bool queryCon
     const FieldInfo &field(fieldInformation(detail, filter.detailField()));
     if (field.field == invalidField) {
         *failed = true;
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown detail field: %1").arg(filter.detailField()));
+        qWarning() << QString::fromLatin1("Cannot buildWhere with unknown detail field:") <<  filter.detailField();
         return QStringLiteral("FAILED");
     }
 
@@ -1358,7 +1366,7 @@ static QString buildWhere(const QContactIdFilter &filter, ContactsDatabase &db, 
     const QList<QContactId> &filterIds(filter.ids());
     if (filterIds.isEmpty()) {
         *failed = true;
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with empty contact ID list"));
+        qWarning() << "Cannot buildWhere with empty contact ID list";
         return QStringLiteral("FALSE");
     }
 
@@ -1382,7 +1390,7 @@ static QString buildWhere(const QContactIdFilter &filter, ContactsDatabase &db, 
         QString transientTable;
         if (!db.createTransientContactIdsTable(table, varIds, &transientTable)) {
             *failed = true;
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere due to transient table failure"));
+            qWarning() << "Cannot buildWhere due to transient table failure";
             return QStringLiteral("FALSE");
         }
 
@@ -1410,7 +1418,7 @@ static QString buildWhere(const QContactRelationshipFilter &filter, QVariantList
 
     if (!rci.managerUri().isEmpty() && !rci.managerUri().startsWith(QStringLiteral("qtcontacts:org.nemomobile.contacts.sqlite"))) {
         *failed = true;
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with invalid manager URI: %1").arg(rci.managerUri()));
+        qWarning() << "Cannot buildWhere with invalid manager URI:" << rci.managerUri();
         return QStringLiteral("FALSE");
     }
 
@@ -1532,7 +1540,7 @@ static QString buildWhere(const QContactChangeLogFilter &filter, QVariantList *b
     }
 
     *failed = true;
-    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with changelog filter on removed timestamps"));
+    qWarning() << "Cannot buildWhere with changelog filter on removed timestamps";
     return QStringLiteral("FALSE");
 }
 
@@ -1589,7 +1597,8 @@ static QString buildWhere(
 
     QStringList fragments;
     foreach (const QContactFilter &filter, filters) {
-        const QString fragment = buildWhere(filter, db, table, detailType, bindings, failed, transientModifiedRequired, globalPresenceRequired);
+        const QString fragment = buildWhere(filter, db, table, detailType, bindings, failed,
+                                            transientModifiedRequired, globalPresenceRequired);
         if (filter.type() != QContactFilter::DefaultFilter && !*failed) {
             // default filter gets special (permissive) treatment by the intersection filter.
             fragments.append(fragment.isEmpty() ? QStringLiteral("NULL") : fragment);
@@ -1599,8 +1608,9 @@ static QString buildWhere(
     return fragments.join(QStringLiteral(" AND "));
 }
 
-static QString buildContactWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table, QContactDetail::DetailType detailType, QVariantList *bindings,
-                          bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired)
+static QString buildContactWhere(const QContactFilter &filter, ContactsDatabase &db, const QString &table,
+                                 QContactDetail::DetailType detailType, QVariantList *bindings,
+                                 bool *failed, bool *transientModifiedRequired, bool *globalPresenceRequired)
 {
     Q_ASSERT(failed);
     Q_ASSERT(globalPresenceRequired);
@@ -1610,7 +1620,8 @@ static QString buildContactWhere(const QContactFilter &filter, ContactsDatabase 
     case QContactFilter::DefaultFilter:
         return QString();
     case QContactFilter::ContactDetailFilter:
-        return buildWhere(static_cast<const QContactDetailFilter &>(filter), true, bindings, failed, transientModifiedRequired, globalPresenceRequired);
+        return buildWhere(static_cast<const QContactDetailFilter &>(filter), true, bindings, failed,
+                          transientModifiedRequired, globalPresenceRequired);
     case QContactFilter::ContactDetailRangeFilter:
         return buildWhere(static_cast<const QContactDetailRangeFilter &>(filter), true, bindings, failed);
     case QContactFilter::ChangeLogFilter:
@@ -1618,16 +1629,18 @@ static QString buildContactWhere(const QContactFilter &filter, ContactsDatabase 
     case QContactFilter::RelationshipFilter:
         return buildWhere(static_cast<const QContactRelationshipFilter &>(filter), bindings, failed);
     case QContactFilter::IntersectionFilter:
-        return buildWhere(buildContactWhere, static_cast<const QContactIntersectionFilter &>(filter), db, table, detailType, bindings, failed, transientModifiedRequired, globalPresenceRequired);
+        return buildWhere(buildContactWhere, static_cast<const QContactIntersectionFilter &>(filter), db, table,
+                          detailType, bindings, failed, transientModifiedRequired, globalPresenceRequired);
     case QContactFilter::UnionFilter:
-        return buildWhere(buildContactWhere, static_cast<const QContactUnionFilter &>(filter), db, table, detailType, bindings, failed, transientModifiedRequired, globalPresenceRequired);
+        return buildWhere(buildContactWhere, static_cast<const QContactUnionFilter &>(filter), db, table, detailType,
+                          bindings, failed, transientModifiedRequired, globalPresenceRequired);
     case QContactFilter::IdFilter:
         return buildWhere(static_cast<const QContactIdFilter &>(filter), db, table, bindings, failed);
     case QContactFilter::CollectionFilter:
         return buildWhere(static_cast<const QContactCollectionFilter &>(filter), bindings, failed);
     default:
         *failed = true;
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown filter type: %1").arg(filter.type()));
+        qWarning() << "Cannot buildWhere with unknown filter type:" << filter.type();
         return QStringLiteral("FALSE");
     }
 }
@@ -1662,7 +1675,7 @@ static QString buildDetailWhere(
                         globalPresenceRequired);
         } else {
             *failed = true;
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot build detail query with mismatched details type: %1 %2").arg(detailType).arg(detailFilter.detailType()));
+            qWarning() << "Cannot build detail query with mismatched details type:" << detailType << detailFilter.detailType();
             return QStringLiteral("FALSE");
         }
     }
@@ -1673,7 +1686,7 @@ static QString buildDetailWhere(
             return buildWhere(detailFilter, false, bindings, failed);
         } else {
             *failed = true;
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot build detail query with mismatched details type: %1 != %2").arg(detailType).arg(detailFilter.detailType()));
+            qWarning() << QString::fromLatin1("Cannot build detail query with mismatched details type: %1 != %2").arg(detailType).arg(detailFilter.detailType());
             return QStringLiteral("FALSE");
         }
     }
@@ -1703,11 +1716,11 @@ static QString buildDetailWhere(
     case QContactFilter::RelationshipFilter:
     case QContactFilter::IdFilter:
         *failed = true;
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot build a detail query with a non-detail filter type: %1").arg(filter.type()));
+        qWarning() << "Cannot build a detail query with a non-detail filter type:" << filter.type();
         return QStringLiteral("FALSE");
     default:
         *failed = true;
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildWhere with unknown filter type: %1").arg(filter.type()));
+        qWarning() << "Cannot buildWhere with unknown filter type:" << filter.type();
         return QStringLiteral("FALSE");
     }
 }
@@ -1727,10 +1740,10 @@ static QString buildOrderBy(
 
     const DetailInfo &detail(detailInformation(order.detailType()));
     if (detail.detailType == QContactDetail::TypeUndefined) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildOrderBy with unknown detail type: %1").arg(order.detailType()));
+        qWarning() << "Cannot buildOrderBy with unknown detail type:" << order.detailType();
         return QString();
     } else if (detailType != QContactDetail::TypeUndefined && detail.detailType != detailType) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildOrderBy with unknown detail mismatched detail types: %1 != %2").arg(detailType).arg(order.detailType()));
+        qWarning() << QString::fromLatin1("Cannot buildOrderBy with unknown detail mismatched detail types: %1 != %2").arg(detailType).arg(order.detailType());
         return QString();
     }
 
@@ -1743,7 +1756,7 @@ static QString buildOrderBy(
 
     const FieldInfo &field(fieldInformation(detail, order.detailField()));
     if (field.field == invalidField) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot buildOrderBy with unknown detail field: %1").arg(order.detailField()));
+        qWarning() << "Cannot buildOrderBy with unknown detail field:" << order.detailField();
         return QString();
     }
 
@@ -1822,8 +1835,8 @@ static QString buildOrderBy(
     } else if (!detail.table || detailType != QContactDetail::TypeUndefined) {
         return result;
     } else {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("UNSUPPORTED SORTING: no join and not primary table for ORDER BY in query with: %1, %2")
-                   .arg(order.detailType()).arg(order.detailField()));
+        qWarning() << QString::fromLatin1("UNSUPPORTED SORTING: no join and not primary table for ORDER BY in query with: %1, %2")
+                   .arg(order.detailType()).arg(order.detailField());
     }
 
     return QString();
@@ -1940,7 +1953,7 @@ bool includesSelfId(const QContactFilter &filter)
         return includesSelfId(static_cast<const QContactIdFilter &>(filter));
 
     default:
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot includesSelfId with unknown filter type %1").arg(filter.type()));
+        qWarning() << "Cannot includesSelfId with unknown filter type" << filter.type();
         return false;
     }
 }
@@ -1985,7 +1998,7 @@ bool includesCollectionFilter(const QContactFilter &filter)
         return includesCollectionFilter(static_cast<const QContactUnionFilter &>(filter));
 
     default:
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot includesCollectionFilter with unknown filter type %1").arg(filter.type()));
+        qWarning() << "Cannot includesCollectionFilter with unknown filter type" << filter.type();
         return false;
     }
 }
@@ -2039,7 +2052,7 @@ bool includesDeleted(const QContactFilter &filter)
         return includesDeleted(static_cast<const QContactDetailFilter &>(filter));
 
     default:
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot includesDeleted with unknown filter type %1").arg(filter.type()));
+        qWarning() << "Cannot includesDeleted with unknown filter type" << filter.type();
         return false;
     }
 }
@@ -2094,7 +2107,7 @@ bool includesDeactivated(const QContactFilter &filter)
         return includesDeactivated(static_cast<const QContactDetailFilter &>(filter));
 
     default:
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot includesDeactivated with unknown filter type %1").arg(filter.type()));
+        qWarning() << "Cannot includesDeactivated with unknown filter type" << filter.type();
         return false;
     }
 }
@@ -2138,7 +2151,7 @@ bool includesIdFilter(const QContactFilter &filter)
         return true;
 
     default:
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot includesIdFilter with unknown filter type %1").arg(filter.type()));
+        qWarning() << "Cannot includesIdFilter with unknown filter type" << filter.type();
         return false;
     }
 }
@@ -2245,10 +2258,10 @@ QContactManager::Error ContactReader::fetchContacts(const QContactCollectionId &
     // we can save some memory by only fetching added/modified/deleted contacts.
     const QContactFilter filter = unmodifiedContacts
                                 ? (collectionFilter
-                                  |deletedContactsFilter)
+                                   | deletedContactsFilter)
                                 : (addedContactsFilter
-                                  |modifiedContactsFilter
-                                  |deletedContactsFilter);
+                                   | modifiedContactsFilter
+                                   | deletedContactsFilter);
 
     const bool keepChangeFlags = true;
 
@@ -2305,9 +2318,10 @@ QContactManager::Error ContactReader::readContacts(
 
     bool whereFailed = false;
     QVariantList bindings;
-    QString where = buildContactWhere(filter, m_database, table, QContactDetail::TypeUndefined, &bindings, &whereFailed, &transientModifiedRequired, &globalPresenceRequired);
+    QString where = buildContactWhere(filter, m_database, table, QContactDetail::TypeUndefined, &bindings, &whereFailed,
+                                      &transientModifiedRequired, &globalPresenceRequired);
     if (whereFailed) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
+        qWarning() << "Failed to create WHERE expression: invalid filter specification";
         return QContactManager::UnspecifiedError;
     }
 
@@ -2456,16 +2470,16 @@ QContactManager::Error ContactReader::queryContacts(
 
     // Prepare the query for the contact properties
     if (!contactQuery.prepare(dataQueryStatement)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for contact data:\n%1\nQuery:\n%2")
+        qWarning() << QString::fromLatin1("Failed to prepare query for contact data:\n%1\nQuery:\n%2")
                 .arg(contactQuery.lastError().text())
-                .arg(dataQueryStatement));
+                .arg(dataQueryStatement);
         err = QContactManager::UnspecifiedError;
     } else {
         contactQuery.setForwardOnly(true);
         if (!ContactsDatabase::execute(contactQuery)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to execute query for contact data:\n%1\nQuery:\n%2")
+            qWarning() << QString::fromLatin1("Failed to execute query for contact data:\n%1\nQuery:\n%2")
                     .arg(contactQuery.lastError().text())
-                    .arg(dataQueryStatement));
+                    .arg(dataQueryStatement);
             err = QContactManager::UnspecifiedError;
         } else {
             QContactFetchHint::OptimizationHints optimizationHints(fetchHint.optimizationHints());
@@ -2474,16 +2488,16 @@ QContactManager::Error ContactReader::queryContacts(
             if (fetchRelationships) {
                 // Prepare the query for the contact relationships
                 if (!relationshipQuery.prepare(relationshipQueryStatement)) {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for relationships:\n%1\nQuery:\n%2")
+                    qWarning() << QString::fromLatin1("Failed to prepare query for relationships:\n%1\nQuery:\n%2")
                             .arg(relationshipQuery.lastError().text())
-                            .arg(relationshipQueryStatement));
+                            .arg(relationshipQueryStatement);
                     err = QContactManager::UnspecifiedError;
                 } else {
                     relationshipQuery.setForwardOnly(true);
                     if (!ContactsDatabase::execute(relationshipQuery)) {
-                        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for relationships:\n%1\nQuery:\n%2")
+                        qWarning() << QString::fromLatin1("Failed to prepare query for relationships:\n%1\nQuery:\n%2")
                                 .arg(relationshipQuery.lastError().text())
-                                .arg(relationshipQueryStatement));
+                                .arg(relationshipQueryStatement);
                         err = QContactManager::UnspecifiedError;
                     } else {
                         // Move to the first row
@@ -2835,18 +2849,18 @@ QContactManager::Error ContactReader::readDeletedContactIds(
                 if (filterOnField<QContactSyncTarget>(detailFilter, QContactSyncTarget::FieldSyncTarget)) {
                     syncTarget = detailFilter.value().toString();
                 } else {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot readDeletedContactIds with unsupported detail filter type: %1").arg(detailFilter.detailType()));
+                    qWarning() << "Cannot readDeletedContactIds with unsupported detail filter type:" << detailFilter.detailType();
                     return QContactManager::UnspecifiedError;
                 }
             } else if (filterType == QContactFilter::CollectionFilter) {
                 const QContactCollectionFilter &collectionFilter(static_cast<const QContactCollectionFilter &>(partialFilter));
                 collectionIds = collectionFilter.collectionIds().toList();
                 if (collectionIds.size() > 1) {
-                    QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot readDeletedContactIds with more than one collection specified: %1").arg(collectionIds.size()));
+                    qWarning() << "Cannot readDeletedContactIds with more than one collection specified:" <<  collectionIds.size();
                     return QContactManager::UnspecifiedError;
                 }
             } else {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Cannot readDeletedContactIds with invalid filter type: %1").arg(filterType));
+                qWarning() << "Cannot readDeletedContactIds with invalid filter type:" << filterType;
                 return QContactManager::UnspecifiedError;
             }
         }
@@ -2881,9 +2895,9 @@ QContactManager::Error ContactReader::readDeletedContactIds(
     QSqlQuery query(m_database);
     query.setForwardOnly(true);
     if (!query.prepare(queryStatement)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare deleted contacts ids:\n%1\nQuery:\n%2")
+        qWarning() << QString::fromLatin1("Failed to prepare deleted contacts ids:\n%1\nQuery:\n%2")
                 .arg(query.lastError().text())
-                .arg(queryStatement));
+                .arg(queryStatement);
         return QContactManager::UnspecifiedError;
     }
 
@@ -2891,9 +2905,9 @@ QContactManager::Error ContactReader::readDeletedContactIds(
         query.bindValue(i, bindings.at(i));
 
     if (!ContactsDatabase::execute(query)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query deleted contacts ids\n%1\nQuery:\n%2")
+        qWarning() << QString::fromLatin1("Failed to query deleted contacts ids\n%1\nQuery:\n%2")
                 .arg(query.lastError().text())
-                .arg(queryStatement));
+                .arg(queryStatement);
         return QContactManager::UnspecifiedError;
     }
 
@@ -2931,9 +2945,10 @@ QContactManager::Error ContactReader::readContactIds(
 
     bool failed = false;
     QVariantList bindings;
-    QString where = buildContactWhere(filter, m_database, tableName, QContactDetail::TypeUndefined, &bindings, &failed, &transientModifiedRequired, &globalPresenceRequired);
+    QString where = buildContactWhere(filter, m_database, tableName, QContactDetail::TypeUndefined, &bindings,
+                                      &failed, &transientModifiedRequired, &globalPresenceRequired);
     if (failed) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
+        qWarning() << "Failed to create WHERE expression: invalid filter specification";
         return QContactManager::UnspecifiedError;
     }
 
@@ -2964,9 +2979,9 @@ QContactManager::Error ContactReader::readContactIds(
     QSqlQuery query(m_database);
     query.setForwardOnly(true);
     if (!query.prepare(queryString)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare contacts ids:\n%1\nQuery:\n%2")
+        qWarning() << QString::fromLatin1("Failed to prepare contacts ids:\n%1\nQuery:\n%2")
                 .arg(query.lastError().text())
-                .arg(queryString));
+                .arg(queryString);
         return QContactManager::UnspecifiedError;
     }
 
@@ -2974,9 +2989,9 @@ QContactManager::Error ContactReader::readContactIds(
         query.bindValue(i, bindings.at(i));
 
     if (!ContactsDatabase::execute(query)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query contacts ids\n%1\nQuery:\n%2")
+        qWarning() << QString::fromLatin1("Failed to query contacts ids\n%1\nQuery:\n%2")
                 .arg(query.lastError().text())
-                .arg(queryString));
+                .arg(queryString);
         return QContactManager::UnspecifiedError;
     } else {
         debugFilterExpansion("Contact IDs selection:", queryString, bindings);
@@ -3070,9 +3085,9 @@ QContactManager::Error ContactReader::readRelationships(
     QSqlQuery query(m_database);
     query.setForwardOnly(true);
     if (!query.prepare(statement)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare relationships query:\n%1\nQuery:\n%2")
+        qWarning() << QString::fromLatin1("Failed to prepare relationships query:\n%1\nQuery:\n%2")
                 .arg(query.lastError().text())
-                .arg(statement));
+                .arg(statement);
         return QContactManager::UnspecifiedError;
     }
 
@@ -3080,8 +3095,8 @@ QContactManager::Error ContactReader::readRelationships(
         query.bindValue(i, bindings.at(i));
 
     if (!ContactsDatabase::execute(query)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query relationships: %1")
-                .arg(query.lastError().text()));
+        qWarning() << QString::fromLatin1("Failed to query relationships: %1")
+                .arg(query.lastError().text());
         return QContactManager::UnspecifiedError;
     }
 
@@ -3139,7 +3154,7 @@ QContactManager::Error ContactReader::readDetails(
                 &transientModifiedRequired,
                 &globalPresenceRequired);
     if (whereFailed) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to create WHERE expression: invalid filter specification"));
+        qWarning() << "Failed to create WHERE expression: invalid filter specification";
         return QContactManager::UnspecifiedError;
     }
 
@@ -3172,9 +3187,9 @@ QContactManager::Error ContactReader::readDetails(
     QSqlQuery query(m_database);
     query.setForwardOnly(true);
     if (!query.prepare(statement)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare a unique details query: %1\n%2")
+        qWarning() << QString::fromLatin1("Failed to prepare a unique details query: %1\n%2")
                 .arg(query.lastError().text())
-                .arg(statement));
+                .arg(statement);
         return QContactManager::UnspecifiedError;
     }
 
@@ -3183,9 +3198,9 @@ QContactManager::Error ContactReader::readDetails(
     }
 
     if (!ContactsDatabase::execute(query)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query unique details\n%1\nQuery:\n%2")
+        qWarning() << QString::fromLatin1("Failed to query unique details\n%1\nQuery:\n%2")
                 .arg(query.lastError().text())
-                .arg(statement));
+                .arg(statement);
         return QContactManager::UnspecifiedError;
     }
 
@@ -3261,9 +3276,9 @@ QContactManager::Error ContactReader::fetchCollections(
 
     QSqlQuery collectionsQuery(m_database);
     if (!collectionsQuery.prepare(collectionsQueryStatement)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for collection details:\n%1\nQuery:\n%2")
+        qWarning() << QString::fromLatin1("Failed to prepare query for collection details:\n%1\nQuery:\n%2")
                 .arg(collectionsQuery.lastError().text())
-                .arg(collectionsQueryStatement));
+                .arg(collectionsQueryStatement);
         return QContactManager::UnspecifiedError;
     }
 
@@ -3276,9 +3291,9 @@ QContactManager::Error ContactReader::fetchCollections(
 
     collectionsQuery.setForwardOnly(true);
     if (!ContactsDatabase::execute(collectionsQuery)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to execute query for collection details:\n%1\nQuery:\n%2")
+        qWarning() << QString::fromLatin1("Failed to execute query for collection details:\n%1\nQuery:\n%2")
                 .arg(collectionsQuery.lastError().text())
-                .arg(collectionsQueryStatement));
+                .arg(collectionsQueryStatement);
         return QContactManager::UnspecifiedError;
     }
 
@@ -3311,18 +3326,18 @@ QContactManager::Error ContactReader::fetchCollections(
 
         QSqlQuery metadataQuery(m_database);
         if (!metadataQuery.prepare(metadataStatement)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for collection metadata details:\n%1\nQuery:\n%2")
+            qWarning() << QString::fromLatin1("Failed to prepare query for collection metadata details:\n%1\nQuery:\n%2")
                     .arg(metadataQuery.lastError().text())
-                    .arg(metadataStatement));
+                    .arg(metadataStatement);
             return QContactManager::UnspecifiedError;
         }
 
         metadataQuery.bindValue(":collectionId", dbId);
         metadataQuery.setForwardOnly(true);
         if (!ContactsDatabase::execute(metadataQuery)) {
-            QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to execute query for collection metadata details:\n%1\nQuery:\n%2")
+            qWarning() << QString::fromLatin1("Failed to execute query for collection metadata details:\n%1\nQuery:\n%2")
                     .arg(metadataQuery.lastError().text())
-                    .arg(metadataStatement));
+                    .arg(metadataStatement);
             return QContactManager::UnspecifiedError;
         }
 
@@ -3370,18 +3385,18 @@ QContactManager::Error ContactReader::recordUnhandledChangeFlags(
 
     QSqlQuery query(m_database);
     if (!query.prepare(unhandledChangeFlagsStatement)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare query for record unhandled change flags:\n%1\nQuery:\n%2")
+        qWarning() << QString::fromLatin1("Failed to prepare query for record unhandled change flags:\n%1\nQuery:\n%2")
                 .arg(query.lastError().text())
-                .arg(unhandledChangeFlagsStatement));
+                .arg(unhandledChangeFlagsStatement);
         return QContactManager::UnspecifiedError;
     }
 
     query.bindValue(":collectionId", ContactCollectionId::databaseId(collectionId));
     query.setForwardOnly(true);
     if (!ContactsDatabase::execute(query)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to execute query for record unhandled change flags:\n%1\nQuery:\n%2")
+        qWarning() << QString::fromLatin1("Failed to execute query for record unhandled change flags:\n%1\nQuery:\n%2")
                 .arg(query.lastError().text())
-                .arg(unhandledChangeFlagsStatement));
+                .arg(unhandledChangeFlagsStatement);
         return QContactManager::UnspecifiedError;
     }
 
@@ -3414,9 +3429,9 @@ bool ContactReader::fetchOOB(const QString &scope, const QStringList &keys, QMap
     QSqlQuery query(m_database);
     query.setForwardOnly(true);
     if (!query.prepare(statement)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare OOB query:\n%1\nQuery:\n%2")
+        qWarning() << QString::fromLatin1("Failed to prepare OOB query:\n%1\nQuery:\n%2")
                 .arg(query.lastError().text())
-                .arg(statement));
+                .arg(statement);
         return false;
     }
 
@@ -3425,8 +3440,7 @@ bool ContactReader::fetchOOB(const QString &scope, const QStringList &keys, QMap
     }
 
     if (!ContactsDatabase::execute(query)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query OOB: %1")
-                .arg(query.lastError().text()));
+        qWarning() << "Failed to query OOB:" << query.lastError().text();
         return false;
     }
     while (query.next()) {
@@ -3444,8 +3458,8 @@ bool ContactReader::fetchOOB(const QString &scope, const QStringList &keys, QMap
                 // QString data
                 values->insert(key, QVariant(QString::fromUtf8(qUncompress(compressedData))));
             } else {
-                QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Invalid compression type for OOB data:%1, key:%2")
-                        .arg(compressed).arg(key));
+                qWarning() << QString::fromLatin1("Invalid compression type for OOB data:%1, key:%2")
+                        .arg(compressed).arg(key);
             }
         } else {
             values->insert(key, value);
@@ -3463,15 +3477,15 @@ bool ContactReader::fetchOOBKeys(const QString &scope, QStringList *keys)
     QSqlQuery query(m_database);
     query.setForwardOnly(true);
     if (!query.prepare(statement)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to prepare OOB query:\n%1\nQuery:\n%2")
+        qWarning() << QString::fromLatin1("Failed to prepare OOB query:\n%1\nQuery:\n%2")
                 .arg(query.lastError().text())
-                .arg(statement));
+                .arg(statement);
         return false;
     }
 
     if (!ContactsDatabase::execute(query)) {
-        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to query OOB: %1")
-                .arg(query.lastError().text()));
+        qWarning() << QString::fromLatin1("Failed to query OOB: %1")
+                .arg(query.lastError().text());
         return false;
     }
     while (query.next()) {

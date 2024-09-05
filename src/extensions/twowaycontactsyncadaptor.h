@@ -50,6 +50,7 @@ QTCONTACTS_USE_NAMESPACE
 
 namespace QtContactsSqliteExtensions {
 class TwoWayContactSyncAdaptorPrivate;
+
 class TwoWayContactSyncAdaptor
 {
 public:

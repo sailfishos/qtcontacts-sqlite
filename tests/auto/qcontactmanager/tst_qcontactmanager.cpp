@@ -52,6 +52,7 @@
 
 #include "../../util.h"
 #include "../../qcontactmanagerdataholder.h"
+#include "qtcontacts-extensions.h"
 
 #define SQLITE_MANAGER "org.nemomobile.contacts.sqlite"
 
@@ -127,6 +128,10 @@ static bool detailValuesSuperset(const QContactDetail &lhs, const QContactDetail
     }
 
     foreach (const DetailMap::key_type &key, rhsValues.keys()) {
+        // not caring about timestamp differences
+        if (key == QContactDetail__FieldCreated || key == QContactDetail__FieldModified) {
+            continue;
+        }
         if (!variantEqual(lhsValues[key], rhsValues[key])) {
             return false;
         }
@@ -861,7 +866,7 @@ void tst_QContactManager::add()
 
     QVERIFY(!alice.id().managerUri().isEmpty());
     QVERIFY(ContactId::isValid(alice.id()));
-    QCOMPARE(cm->contactIds().count(), currCount+1);
+    QCOMPARE(cm->contactIds().count(), currCount + 1);
 
     // Test that the ID is roundtripped via string correctly
     QCOMPARE(QContactId::fromString(alice.id().toString()), alice.id());
@@ -1072,7 +1077,13 @@ void tst_QContactManager::update()
     alice = cm->contact(retrievalId(alice)); // force reload of (persisted) alice
     QContact updated = cm->contact(retrievalId(alice));
     QContactName updatedName = updated.detail<QContactName>();
-    QCOMPARE(updatedName, name);
+    QCOMPARE(updatedName.prefix(), name.prefix());
+    QCOMPARE(updatedName.firstName(), name.firstName());
+    QCOMPARE(updatedName.middleName(), name.middleName());
+    QCOMPARE(updatedName.lastName(), name.lastName());
+    QCOMPARE(updatedName.suffix(), name.suffix());
+    QCOMPARE(updatedName.customLabel(), name.customLabel());
+
     QCOMPARE(cm->contacts().size(), contactCount); // contact count should be the same, no new contacts
 
     QContactStatusFlags flags = updated.detail<QContactStatusFlags>();
@@ -4787,7 +4798,7 @@ void tst_QContactManager::constituentOfSelf()
     // Find the aggregate contact created by saving
     QContactRelationshipFilter relationshipFilter;
     setFilterType(relationshipFilter, QContactRelationship::Aggregates);
-    setFilterContactId(relationshipFilter, constituent.id());
+    relationshipFilter.setRelatedContactId(constituent.id());
     relationshipFilter.setRelatedContactRole(QContactRelationship::Second);
 
     // Now connect our contact to the real self contact

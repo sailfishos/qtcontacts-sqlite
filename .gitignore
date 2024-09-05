@@ -1,5 +1,6 @@
 *.moc
 *.o
+*.so
 .*.swp
 Makefile
 moc_*

@@ -198,19 +198,6 @@ void registerTypes()
     }
 }
 
-// Input must be UTC
-QString dateTimeString(const QDateTime &qdt)
-{
-    return QLocale::c().toString(qdt, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz"));
-}
-
-QDateTime fromDateTimeString(const QString &s)
-{
-    QDateTime rv(QLocale::c().toDateTime(s, QStringLiteral("yyyy-MM-ddThh:mm:ss.zzz")));
-    rv.setTimeSpec(Qt::UTC);
-    return rv;
-}
-
 QMap<QString, QString> checkParams(const QMap<QString, QString> &params)
 {
     QMap<QString, QString> rv(params);
@@ -222,83 +209,6 @@ QMap<QString, QString> checkParams(const QMap<QString, QString> &params)
     }
 
     return rv;
-}
-
-void modifyContactDetail(const QContactDetail &original, const QContactDetail &modified,
-                         QtContactsSqliteExtensions::ContactManagerEngine::ConflictResolutionPolicy conflictPolicy,
-                         QContactDetail *recipient)
-{
-    // Apply changes field-by-field
-    DetailMap originalValues(detailValues(original, false));
-    DetailMap modifiedValues(detailValues(modified, false));
-
-    DetailMap::const_iterator mit = modifiedValues.constBegin(), mend = modifiedValues.constEnd();
-    for ( ; mit != mend; ++mit) {
-        const int field(mit.key());
-
-        const QVariant originalValue(originalValues[field]);
-        originalValues.remove(field);
-
-        const QVariant currentValue(recipient->value(field));
-        if (!variantEqual(currentValue, originalValue)) {
-            // The local value has changed since this data was exported
-            if (conflictPolicy == QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges) {
-                // Ignore this remote change
-                continue;
-            }
-        }
-
-        // Update the result value
-        recipient->setValue(field, mit.value());
-    }
-
-    DetailMap::const_iterator oit = originalValues.constBegin(), oend = originalValues.constEnd();
-    for ( ; oit != oend; ++oit) {
-        // Any previously existing values that are no longer present should be removed
-        const int field(oit.key());
-        const QVariant originalValue(oit.value());
-
-        const QVariant currentValue(recipient->value(field));
-        if (!variantEqual(currentValue, originalValue)) {
-            // The local value has changed since this data was exported
-            if (conflictPolicy == QtContactsSqliteExtensions::ContactManagerEngine::PreserveLocalChanges) {
-                // Ignore this remote removal
-                continue;
-            }
-        }
-
-        recipient->removeValue(field);
-    }
-
-    // set the modifiable flag to true unless the sync adapter has set it explicitly
-    if (!recipient->values().contains(QContactDetail__FieldModifiable)) {
-        recipient->setValue(QContactDetail__FieldModifiable, true);
-    }
-}
-
-void removeEquivalentDetails(QList<QContactDetail> &original, QList<QContactDetail> &updated, QList<QContact> &equivalent)
-{
-    // Determine which details are in the update contact which aren't in the database contact:
-    // Detail order is not defined, so loop over the entire set for each, removing matches or
-    // superset details (eg, backend added a field (like lastModified to timestamp) on previous save)
-    QList<QContactDetail>::iterator oit = original.begin(), oend = original.end();
-    while (oit != oend) {
-        QList<QContactDetail>::iterator uit = updated.begin(), uend = updated.end();
-        while (uit != uend) {
-            if (detailsEquivalent(*oit, *uit)) {
-                // These details match - remove from the lists
-                uit = updated.erase(uit);
-                break;
-            }
-            ++uit;
-        }
-        if (uit != uend) {
-            // We found a match
-            oit = original.erase(oit);
-        } else {
-            ++oit;
-        }
-    }
 }
 
 }
@@ -459,6 +369,11 @@ bool TwoWayContactSyncAdaptor::determineRemoteCollectionChanges(
         const QList<QContactCollection> &locallyUnmodifiedCollections,
         QContactManager::Error *error)
 {
+    Q_UNUSED(locallyAddedCollections);
+    Q_UNUSED(locallyModifiedCollections);
+    Q_UNUSED(locallyRemovedCollections);
+    Q_UNUSED(locallyUnmodifiedCollections);
+
     // By default, we assume that the plugin is unable to determine
     // a precise delta of what collection metadata has changed on
     // the remote server.
@@ -796,6 +711,8 @@ void TwoWayContactSyncAdaptor::startCollectionSync(const QContactCollection &col
 
 bool TwoWayContactSyncAdaptor::deleteRemoteCollection(const QContactCollection &collection)
 {
+    Q_UNUSED(collection);
+
     // The plugin must implement this method to delete
     // a remote addressbook from the server,
     // and then invoke remoteCollectionDeleted() when complete
@@ -821,6 +738,8 @@ void TwoWayContactSyncAdaptor::remoteCollectionDeleted(const QContactCollection 
 
 bool TwoWayContactSyncAdaptor::determineRemoteContacts(const QContactCollection &collection)
 {
+    Q_UNUSED(collection);
+
     // The plugin must implement this method to retrieve
     // information about contacts in an addressbook on the remote server,
     // and call remoteContactsDetermined() once complete
@@ -993,6 +912,12 @@ bool TwoWayContactSyncAdaptor::determineRemoteContactChanges(
         const QList<QContact> &localUnmodifiedContacts,
         QContactManager::Error *error)
 {
+    Q_UNUSED(collection);
+    Q_UNUSED(localAddedContacts);
+    Q_UNUSED(localModifiedContacts);
+    Q_UNUSED(localDeletedContacts);
+    Q_UNUSED(localUnmodifiedContacts);
+
     // By default, we assume that the plugin is unable to determine
     // a precise delta of what contacts have changed on
     // the remote server.
@@ -1141,6 +1066,11 @@ bool TwoWayContactSyncAdaptor::storeLocalChangesRemotely(
         const QList<QContact> &modifiedContacts,
         const QList<QContact> &deletedContacts)
 {
+    Q_UNUSED(collection);
+    Q_UNUSED(addedContacts);
+    Q_UNUSED(modifiedContacts);
+    Q_UNUSED(deletedContacts);
+
     // The plugin must implement this method to store
     // information about contacts to an addressbook on the remote server,
     // and then call localChangesStoredRemotely() once complete

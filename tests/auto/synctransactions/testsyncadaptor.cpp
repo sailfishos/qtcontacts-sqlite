@@ -48,13 +48,6 @@
 
 namespace {
 
-QMap<QString, QString> managerParameters() {
-    QMap<QString, QString> params;
-    params.insert(QStringLiteral("autoTest"), QStringLiteral("true"));
-    params.insert(QStringLiteral("mergePresenceChanges"), QStringLiteral("true"));
-    return params;
-}
-
 QContact updateContactEtag(const QContact &c)
 {
     const QList<QContactExtendedDetail> extendedDetails = c.details<QContactExtendedDetail>();
