@@ -76,7 +76,9 @@ public:
     typedef std::tr1::function<void ()> Function;
 
     SharedMemoryManager()
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         : m_mutex(QMutex::Recursive)
+#endif
     {
     }
 
@@ -186,7 +188,11 @@ private:
 
     QMap<QString, TableData> m_tables;
     QScopedPointer<Semaphore> m_semaphore;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QRecursiveMutex m_mutex;
+#else
     QMutex m_mutex;
+#endif
 };
 
 Q_GLOBAL_STATIC(SharedMemoryManager, sharedMemory);
