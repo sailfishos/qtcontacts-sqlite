@@ -134,7 +134,7 @@ static QVariant stringListValue(const QVariant &columnValue)
         return columnValue;
 
     QString listString(columnValue.toString());
-    return listString.split(QLatin1Char(';'), QString::SkipEmptyParts);
+    return listString.split(QLatin1Char(';'), Qt::SkipEmptyParts);
 }
 
 static QVariant urlValue(const QVariant &columnValue)
@@ -204,7 +204,7 @@ static void setValues(QContactAddress *detail, QSqlQuery *query, const int offse
     setValue(detail, T::FieldLocality     , query->value(offset + 3));
     setValue(detail, T::FieldPostcode     , query->value(offset + 4));
     setValue(detail, T::FieldCountry      , query->value(offset + 5));
-    const QStringList subTypeValues(query->value(offset + 6).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    const QStringList subTypeValues(query->value(offset + 6).toString().split(QLatin1Char(';'), Qt::SkipEmptyParts));
     setValue(detail, T::FieldSubTypes     , QVariant::fromValue<QList<int> >(subTypeList(subTypeValues)));
 }
 
@@ -305,7 +305,7 @@ static void setValues(QContactFamily *detail, QSqlQuery *query, const int offset
     typedef QContactFamily T;
 
     setValue(detail, T::FieldSpouse  , query->value(offset + 0));
-    setValue(detail, T::FieldChildren, query->value(offset + 1).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    setValue(detail, T::FieldChildren, query->value(offset + 1).toString().split(QLatin1Char(';'), Qt::SkipEmptyParts));
 }
 
 static const FieldInfo favoriteFields[] =
@@ -462,7 +462,7 @@ static void setValues(QContactOnlineAccount *detail, QSqlQuery *query, const int
     setValue(detail, T::FieldServiceProvider, query->value(offset + 3));
     setValue(detail, T::FieldCapabilities   , stringListValue(query->value(offset + 4)));
 
-    const QStringList subTypeValues(query->value(offset + 5).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    const QStringList subTypeValues(query->value(offset + 5).toString().split(QLatin1Char(';'), Qt::SkipEmptyParts));
     setValue(detail, T::FieldSubTypes, QVariant::fromValue<QList<int> >(subTypeList(subTypeValues)));
 
     setValue(detail, QContactOnlineAccount__FieldAccountPath,                query->value(offset + 6));
@@ -509,7 +509,7 @@ static void setValues(QContactPhoneNumber *detail, QSqlQuery *query, const int o
 
     setValue(detail, T::FieldNumber  , query->value(offset + 0));
 
-    const QStringList subTypeValues(query->value(offset + 1).toString().split(QLatin1Char(';'), QString::SkipEmptyParts));
+    const QStringList subTypeValues(query->value(offset + 1).toString().split(QLatin1Char(';'), Qt::SkipEmptyParts));
     setValue(detail, T::FieldSubTypes, QVariant::fromValue<QList<int> >(subTypeList(subTypeValues)));
 
     setValue(detail, QContactPhoneNumber::FieldNormalizedNumber, query->value(offset + 2));
@@ -710,11 +710,11 @@ static void readDetail(QContact *contact, QSqlQuery &query, quint32 contactId, q
     if (!linkedDetailUrisValue.isEmpty()) {
         setValue(&detail,
                  QContactDetail::FieldLinkedDetailUris,
-                 linkedDetailUrisValue.split(QLatin1Char(';'), QString::SkipEmptyParts));
+                 linkedDetailUrisValue.split(QLatin1Char(';'), Qt::SkipEmptyParts));
     }
     if (!contextValue.isEmpty()) {
         QList<int> contexts;
-        foreach (const QString &context, contextValue.split(QLatin1Char(';'), QString::SkipEmptyParts)) {
+        foreach (const QString &context, contextValue.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
             const int type = contextType(context);
             if (type != -1) {
                 contexts.append(type);

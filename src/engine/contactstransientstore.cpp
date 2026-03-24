@@ -75,7 +75,6 @@ public:
     typedef std::tr1::function<void ()> Function;
 
     SharedMemoryManager()
-        : m_mutex(QMutex::Recursive)
     {
     }
 
@@ -181,7 +180,7 @@ private:
 
     QMap<QString, TableData> m_tables;
     QScopedPointer<Semaphore> m_semaphore;
-    QMutex m_mutex;
+    QRecursiveMutex m_mutex;
 };
 
 Q_GLOBAL_STATIC(SharedMemoryManager, sharedMemory);
