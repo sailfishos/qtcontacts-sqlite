@@ -1302,7 +1302,10 @@ ContactsEngine::ContactsEngine(const QString &name, const QMap<QString, QString>
 {
     static bool registered = qRegisterMetaType<QList<int> >("QList<int>")
                              && qRegisterMetaType<QList<QContactDetail::DetailType> >("QList<QContactDetail::DetailType>")
-                             && qRegisterMetaTypeStreamOperators<QList<int> >();
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+                             && qRegisterMetaTypeStreamOperators<QList<int> >()
+#endif
+                             ;
     Q_UNUSED(registered)
 
     if (isTrue(m_parameters.value(QString::fromLatin1("nonprivileged")))) {
