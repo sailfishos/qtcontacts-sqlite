@@ -944,10 +944,16 @@ private:
 
 class JobThread : public QThread
 {
-    struct MutexUnlocker {
-        QMutexLocker &m_locker;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    typedef QMutexLocker<QMutex> MutexLocker;
+#else
+    typedef QMutexLocker MutexLocker;
+#endif
 
-        explicit MutexUnlocker(QMutexLocker &locker)
+    struct MutexUnlocker {
+        MutexLocker &m_locker;
+
+        explicit MutexUnlocker(MutexLocker &locker)
             : m_locker(locker)
         {
             m_locker.unlock();
@@ -1234,7 +1240,7 @@ void JobThread::run()
     QString dbId(QStringLiteral("qtcontacts-sqlite%1-job-%2"));
     dbId = dbId.arg(m_autoTest ? QStringLiteral("-test") : QString()).arg(m_databaseUuid);
 
-    QMutexLocker locker(&m_mutex);
+    MutexLocker locker(&m_mutex);
 
     m_database.open(dbId, m_nonprivileged, m_autoTest);
     m_nonprivileged = m_database.nonprivileged();
