@@ -128,7 +128,11 @@ public:
     ContactsDatabase(ContactsEngine *engine);
     ~ContactsDatabase();
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QRecursiveMutex *accessMutex() const;
+#else
     QMutex *accessMutex() const;
+#endif
     ProcessMutex *processMutex() const;
 
     bool open(const QString &databaseName, bool nonprivileged, bool autoTest, bool secondaryConnection = false);
@@ -199,7 +203,11 @@ private:
     ContactsEngine *m_engine;
     QSqlDatabase m_database;
     ContactsTransientStore m_transientStore;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QRecursiveMutex m_mutex;
+#else
     QMutex m_mutex;
+#endif
     mutable QScopedPointer<ProcessMutex> m_processMutex;
     bool m_nonprivileged;
     bool m_autoTest;

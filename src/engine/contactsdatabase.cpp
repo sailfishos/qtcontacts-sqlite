@@ -3268,7 +3268,9 @@ void ContactsDatabase::Query::reportError(const char *text) const
 
 ContactsDatabase::ContactsDatabase(ContactsEngine *engine)
     : m_engine(engine)
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     , m_mutex(QMutex::Recursive)
+#endif
     , m_nonprivileged(false)
     , m_autoTest(false)
     , m_localeName(QLocale().name())
@@ -3305,10 +3307,17 @@ ContactsDatabase::~ContactsDatabase()
     m_database.close();
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+QRecursiveMutex *ContactsDatabase::accessMutex() const
+{
+    return const_cast<QRecursiveMutex *>(&m_mutex);
+}
+#else
 QMutex *ContactsDatabase::accessMutex() const
 {
     return const_cast<QMutex *>(&m_mutex);
 }
+#endif
 
 ContactsDatabase::ProcessMutex *ContactsDatabase::processMutex() const
 {
