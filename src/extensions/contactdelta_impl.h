@@ -33,6 +33,8 @@
 #ifndef CONTACTDELTA_IMPL_H
 #define CONTACTDELTA_IMPL_H
 
+#include "compat.h"
+
 #include <contactdelta.h>
 #include <qtcontacts-extensions.h>
 #include <contactmanagerengine.h>
@@ -125,8 +127,8 @@ void removeDatabaseIdsFromList(QList<QContactDetail> *dets)
 int scoreForValuePair(const QVariant &removal, const QVariant &addition)
 {
     // work around some variant-comparison issues.
-    if (Q_UNLIKELY((((removal.type() == QVariant::String && addition.type() == QVariant::Invalid)
-                   ||(addition.type() == QVariant::String && removal.type() == QVariant::Invalid))
+    if (Q_UNLIKELY((((isString(removal) && isInvalid(addition))
+                   ||(isString(addition) && isInvalid(removal)))
                    &&(removal.toString().isEmpty() && addition.toString().isEmpty())))) {
         // it could be that "invalid" variant is stored as an empty
         // string in database, if the field is a string field.
@@ -143,11 +145,11 @@ int scoreForValuePair(const QVariant &removal, const QVariant &addition)
     }
 
     // the sync adaptor might return url data as a string.
-    if (removal.type() == QVariant::Url && addition.type() == QVariant::String) {
+    if (isUrl(removal) && isString(addition)) {
         QUrl rurl = removal.toUrl();
         QUrl aurl = QUrl(addition.toString());
         return rurl == aurl ? 0 : 1;
-    } else if (removal.type() == QVariant::String && addition.type() == QVariant::Url) {
+    } else if (isString(removal) && isUrl(addition)) {
         QUrl rurl = QUrl(removal.toString());
         QUrl aurl = addition.toUrl();
         return rurl == aurl ? 0 : 1;
@@ -216,8 +218,8 @@ bool detailPairExactlyMatches(
             // or if the avalue is an empty string, or empty list,
             // as the database can sometimes return empty
             // string instead of NULL value.
-            if (avalue.type() == QVariant::Invalid
-                    || (avalue.type() == QVariant::String && avalue.toString().isEmpty())
+            if (isInvalid(avalue)
+                    || (isString(avalue) && avalue.toString().isEmpty())
                     || (avalue.userType() == QMetaType::type("QList<int>") && avalue.value<QList<int> >() == QList<int>())) {
                 // this is ok.
             } else {
@@ -250,8 +252,8 @@ bool detailPairExactlyMatches(
         }
 
         const QVariant bvalue = bvalues.value(bkey);
-        if (bvalue.type() == QVariant::Invalid
-                || (bvalue.type() == QVariant::String && bvalue.toString().isEmpty())
+        if (isInvalid(bvalue)
+                || (isString(bvalue) && bvalue.toString().isEmpty())
                 || (bvalue.userType() == QMetaType::type("QList<int>") && bvalue.value<QList<int> >() == QList<int>())) {
             // this is ok.
         } else {
@@ -473,9 +475,9 @@ QList<QContactDetail> improveDelta(
     QMultiHash<int, QContactDetail> bucketedAdditions;
 
     for (int i = 0; i < removals->size(); ++i)
-        bucketedRemovals.insertMulti(removals->at(i).type(), removals->at(i));
+        bucketedRemovals.insert(removals->at(i).type(), removals->at(i));
     for (int i = 0; i < additions->size(); ++i)
-        bucketedAdditions.insertMulti(additions->at(i).type(), additions->at(i));
+        bucketedAdditions.insert(additions->at(i).type(), additions->at(i));
 
     QSet<int> seenTypes;
     foreach (int type, bucketedRemovals.uniqueKeys()) {

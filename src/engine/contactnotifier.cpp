@@ -196,7 +196,7 @@ void ContactNotifier::relationshipsAdded(const QSet<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
         QDBusMessage message = createSignal("relationshipsAdded", m_nonprivileged);
-        message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds.toList())));
+        message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds.values())));
         sendMessage(message);
     }
 }
@@ -205,7 +205,7 @@ void ContactNotifier::relationshipsRemoved(const QSet<QContactId> &contactIds)
 {
     if (!contactIds.isEmpty()) {
         QDBusMessage message = createSignal("relationshipsRemoved", m_nonprivileged);
-        message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds.toList())));
+        message.setArguments(QVariantList() << QVariant::fromValue(idVector(contactIds.values())));
         sendMessage(message);
     }
 }

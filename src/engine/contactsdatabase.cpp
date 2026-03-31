@@ -1801,7 +1801,7 @@ static bool updateStorageTypes(QSqlDatabase &database)
             const quint32 detailId(query.value(0).value<quint32>());
             const QString originalSubTypes(query.value(1).value<QString>());
 
-            QStringList subTypeNames(originalSubTypes.split(QLatin1Char(';'), QString::SkipEmptyParts));
+            QStringList subTypeNames(originalSubTypes.split(QLatin1Char(';'), Qt::SkipEmptyParts));
             QStringList subTypeValues;
             foreach (int subTypeValue, Address::subTypeList(subTypeNames)) {
                 subTypeValues.append(QString::number(subTypeValue));
@@ -1949,7 +1949,7 @@ static bool updateStorageTypes(QSqlDatabase &database)
             const QString originalProtocol(query.value(1).value<QString>());
             const QString originalSubTypes(query.value(2).value<QString>());
 
-            QStringList subTypeNames(originalSubTypes.split(QLatin1Char(';'), QString::SkipEmptyParts));
+            QStringList subTypeNames(originalSubTypes.split(QLatin1Char(';'), Qt::SkipEmptyParts));
             QStringList subTypeValues;
             foreach (int subTypeValue, OnlineAccount::subTypeList(subTypeNames)) {
                 subTypeValues.append(QString::number(subTypeValue));
@@ -2000,7 +2000,7 @@ static bool updateStorageTypes(QSqlDatabase &database)
             const quint32 detailId(query.value(0).value<quint32>());
             const QString originalSubTypes(query.value(1).value<QString>());
 
-            QStringList subTypeNames(originalSubTypes.split(QLatin1Char(';'), QString::SkipEmptyParts));
+            QStringList subTypeNames(originalSubTypes.split(QLatin1Char(';'), Qt::SkipEmptyParts));
             QStringList subTypeValues;
             foreach (int subTypeValue, PhoneNumber::subTypeList(subTypeNames)) {
                 subTypeValues.append(QString::number(subTypeValue));
@@ -3266,7 +3266,6 @@ void ContactsDatabase::Query::reportError(const char *text) const
 
 ContactsDatabase::ContactsDatabase(ContactsEngine *engine)
     : m_engine(engine)
-    , m_mutex(QMutex::Recursive)
     , m_nonprivileged(false)
     , m_autoTest(false)
     , m_localeName(QLocale().name())
@@ -3303,9 +3302,9 @@ ContactsDatabase::~ContactsDatabase()
     m_database.close();
 }
 
-QMutex *ContactsDatabase::accessMutex() const
+QRecursiveMutex *ContactsDatabase::accessMutex() const
 {
-    return const_cast<QMutex *>(&m_mutex);
+    return const_cast<QRecursiveMutex *>(&m_mutex);
 }
 
 ContactsDatabase::ProcessMutex *ContactsDatabase::processMutex() const
@@ -3390,7 +3389,7 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
     QDir databaseDir;
     if (!nonprivileged && databaseDir.mkpath(privilegedDataDirPath + databaseSubdir)) {
         // privileged.
-        databaseDir = privilegedDataDirPath + databaseSubdir;
+        databaseDir.setPath(privilegedDataDirPath + databaseSubdir);
     } else {
         // not privileged.
         if (!databaseDir.mkpath(systemDataDirPath + databaseSubdir)) {
@@ -3398,7 +3397,7 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
                                           .arg(systemDataDirPath + databaseSubdir));
             return false;
         }
-        databaseDir = systemDataDirPath + databaseSubdir;
+        databaseDir.setPath(systemDataDirPath + databaseSubdir);
         if (!nonprivileged) {
             QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Could not access privileged data directory; using nonprivileged"));
         }

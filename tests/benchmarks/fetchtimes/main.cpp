@@ -55,6 +55,7 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QDateTime>
+#include <QRandomGenerator>
 #include <QUuid>
 #include <QtDebug>
 
@@ -192,6 +193,22 @@ static QStringList generateHobbiesList()
     return retn;
 }
 
+static QRandomGenerator & getRG()
+{
+    static QRandomGenerator g;
+    return g;
+}
+
+static int nextRandom()
+{
+    return getRG().generate();
+}
+
+static void seedRandom(int seed)
+{
+    getRG().seed(seed);
+}
+
 QContact generateContact(const QContactCollectionId &collectionId = QContactCollectionId(), bool possiblyAggregate = false)
 {
     static const QStringList firstNames(generateFirstNamesList());
@@ -208,7 +225,7 @@ QContact generateContact(const QContactCollectionId &collectionId = QContactColl
     // to ensure that we have heterogeneous contacts in the db.
     QContact retn;
     retn.setCollectionId(collectionId);
-    int random = qrand();
+    int random = nextRandom();
     bool preventAggregate = (!collectionId.isNull() && !possiblyAggregate);
 
     // We always have a name.  Select an overlapping name if the sync target
@@ -264,7 +281,7 @@ QContact generateContact(const QContactCollectionId &collectionId = QContactColl
         h1.setHobby(hobbies.at(random % hobbies.size()));
         retn.saveDetail(&h1);
 
-        int newRandom = qrand();
+        int newRandom = nextRandom();
         if ((newRandom % 2) == 0) {
             QContactHobby h2;
             h2.setHobby(hobbies.at(newRandom % hobbies.size()));
@@ -345,9 +362,9 @@ static qint64 aggregatedPresenceUpdate(QContactManager &manager, bool quickMode)
         cp.setNickname(genstr);
         cp.setCustomMessage(genstr);
         cp.setTimestamp(timestamp);
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((nextRandom() % 4) + 1));
         nn.setNickname(nn.nickname() + genstr);
-        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
+        av.setImageUrl(genstr + presenceAvatars.at(nextRandom() % presenceAvatars.size()));
         curr.saveDetail(&cp);
         curr.saveDetail(&nn);
         curr.saveDetail(&av);
@@ -369,7 +386,7 @@ static qint64 aggregatedPresenceUpdate(QContactManager &manager, bool quickMode)
     for (int j = 0; j < morePrefillData.size(); ++j) {
         QContact curr = morePrefillData.at(j);
         QContactPresence cp = curr.detail<QContactPresence>();
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((nextRandom() % 4) + 1));
         curr.saveDetail(&cp);
         contactsToUpdate.append(curr);
     }
@@ -390,7 +407,7 @@ static qint64 aggregatedPresenceUpdate(QContactManager &manager, bool quickMode)
     for (int j = 0; j < morePrefillData.size(); ++j) {
         QContact curr = morePrefillData.at(j);
         QContactPresence cp = curr.detail<QContactPresence>();
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((nextRandom() % 4) + 1));
         curr.saveDetail(&cp);
         contactsToUpdate.append(curr);
     }
@@ -488,9 +505,9 @@ static qint64 nonAggregatedPresenceUpdate(QContactManager &manager, bool quickMo
         cp.setNickname(genstr);
         cp.setCustomMessage(genstr);
         cp.setTimestamp(timestamp);
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((nextRandom() % 4) + 1));
         nn.setNickname(nn.nickname() + genstr);
-        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
+        av.setImageUrl(genstr + presenceAvatars.at(nextRandom() % presenceAvatars.size()));
         curr.saveDetail(&cp);
         curr.saveDetail(&nn);
         curr.saveDetail(&av);
@@ -572,9 +589,9 @@ static qint64 scalingPresenceUpdate(QContactManager &manager, bool quickMode)
         cp.setNickname(genstr);
         cp.setCustomMessage(genstr);
         cp.setTimestamp(timestamp);
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((nextRandom() % 4) + 1));
         nn.setNickname(nn.nickname() + genstr);
-        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
+        av.setImageUrl(genstr + presenceAvatars.at(nextRandom() % presenceAvatars.size()));
         curr.saveDetail(&cp);
         curr.saveDetail(&nn);
         curr.saveDetail(&av);
@@ -653,9 +670,9 @@ static qint64 entireBatchPresenceUpdate(QContactManager &manager, bool quickMode
         cp.setNickname(genstr);
         cp.setCustomMessage(genstr);
         cp.setTimestamp(timestamp);
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((qrand() % 4) + 1));
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>((nextRandom() % 4) + 1));
         nn.setNickname(nn.nickname() + genstr);
-        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
+        av.setImageUrl(genstr + presenceAvatars.at(nextRandom() % presenceAvatars.size()));
         curr.saveDetail(&cp);
         curr.saveDetail(&nn);
         curr.saveDetail(&av);
@@ -739,9 +756,9 @@ static qint64 smallBatchPresenceUpdate(QContactManager &manager, bool quickMode)
         cp.setNickname(genstr);
         cp.setCustomMessage(genstr);
         cp.setTimestamp(QDateTime::currentDateTime());
-        cp.setPresenceState(static_cast<QContactPresence::PresenceState>(qrand() % 4));
+        cp.setPresenceState(static_cast<QContactPresence::PresenceState>(nextRandom() % 4));
         nn.setNickname(nn.nickname() + genstr);
-        av.setImageUrl(genstr + presenceAvatars.at(qrand() % presenceAvatars.size()));
+        av.setImageUrl(genstr + presenceAvatars.at(nextRandom() % presenceAvatars.size()));
         curr.saveDetail(&cp);
         curr.saveDetail(&nn);
         curr.saveDetail(&av);
@@ -1838,19 +1855,19 @@ int main(int argc, char  *argv[])
     if (queryPlan) {
         // hidden/undocumented feature: perform two writes and one read
         // which we will use to inspect the query plans.
-        qsrand(42);
+        seedRandom(42);
         elapsedTimeTotal = performQueryPlanOperations(manager);
     } else if (readTestData) {
         // hidden/undocumented feature: time read all contacts from database.
-        qsrand(42);
+        seedRandom(42);
         elapsedTimeTotal = performReadQueryPlanTestData(manager);
     } else if (testData) {
         // hidden/undocumented feature: fill database with random data
         // which we then use to generate the query plan.
-        qsrand(42);
+        seedRandom(42);
         elapsedTimeTotal = generateQueryPlanTestData(manager, args.last().toInt());
     } else {
-        qsrand(stable ? 42 : QDateTime::currentDateTime().time().second());
+        seedRandom(stable ? 42 : QDateTime::currentDateTime().time().second());
         elapsedTimeTotal += (runAll || functionArgs.contains("simpleFilterAndSort")) ? simpleFilterAndSort(manager, quickMode) : 0;
         elapsedTimeTotal += (runAll || functionArgs.contains("asynchronousOperations")) ? asynchronousOperations(manager, quickMode) : 0;
         elapsedTimeTotal += (runAll || functionArgs.contains("synchronousOperations")) ? synchronousOperations(manager, quickMode) : 0;
