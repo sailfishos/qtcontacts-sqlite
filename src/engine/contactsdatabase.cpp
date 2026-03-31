@@ -3392,7 +3392,7 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
     QDir databaseDir;
     if (!nonprivileged && databaseDir.mkpath(privilegedDataDirPath + databaseSubdir)) {
         // privileged.
-        databaseDir = privilegedDataDirPath + databaseSubdir;
+        databaseDir.setPath(privilegedDataDirPath + databaseSubdir);
     } else {
         // not privileged.
         if (!databaseDir.mkpath(systemDataDirPath + databaseSubdir)) {
@@ -3400,7 +3400,7 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
                                           .arg(systemDataDirPath + databaseSubdir));
             return false;
         }
-        databaseDir = systemDataDirPath + databaseSubdir;
+        databaseDir.setPath(systemDataDirPath + databaseSubdir);
         if (!nonprivileged) {
             QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Could not access privileged data directory; using nonprivileged"));
         }
