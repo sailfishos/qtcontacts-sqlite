@@ -2891,7 +2891,7 @@ QContactManager::Error ContactReader::readDeletedContactIds(
                 }
             } else if (filterType == QContactFilter::CollectionFilter) {
                 const QContactCollectionFilter &collectionFilter(static_cast<const QContactCollectionFilter &>(partialFilter));
-                collectionIds = collectionFilter.collectionIds().toList();
+                collectionIds = collectionFilter.collectionIds().values();
                 if (collectionIds.size() > 1) {
                     qWarning() << "Cannot readDeletedContactIds with more than one collection specified:"
                                <<  collectionIds.size();
