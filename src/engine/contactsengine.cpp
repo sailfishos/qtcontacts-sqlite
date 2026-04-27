@@ -149,7 +149,7 @@ public:
 
     void clear() override
     {
-        m_request = 0;
+        m_request = nullptr;
     }
 
     QContactManager::Error error() const
@@ -184,8 +184,7 @@ public:
 
     void updateState(QContactAbstractRequest::State state) override
     {
-         QContactManagerEngine::updateContactSaveRequest(
-                     m_request, m_contacts, m_error, m_errorMap, state);
+         QContactManagerEngine::updateContactSaveRequest(m_request, m_contacts, m_error, m_errorMap, state);
     }
 
     QString description() const override
@@ -220,11 +219,7 @@ public:
 
     void updateState(QContactAbstractRequest::State state) override
     {
-        QContactManagerEngine::updateContactRemoveRequest(
-                m_request,
-                m_error,
-                m_errorMap,
-                state);
+        QContactManagerEngine::updateContactRemoveRequest(m_request, m_error, m_errorMap, state);
     }
 
     QString description() const override
@@ -265,15 +260,13 @@ public:
 
     void update(QMutex *mutex) override
     {
-        QList<QContact> contacts;      {
+        QList<QContact> contacts;
+        {
             QMutexLocker locker(mutex);
             contacts = m_contacts;
         }
-        QContactManagerEngine::updateContactFetchRequest(
-                m_request,
-                contacts,
-                QContactManager::NoError,
-                QContactAbstractRequest::ActiveState);
+        QContactManagerEngine::updateContactFetchRequest(m_request, contacts, QContactManager::NoError,
+                                                         QContactAbstractRequest::ActiveState);
     }
 
     void updateState(QContactAbstractRequest::State state) override
@@ -389,12 +382,8 @@ public:
 
     void updateState(QContactAbstractRequest::State state) override
     {
-        QContactManagerEngine::updateContactFetchByIdRequest(
-                m_request,
-                m_contacts,
-                m_error,
-                QMap<int, QContactManager::Error>(),
-                state);
+        QContactManagerEngine::updateContactFetchByIdRequest(m_request, m_contacts, m_error,
+                                                             QMap<int, QContactManager::Error>(), state);
     }
 
     void contactsAvailable(const QList<QContact> &contacts) override
@@ -434,8 +423,7 @@ public:
 
     void updateState(QContactAbstractRequest::State state) override
     {
-         QContactManagerEngine::updateCollectionSaveRequest(
-                     m_request, m_collections, m_error, m_errorMap, state);
+         QContactManagerEngine::updateCollectionSaveRequest(m_request, m_collections, m_error, m_errorMap, state);
     }
 
     QString description() const override
@@ -469,11 +457,7 @@ public:
 
     void updateState(QContactAbstractRequest::State state) override
     {
-        QContactManagerEngine::updateCollectionRemoveRequest(
-                m_request,
-                m_error,
-                m_errorMap,
-                state);
+        QContactManagerEngine::updateCollectionRemoveRequest(m_request, m_error, m_errorMap, state);
     }
 
     QString description() const override
@@ -501,14 +485,13 @@ public:
     void execute(ContactReader *reader, WriterProxy &) override
     {
         QList<QContactCollection> collections;
-        m_error = reader->readCollections(
-                QLatin1String("AsynchronousFilter"),
-                &collections);
+        m_error = reader->readCollections(QLatin1String("AsynchronousFilter"), &collections);
     }
 
     void update(QMutex *mutex) override
     {
-        QList<QContactCollection> collections; {
+        QList<QContactCollection> collections;
+        {
             QMutexLocker locker(mutex);
             collections = m_collections;
         }
@@ -929,12 +912,8 @@ public:
     void execute(ContactReader *, WriterProxy &writer) override
     {
         m_error = m_collectionId.isNull()
-                ? writer->clearChangeFlags(
-                      m_contactIds,
-                      false)
-                : writer->clearChangeFlags(
-                      m_collectionId,
-                      false);
+                ? writer->clearChangeFlags(m_contactIds, false)
+                : writer->clearChangeFlags(m_collectionId, false);
     }
 
     void updateState(QContactAbstractRequest::State state) override
@@ -968,10 +947,12 @@ class JobThread : public QThread
     struct MutexUnlocker {
         QMutexLocker &m_locker;
 
-        explicit MutexUnlocker(QMutexLocker &locker) : m_locker(locker)
+        explicit MutexUnlocker(QMutexLocker &locker)
+            : m_locker(locker)
         {
             m_locker.unlock();
         }
+
         ~MutexUnlocker()
         {
             m_locker.relock();
@@ -980,7 +961,7 @@ class JobThread : public QThread
 
 public:
     JobThread(ContactsEngine *engine, const QString &databaseUuid, bool nonprivileged, bool autoTest)
-        : m_currentJob(0)
+        : m_currentJob(nullptr)
         , m_engine(engine)
         , m_database(engine)
         , m_databaseUuid(databaseUuid)
@@ -1079,7 +1060,7 @@ public:
                 ? INT32_MAX
                 : msecs;
 
-        Job *finishedJob = 0;
+        Job *finishedJob = nullptr;
         {
             QMutexLocker locker(&m_mutex);
             for (;;) {
@@ -1124,7 +1105,9 @@ public:
             finishedJob->updateState(QContactAbstractRequest::FinishedState);
             delete finishedJob;
             return true;
-        } else for (QList<Job*>::iterator it = m_cancelledJobs.begin(); it != m_cancelledJobs.end(); it++) {
+        }
+
+        for (QList<Job*>::iterator it = m_cancelledJobs.begin(); it != m_cancelledJobs.end(); it++) {
             if ((*it)->request() == request) {
                 (*it)->updateState(QContactAbstractRequest::CanceledState);
                 delete *it;
@@ -1196,9 +1179,9 @@ public:
             if (currentJob)
                 currentJob->update(&m_mutex);
             return true;
-        } else {
-            return QThread::event(event);
         }
+
+        return QThread::event(event);
     }
 
 private:
@@ -1270,7 +1253,7 @@ void JobThread::run()
                 m_currentJob = m_pendingJobs.takeFirst();
                 m_currentJob->setError(QContactManager::UnspecifiedError);
                 m_finishedJobs.append(m_currentJob);
-                m_currentJob = 0;
+                m_currentJob = nullptr;
                 postUpdate();
                 m_finishedWait.wakeOne();
             }
@@ -1297,7 +1280,7 @@ void JobThread::run()
                 }
 
                 m_finishedJobs.append(m_currentJob);
-                m_currentJob = 0;
+                m_currentJob = nullptr;
                 postUpdate();
                 m_finishedWait.wakeOne();
             }
@@ -1424,9 +1407,9 @@ QMap<QString, QString> ContactsEngine::idInterpretationParameters() const
         return {
             { QString::fromLatin1("autoTest"),      QString::fromLatin1("true") }
         };
-    } else {
-        return QMap<QString, QString>();
     }
+
+    return QMap<QString, QString>();
 }
 
 int ContactsEngine::managerVersion() const
@@ -1597,11 +1580,7 @@ bool ContactsEngine::saveRelationships(
     if (error)
         *error = err;
 
-    if (err == QContactManager::NoError) {
-        return true;
-    }
-
-    return false;
+    return err == QContactManager::NoError;
 }
 
 bool ContactsEngine::removeRelationships(
@@ -1725,7 +1704,7 @@ void ContactsEngine::requestDestroyed(QObject* req)
 
 bool ContactsEngine::startRequest(QContactAbstractRequest* request)
 {
-    Job *job = 0;
+    Job *job = nullptr;
 
     switch (request->type()) {
     case QContactAbstractRequest::ContactSaveRequest:

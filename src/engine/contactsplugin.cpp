@@ -54,8 +54,8 @@ ContactsFactory::ContactsFactory()
 {
 }
 
-QContactManagerEngine *ContactsFactory::engine(
-        const QMap<QString, QString> &parameters, QContactManager::Error* error)
+QContactManagerEngine *ContactsFactory::engine(const QMap<QString, QString> &parameters,
+                                               QContactManager::Error* error)
 {
     ContactsEngine *engine = new ContactsEngine(managerName(), parameters);
     QContactManager::Error err = engine->open();
@@ -63,10 +63,10 @@ QContactManagerEngine *ContactsFactory::engine(
         *error = err;
     if (err != QContactManager::NoError) {
         delete engine;
-        return 0;
-    } else {
-        return engine;
+        return nullptr;
     }
+
+    return engine;
 }
 
 QString ContactsFactory::managerName() const

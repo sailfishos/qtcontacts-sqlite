@@ -86,4 +86,3 @@ pkgconfig.files = ../$${PACKAGENAME}.pc
 INSTALLS += pkgconfig
 
 OTHER_FILES += plugin.json
-

@@ -63,6 +63,7 @@ class SharedMemoryManager
             , m_table(m_region->data(), m_region->size(), false)
         {
         }
+
         ~SharedMemoryTable()
         {
         }
@@ -84,14 +85,16 @@ public:
     struct TableHandle
     {
         TableHandle()
-            : m_table(0)
+            : m_table(nullptr)
         {
         }
+
         explicit TableHandle(QSharedPointer<SharedMemoryTable> table, Function release = Function())
             : m_table(table)
             , m_release(release)
         {
         }
+
         ~TableHandle()
         {
             if (m_release)
@@ -129,6 +132,7 @@ private:
             , m_generation(generation)
         {
         }
+
         ~TableData()
         {
         }
@@ -143,6 +147,7 @@ private:
         explicit SemaphoreLock(Function release) : m_release(release)
         {
         }
+
         ~SemaphoreLock()
         {
             if (m_release)
