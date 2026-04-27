@@ -1814,7 +1814,7 @@ static QString buildOrderBy(
         *transientModifiedRequired = true;
 
         // Look at the temporary modified timestamp if present, otherwise use the normal value
-        sortExpression = QStringLiteral("COALESCE(temp.Timestamps.modified, modified)");
+        sortExpression = QStringLiteral("COALESCE(temp.Timestamps.modified, Contacts.modified)");
         sortBlanks = false;
         collate = false;
     }
