@@ -310,7 +310,7 @@ MemoryTablePrivate::key_type MemoryTablePrivate::keyAtIndex(size_t index, const 
 const MemoryTablePrivate::value_type MemoryTablePrivate::valueAtIndex(size_t index, const TableMetadata *table)
 {
     if (index >= table->count)
-        return key_type();
+        return value_type();
 
     return valueAt(table->index[index].offset, table);
 }
