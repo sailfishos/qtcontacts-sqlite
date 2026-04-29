@@ -4755,11 +4755,11 @@ QContactManager::Error ContactWriter::update(QContact *contact, const DetailList
         if (!ContactsDatabase::execute(query) || !query.next()) {
             query.reportError("Failed to check contact existence");
             return QContactManager::UnspecifiedError;
-        } else {
-            exists = query.value<quint32>(0);
-            oldCollectionId = ContactCollectionId::apiId(query.value<quint32>(1), m_managerUri);
-            changeFlags = query.value<int>(2);
         }
+
+        exists = query.value<quint32>(0);
+        oldCollectionId = ContactCollectionId::apiId(query.value<quint32>(1), m_managerUri);
+        changeFlags = query.value<int>(2);
     }
 
     if (!exists) {

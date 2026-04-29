@@ -310,7 +310,7 @@ MemoryTablePrivate::key_type MemoryTablePrivate::keyAtIndex(size_t index, const 
 const MemoryTablePrivate::value_type MemoryTablePrivate::valueAtIndex(size_t index, const TableMetadata *table)
 {
     if (index >= table->count)
-        return key_type();
+        return value_type();
 
     return valueAt(table->index[index].offset, table);
 }
@@ -342,8 +342,8 @@ quint32 MemoryTablePrivate::allocate(quint32 size, TableMetadata *table, bool in
 
     if (table->freeList) {
         // Try to reuse a freed block
-        quint32 *bestOffset = 0;
-        Allocation *bestBlock = 0;
+        quint32 *bestOffset = nullptr;
+        Allocation *bestBlock = nullptr;
 
         quint32 *freeOffset = &table->freeList;
         while (*freeOffset) {
@@ -404,7 +404,7 @@ void MemoryTablePrivate::updateValue(const value_type &value, quint32 valueSize,
 }
 
 MemoryTable::MemoryTable(void *base, size_t size, bool initialize)
-    : mBase(0)
+    : mBase(nullptr)
     , mSize(0)
 {
 #ifndef __GNUG__
@@ -451,7 +451,7 @@ MemoryTable::~MemoryTable()
 
 bool MemoryTable::isValid() const
 {
-    return mBase != 0;
+    return mBase != nullptr;
 }
 
 size_t MemoryTable::count() const

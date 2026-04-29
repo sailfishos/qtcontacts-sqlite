@@ -887,7 +887,8 @@ const DetailInfo &detailInformation(QContactDetail::DetailType type)
         }
     }
 
-    static const DetailInfo nullDetail = { QContactDetail::TypeUndefined, "Undefined", "", 0, 0, false, false, nullptr, nullptr };
+    static const DetailInfo nullDetail = { QContactDetail::TypeUndefined, "Undefined", "",
+                                           0, 0, false, false, nullptr, nullptr };
     return nullDetail;
 }
 
@@ -1006,7 +1007,9 @@ static QString buildWhere(const QContactCollectionFilter &filter, QVariantList *
     if (filterIds.isEmpty()) {
         // "retrieve all contacts, regardless of collection".
         return QStringLiteral("Contacts.collectionId IS NOT NULL");
-    } else if (filterIds.count() < 800) {
+    }
+
+    if (filterIds.count() < 800) {
         QList<quint32> dbIds;
         dbIds.reserve(filterIds.count());
         bindings->reserve(filterIds.count());
@@ -1023,11 +1026,11 @@ static QString buildWhere(const QContactCollectionFilter &filter, QVariantList *
         }
 
         return statement + QStringLiteral(")");
-    } else {
-        *failed = true;
-        qWarning() << "Cannot buildWhere with too large collection ID list";
-        return QStringLiteral("FALSE");
     }
+
+    *failed = true;
+    qWarning() << "Cannot buildWhere with too large collection ID list";
+    return QStringLiteral("FALSE");
 }
 
 static QString buildWhere(
@@ -1543,13 +1546,15 @@ static QString buildWhere(const QContactChangeLogFilter &filter, QVariantList *b
 {
     static const QString statement(QStringLiteral("%1 >= ?"));
     bindings->append(ContactsDatabase::dateTimeString(filter.since().toUTC()));
+
     switch (filter.eventType()) {
-        case QContactChangeLogFilter::EventAdded:
-            return statement.arg(QStringLiteral("Contacts.created"));
-        case QContactChangeLogFilter::EventChanged:
-            *transientModifiedRequired = true;
-            return statement.arg(QStringLiteral("COALESCE(temp.Timestamps.modified, Contacts.modified)"));
-        default: break;
+    case QContactChangeLogFilter::EventAdded:
+        return statement.arg(QStringLiteral("Contacts.created"));
+    case QContactChangeLogFilter::EventChanged:
+        *transientModifiedRequired = true;
+        return statement.arg(QStringLiteral("COALESCE(temp.Timestamps.modified, Contacts.modified)"));
+    default:
+        break;
     }
 
     *failed = true;
@@ -1757,7 +1762,9 @@ static QString buildOrderBy(
     if (detail.detailType == QContactDetail::TypeUndefined) {
         qWarning() << "Cannot buildOrderBy with unknown detail type:" << order.detailType();
         return QString();
-    } else if (detailType != QContactDetail::TypeUndefined && detail.detailType != detailType) {
+    }
+
+    if (detailType != QContactDetail::TypeUndefined && detail.detailType != detailType) {
         qWarning() << QString::fromLatin1("Cannot buildOrderBy with unknown detail mismatched detail types: %1 != %2")
                           .arg(detailType).arg(order.detailType());
         return QString();
@@ -1768,13 +1775,13 @@ static QString buildOrderBy(
         return detail.orderByExistence(order.direction() == Qt::AscendingOrder);
     }
 
-    const bool joinToSort = detail.joinToSort && detailType == QContactDetail::TypeUndefined;
-
     const FieldInfo &field(fieldInformation(detail, order.detailField()));
     if (field.field == invalidField) {
         qWarning() << "Cannot buildOrderBy with unknown detail field:" << order.detailField();
         return QString();
     }
+
+    const bool joinToSort = detail.joinToSort && detailType == QContactDetail::TypeUndefined;
 
     const bool isDisplayLabelGroup = detail.detailType == QContactDisplayLabel::Type
                                      && field.field == QContactDisplayLabel__FieldLabelGroup;
@@ -1852,10 +1859,10 @@ static QString buildOrderBy(
         return result;
     } else if (!detail.table || detailType != QContactDetail::TypeUndefined) {
         return result;
-    } else {
-        qWarning() << QString::fromLatin1("UNSUPPORTED SORTING: no join and not primary table for ORDER BY in query with: %1, %2")
-                   .arg(order.detailType()).arg(order.detailField());
     }
+
+    qWarning() << QString::fromLatin1("UNSUPPORTED SORTING: no join and not primary table for ORDER BY in query with: %1, %2")
+                  .arg(order.detailType()).arg(order.detailField());
 
     return QString();
 }
@@ -2367,8 +2374,8 @@ QContactManager::Error ContactReader::readContacts(
     }
 
     const int maximumCount = fetchHint.maxCountHint();
-
     QContactManager::Error error = QContactManager::NoError;
+
     if (!m_database.createTemporaryContactIdsTable(table, join, where, orderBy, bindings, maximumCount)) {
         error = QContactManager::UnspecifiedError;
     } else {
@@ -3253,11 +3260,12 @@ QContactManager::Error ContactReader::getCollectionIdentity(
         QContactCollectionId *collectionId)
 {
     switch (identity) {
-        case ContactsDatabase::AggregateAddressbookCollectionId: // fall through
-        case ContactsDatabase::LocalAddressbookCollectionId:
-            *collectionId = ContactCollectionId::apiId(static_cast<quint32>(identity), m_managerUri);
-            break;
-        default: return QContactManager::BadArgumentError;
+    case ContactsDatabase::AggregateAddressbookCollectionId: // fall through
+    case ContactsDatabase::LocalAddressbookCollectionId:
+        *collectionId = ContactCollectionId::apiId(static_cast<quint32>(identity), m_managerUri);
+        break;
+    default:
+        return QContactManager::BadArgumentError;
     }
 
     return QContactManager::NoError;
