@@ -4984,7 +4984,7 @@ void tst_QContactManager::searchSensitivity()
     QVERIFY(m->error() == QContactManager::NoError);
     QVERIFY(!ada.id().managerUri().isEmpty());
     QVERIFY(ContactId::isValid(ada));
-    QCOMPARE(m->contactIds().count(), currCount+1);
+    QCOMPARE(m->contactIds().count(), currCount + 1);
 
     QCOMPARE(m->contactIds(exactMatch).count(), originalCount[0] + 1);
     QCOMPARE(m->contactIds(exactMismatch).count(), originalCount[1]);

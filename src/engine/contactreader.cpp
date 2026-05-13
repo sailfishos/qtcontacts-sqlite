@@ -1156,7 +1156,6 @@ static QString buildWhere(
                            || field.fieldType == LocalizedField
                            || field.fieldType == LocalizedListField;
         bool phoneNumberMatch = filter.matchFlags() & QContactFilter::MatchPhoneNumber;
-        bool fixedString = filter.matchFlags() & QContactFilter::MatchFixedString;
         bool useNormalizedNumber = false;
         int globValue = filter.matchFlags() & 7;
         if (field.fieldType == StringListField || field.fieldType == LocalizedListField) {
@@ -1164,11 +1163,10 @@ static QString buildWhere(
             globValue = QContactFilter::MatchContains;
         }
 
-        // We need to perform case-insensitive matching if MatchFixedString is specified (unless
-        // CaseSensitive is also specified)
+        // We need to perform case-insensitive matching unless CaseSensitive is specified
         bool caseInsensitive = stringField
-                               && fixedString
-                               && ((filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0);
+                               && ((filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0)
+                               && (filter.matchFlags() != QContactFilter::MatchExactly);
 
         QString clause(detail.where(queryContacts));
         QString comparison = QStringLiteral("%1");
@@ -1246,7 +1244,7 @@ static QString buildWhere(
             }
         }
 
-        if (stringField || fixedString) {
+        if (stringField || filter.matchFlags() & QContactFilter::MatchFixedString) {
             if (globValue == QContactFilter::MatchStartsWith) {
                 bindValue = bindValue + QStringLiteral("*");
                 comparison += QStringLiteral(" GLOB ?");
@@ -1321,8 +1319,8 @@ static QString buildWhere(const QContactDetailRangeFilter &filter, bool queryCon
     bool dateField = field.fieldType == DateField;
     bool stringField = field.fieldType == StringField || field.fieldType == LocalizedField;
     bool caseInsensitive = stringField
-                           && filter.matchFlags() & QContactFilter::MatchFixedString
-                           && (filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0;
+                           && (filter.matchFlags() & QContactFilter::MatchCaseSensitive) == 0
+                           && filter.matchFlags() != QContactFilter::MatchExactly;
 
     bool needsAnd = false;
     if (filter.minValue().isValid()) {
