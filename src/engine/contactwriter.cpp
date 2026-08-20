@@ -107,73 +107,6 @@ double entropy(QByteArray::const_iterator it, QByteArray::const_iterator end, si
     return entropy / 8;
 }
 
-typedef QMap<int, QVariant> DetailMap;
-
-DetailMap detailValues(const QContactDetail &detail, bool includeProvenance = true, bool includeModifiable = true)
-{
-    DetailMap rv(detail.values());
-
-    if (!includeProvenance || !includeModifiable) {
-        DetailMap::iterator it = rv.begin();
-        while (it != rv.end()) {
-            if (!includeProvenance && it.key() == QContactDetail::FieldProvenance) {
-                it = rv.erase(it);
-            } else if (!includeModifiable && it.key() == QContactDetail__FieldModifiable) {
-                it = rv.erase(it);
-            } else {
-                ++it;
-            }
-        }
-    }
-
-    return rv;
-}
-
-bool variantEqual(const QVariant &lhs, const QVariant &rhs)
-{
-    // Work around incorrect result from QVariant::operator== when variants contain QList<int>
-    static const int QListIntType = QMetaType::type("QList<int>");
-
-    const int lhsType = lhs.userType();
-    if (lhsType != rhs.userType()) {
-        return false;
-    }
-
-    if (lhsType == QListIntType) {
-        return (lhs.value<QList<int> >() == rhs.value<QList<int> >());
-    }
-    return (lhs == rhs);
-}
-
-bool detailValuesEqual(const QContactDetail &lhs, const QContactDetail &rhs)
-{
-    const DetailMap lhsValues(detailValues(lhs, false, false));
-    const DetailMap rhsValues(detailValues(rhs, false, false));
-
-    if (lhsValues.count() != rhsValues.count()) {
-        return false;
-    }
-
-    // Because of map ordering, matching fields should be in the same order in both details
-    DetailMap::const_iterator lit = lhsValues.constBegin(), lend = lhsValues.constEnd();
-    DetailMap::const_iterator rit = rhsValues.constBegin();
-    for ( ; lit != lend; ++lit, ++rit) {
-        if (lit.key() != rit.key() || !variantEqual(*lit, *rit)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-bool detailsEquivalent(const QContactDetail &lhs, const QContactDetail &rhs)
-{
-    // Same as operator== except ignores differences in certain field values
-    if (lhs.type() != rhs.type())
-        return false;
-    return detailValuesEqual(lhs, rhs);
-}
-
 }
 
 static const QString aggregateSyncTarget(QStringLiteral("aggregate"));
@@ -3998,7 +3931,10 @@ static void promoteDetailsToAggregate(const QContact &contact, QContact *aggrega
 
             bool needsPromote = true;
             foreach (const QContactDetail &ad, aggregate->details()) {
-                if (detailsEquivalent(det, ad)) {
+                if (detailPairExactlyMatches(
+                        det, ad,
+                        QtContactsSqliteExtensions::defaultIgnorableDetailFields(),
+                        QtContactsSqliteExtensions::defaultIgnorableCommonFields())) {
                     needsPromote = false;
                     break;
                 }
