@@ -100,7 +100,9 @@ QSet<int> getDefaultIgnorableCommonFields()
         QContactDetail__FieldModifiable,
         QContactDetail__FieldNonexportable,
         QContactDetail__FieldChangeFlags,
-        QContactDetail__FieldDatabaseId
+        QContactDetail__FieldDatabaseId,
+        QContactDetail__FieldCreated,
+        QContactDetail__FieldModified
     };
 }
 
