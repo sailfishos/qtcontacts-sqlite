@@ -44,7 +44,7 @@
 #include <QContactName>
 #include <QContactExtendedDetail>
 
-#define TSA_GUID_STRING(accountId, applicationName, fname, lname) QString(accountId + ":" + applicationName + ":" + fname + lname)
+#define TSA_GUID_STRING(accountId, applicationName, fname, lname) QString(QString::number(accountId) + ":" + applicationName + ":" + fname + lname)
 
 namespace {
 
