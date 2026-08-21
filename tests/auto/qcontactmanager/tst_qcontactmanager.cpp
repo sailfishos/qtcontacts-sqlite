@@ -4620,8 +4620,13 @@ void tst_QContactManager::compareVariant_data()
     QTest::newRow("datetimes dt4 = dt4") << QVariant(dt4) << QVariant(dt4) << Qt::CaseInsensitive << 0;
     QTest::newRow("datetimes dt5 = dt5") << QVariant(dt5) << QVariant(dt5) << Qt::CaseInsensitive << 0;
 
-    // Uninitialized datetime now compares as the epoch date
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
+    // Uninitialized datetime sorts before any valid datetime
+    QTest::newRow("datetimes dt0 < dt1") << QVariant(dt0) << QVariant(dt1) << Qt::CaseInsensitive << -1;
+#else
+    // Uninitialized datetime compares as the epoch date
     QTest::newRow("datetimes dt0 > dt1") << QVariant(dt0) << QVariant(dt1) << Qt::CaseInsensitive << 1;
+#endif
 }
 
 void tst_QContactManager::createCollection()
