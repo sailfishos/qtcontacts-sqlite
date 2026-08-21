@@ -41,14 +41,10 @@
 #include <QContactEmailAddress>
 #include <QContactHobby>
 
-#include "qtcontacts-extensions.h"
-#include "qtcontacts-extensions_manager_impl.h"
+#include "../../util.h"
+
 #include "qcontactdetailfetchrequest.h"
 #include "qcontactdetailfetchrequest_impl.h"
-
-QTCONTACTS_USE_NAMESPACE
-
-Q_DECLARE_METATYPE(QList<QContactId>)
 
 class tst_DetailFetchRequest : public QObject
 {
@@ -59,9 +55,6 @@ public:
     ~tst_DetailFetchRequest();
 
 public slots:
-    void initTestCase();
-    void cleanupTestCase();
-    void init();
     void cleanup();
 
 private slots:
@@ -69,7 +62,6 @@ private slots:
 
 private:
     QContactManager *m_cm;
-    QSet<QContactId> m_createdIds;
 };
 
 tst_DetailFetchRequest::tst_DetailFetchRequest()
@@ -82,47 +74,16 @@ tst_DetailFetchRequest::tst_DetailFetchRequest()
     parameters.insert(QString::fromLatin1("mergePresenceChanges"), QString::fromLatin1("true"));
     m_cm = new QContactManager(QString::fromLatin1("org.nemomobile.contacts.sqlite"), parameters);
     QTest::qWait(250); // creating self contact etc will cause some signals to be emitted.  ignore them.
-    connect(m_cm, &QContactManager::contactsAdded, [this] (const QList<QContactId> &ids) {
-        for (const QContactId &id : ids) {
-            this->m_createdIds.insert(id);
-        }
-    });
 }
 
 tst_DetailFetchRequest::~tst_DetailFetchRequest()
 {
-    QTest::qWait(250); // wait for signals.
-    if (!m_createdIds.isEmpty()) {
-        m_cm->removeContacts(m_createdIds.toList());
-        m_createdIds.clear();
-    }
     delete m_cm;
-}
-
-void tst_DetailFetchRequest::initTestCase()
-{
-}
-
-void tst_DetailFetchRequest::init()
-{
-}
-
-void tst_DetailFetchRequest::cleanupTestCase()
-{
-    QTest::qWait(250); // wait for signals.
-    if (!m_createdIds.isEmpty()) {
-        m_cm->removeContacts(m_createdIds.toList());
-        m_createdIds.clear();
-    }
 }
 
 void tst_DetailFetchRequest::cleanup()
 {
-    QTest::qWait(250); // wait for signals.
-    if (!m_createdIds.isEmpty()) {
-        m_cm->removeContacts(m_createdIds.toList());
-        m_createdIds.clear();
-    }
+    cleanupAllTestContacts(*m_cm);
 }
 
 void tst_DetailFetchRequest::testDetailFetchRequest()

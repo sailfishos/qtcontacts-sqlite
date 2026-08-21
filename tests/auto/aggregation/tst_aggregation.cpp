@@ -134,11 +134,9 @@ private:
     QSet<QContactCollectionId> m_addColAccumulatedIds;
     QSet<QContactCollectionId> m_chgColAccumulatedIds;
     QSet<QContactCollectionId> m_remColAccumulatedIds;
-    QSet<QContactCollectionId> m_createdColIds;
     QSet<QContactId> m_addAccumulatedIds;
     QSet<QContactId> m_chgAccumulatedIds;
     QSet<QContactId> m_remAccumulatedIds;
-    QSet<QContactId> m_createdIds;
 
     QByteArray aggregateAddressbookId()
     {
@@ -187,11 +185,9 @@ void tst_Aggregation::init()
     m_addColAccumulatedIds.clear();
     m_chgColAccumulatedIds.clear();
     m_remColAccumulatedIds.clear();
-    m_createdColIds.clear();
     m_addAccumulatedIds.clear();
     m_chgAccumulatedIds.clear();
     m_remAccumulatedIds.clear();
-    m_createdIds.clear();
 }
 
 void tst_Aggregation::cleanupTestCase()
@@ -200,32 +196,7 @@ void tst_Aggregation::cleanupTestCase()
 
 void tst_Aggregation::cleanup()
 {
-    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
-    QContactManager::Error err = QContactManager::NoError;
-
-    waitForSignalPropagation();
-    if (!m_createdIds.isEmpty()) {
-        // purge them one at a time, to avoid "contacts from different collections in single batch" errors.
-        for (const QContactId &cid : m_createdIds) {
-            QContact doomed = m_cm->contact(cid);
-            if (!doomed.id().isNull() && doomed.collectionId().localId() != aggregateAddressbookId()) {
-                if (!m_cm->removeContact(cid)) {
-                    qWarning() << "Failed to cleanup:" << QString::fromLatin1(cid.localId());
-                }
-                cme->clearChangeFlags(QList<QContactId>() << cid, &err);
-            }
-        }
-        m_createdIds.clear();
-    }
-    if (!m_createdColIds.isEmpty()) {
-        for (const QContactCollectionId &colId : m_createdColIds.toList()) {
-            m_cm->removeCollection(colId);
-            cme->clearChangeFlags(colId, &err);
-        }
-        m_createdColIds.clear();
-    }
-    cme->clearChangeFlags(QContactCollectionId(m_cm->managerUri(), localAddressbookId()), &err);
-    waitForSignalPropagation();
+    cleanupAllTestContacts(*m_cm);
 }
 
 void tst_Aggregation::waitForSignalPropagation()
@@ -238,7 +209,6 @@ void tst_Aggregation::addColAccumulationSlot(const QList<QContactCollectionId> &
 {
     foreach (const QContactCollectionId &id, ids) {
         m_addColAccumulatedIds.insert(id);
-        m_createdColIds.insert(id);
     }
 }
 
@@ -260,7 +230,6 @@ void tst_Aggregation::addAccumulationSlot(const QList<QContactId> &ids)
 {
     foreach (const QContactId &id, ids) {
         m_addAccumulatedIds.insert(id);
-        m_createdIds.insert(id);
     }
 }
 
