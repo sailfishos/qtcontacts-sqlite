@@ -32,6 +32,8 @@
 
 #include <time.h>
 
+#include <cstdlib>
+
 #include <QContactManager>
 #include <QContactCollection>
 #include <QContactFetchRequest>
@@ -195,12 +197,12 @@ static QStringList generateHobbiesList()
 #if QT_VERSION < QT_VERSION_CHECK(5,10,0)
 static int nextRandom()
 {
-    return qrand();
+    return std::rand();
 }
 
 static void seedRandom(int seed)
 {
-    qsrand(seed);
+    std::srand(seed);
 }
 #else
 #include <QRandomGenerator>
