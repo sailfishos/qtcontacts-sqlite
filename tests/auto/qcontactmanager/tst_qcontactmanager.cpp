@@ -54,6 +54,8 @@
 #include "../../qcontactmanagerdataholder.h"
 #include "qtcontacts-extensions.h"
 
+#include <cstdlib>
+
 #define SQLITE_MANAGER "org.nemomobile.contacts.sqlite"
 
 //TESTED_COMPONENT=src/contacts
@@ -3193,7 +3195,7 @@ void tst_QContactManager::changeSet()
 
     QList<QContactId> l1, l2;
     foreach (int n, QList<int>() << 1 << 1 << 1 << 2 << 2 << 3 << 3 << 4 << 4 << 4 << 5 << 10 << 9 << 8 << 8 << 8 << 7 << 7 << 6) {
-        ((qrand() % 2) ? l1 : l2).append(ContactId::apiId(n, QStringLiteral("tst_QContactManager::changeSet")));
+        ((std::rand() % 2) ? l1 : l2).append(ContactId::apiId(n, QStringLiteral("tst_QContactManager::changeSet")));
     }
     changeSet.clearChangedContacts();
     changeSet.insertChangedContacts(l1, QList<QContactDetail::DetailType>() << QContactName::Type << QContactBirthday::Type);
@@ -4261,8 +4263,8 @@ void tst_QContactManager::extendedDetail()
     {
         QDataStream ds(&d2, QIODevice::WriteOnly);
         for (int i = 0; i < 10; ++i) {
-            int x = qrand();
-            int y = qrand();
+            int x = std::rand();
+            int y = std::rand();
             const double q = x / (y ? y : 1);
             ds << q;
         }

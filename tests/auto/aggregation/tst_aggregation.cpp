@@ -37,6 +37,8 @@
 
 #include <QLocale>
 
+#include <cstdlib>
+
 static const QString aggregatesRelationship(relationshipString(QContactRelationship::Aggregates));
 
 namespace {
@@ -4587,12 +4589,12 @@ void tst_Aggregation::testOOB()
     QList<int> repeatingSequence;
     QList<int> randomSequence;
 
-    qsrand(0);
+    std::srand(0);
     for (int i = 0; i < 100; ++i) {
         for (int j = 0; j < 10; ++j) {
             uniqueSequence.append(i * 100 + j);
             repeatingSequence.append(j);
-            randomSequence.append(qrand());
+            randomSequence.append(std::rand());
         }
     }
 
