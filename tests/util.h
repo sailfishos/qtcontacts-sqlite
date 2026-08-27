@@ -103,6 +103,18 @@ void registerIdType()
     qRegisterMetaType<QList<QContactId> >("QList<QContactId>");
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+const char *collectionsAddedSignal = SIGNAL(collectionsAdded(QList<QtContacts::QContactCollectionId>));
+const char *collectionsChangedSignal = SIGNAL(collectionsChanged(QList<QtContacts::QContactCollectionId>));
+const char *collectionsRemovedSignal = SIGNAL(collectionsRemoved(QList<QtContacts::QContactCollectionId>));
+const char *contactsAddedSignal = SIGNAL(contactsAdded(QList<QtContacts::QContactId>));
+const char *contactsChangedSignal = SIGNAL(contactsChanged(QList<QtContacts::QContactId>, QList<QtContacts::QContactDetail::DetailType>));
+const char *contactsPresenceChangedSignal = SIGNAL(contactsPresenceChanged(QList<QtContacts::QContactId>));
+const char *contactsRemovedSignal = SIGNAL(contactsRemoved(QList<QtContacts::QContactId>));
+const char *relationshipsAddedSignal = SIGNAL(relationshipsAdded(QList<QtContacts::QContactId>));
+const char *relationshipsRemovedSignal = SIGNAL(relationshipsRemoved(QList<QtContacts::QContactId>));
+const char *selfContactIdChangedSignal = SIGNAL(selfContactIdChanged(QtContacts::QContactId,QtContacts::QContactId));
+#else
 const char *collectionsAddedSignal = SIGNAL(collectionsAdded(QList<QContactCollectionId>));
 const char *collectionsChangedSignal = SIGNAL(collectionsChanged(QList<QContactCollectionId>));
 const char *collectionsRemovedSignal = SIGNAL(collectionsRemoved(QList<QContactCollectionId>));
@@ -113,6 +125,7 @@ const char *contactsRemovedSignal = SIGNAL(contactsRemoved(QList<QContactId>));
 const char *relationshipsAddedSignal = SIGNAL(relationshipsAdded(QList<QContactId>));
 const char *relationshipsRemovedSignal = SIGNAL(relationshipsRemoved(QList<QContactId>));
 const char *selfContactIdChangedSignal = SIGNAL(selfContactIdChanged(QContactId,QContactId));
+#endif
 
 const QContactId &retrievalId(const QContactId &id) { return id; }
 
