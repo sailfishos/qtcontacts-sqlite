@@ -3196,13 +3196,13 @@ void tst_QContactManager::changeSet()
     QSet<QContactId> changedIds;
     QSet<QContactDetail::DetailType> changedTypes;
     foreach (const QContactChangeSet::ContactChangeList &changes, changeSet.changedContacts()) {
-        changedIds |= changes.second.toSet();
+        changedIds |= toSet(changes.second);
         if (changes.second.contains(id)) {
-            changedTypes |= changes.first.toSet();
+            changedTypes |= toSet(changes.first);
         }
     }
-    QCOMPARE(changedIds, (QList<QContactId>() << id).toSet());
-    QCOMPARE(changedTypes, (QList<QContactDetail::DetailType>() << QContactName::Type << QContactBirthday::Type).toSet());
+    QCOMPARE(changedIds, toSet(QList<QContactId>() << id));
+    QCOMPARE(changedTypes, toSet(QList<QContactDetail::DetailType>() << QContactName::Type << QContactBirthday::Type));
     changeSet.clearChangedContacts();
     QVERIFY(changeSet.changedContacts().isEmpty());
 
@@ -3214,7 +3214,7 @@ void tst_QContactManager::changeSet()
     changeSet.insertChangedContacts(l1, QList<QContactDetail::DetailType>() << QContactName::Type << QContactBirthday::Type);
     changeSet.insertChangedContacts(l2, QList<QContactDetail::DetailType>() << QContactBirthday::Type << QContactName::Type << QContactBirthday::Type);
     QCOMPARE(changeSet.changedContacts().size(), 1);
-    QList<QContactId> expected((l1.toSet() | l2.toSet()).toList());
+    QList<QContactId> expected((toSet(l1) | toSet(l2)).values());
     std::sort(expected.begin(), expected.end());
     QCOMPARE(changeSet.changedContacts().first().second, expected);
 
@@ -3231,7 +3231,7 @@ void tst_QContactManager::changeSet()
 
     changeSet2.clearAddedContacts();
     QVERIFY(changeSet2.addedContacts().isEmpty());
-    changeSet2.insertAddedContacts(changeSet.addedContacts().toList());
+    changeSet2.insertAddedContacts(changeSet.addedContacts().values());
     QVERIFY(changeSet.addedContacts() == changeSet2.addedContacts());
 
     changeSet2.clearAll();
@@ -3976,7 +3976,7 @@ void tst_QContactManager::familyDetail()
     QCOMPARE(a.details<QContactFamily>().count(), 1);
     f = a.details<QContactFamily>().at(0);
     QCOMPARE(f.spouse(), QLatin1String("Eve"));
-    QCOMPARE(f.children().toSet(), QSet<QString>() << "Cain" << "Abel");
+    QCOMPARE(toSet(f.children()), QSet<QString>() << "Cain" << "Abel");
 
     QCOMPARE(a.relatedContacts(QContactRelationship::Aggregates(), QContactRelationship::First).count(), 1);
 

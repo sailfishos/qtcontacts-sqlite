@@ -47,6 +47,8 @@
 
 #include <QtGlobal>
 #include <QtCore/qnumeric.h>
+#include <QSet>
+#include <QList>
 
 #include <QtContacts>
 
@@ -120,6 +122,16 @@ QContactId retrievalId(const QContact &contact)
 }
 
 QContactId removalId(const QContact &contact) { return retrievalId(contact); }
+
+template<typename T>
+QSet<T> toSet(const QList<T> &list)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
+    return QSet<T>(list.begin(), list.end());
+#else
+    return list.toSet();
+#endif
+}
 
 typedef QList<QContactDetail::DetailType> DetailList;
 
