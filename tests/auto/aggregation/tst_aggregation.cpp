@@ -170,6 +170,7 @@ tst_Aggregation::tst_Aggregation()
 
 tst_Aggregation::~tst_Aggregation()
 {
+    delete m_cm;
 }
 
 void tst_Aggregation::initTestCase()

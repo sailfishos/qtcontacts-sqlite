@@ -215,6 +215,8 @@ void tst_DetailFetchRequest::testDetailFetchRequest()
     QCOMPARE(hobbies[1].value(QContactHobby::FieldHobby).toString(), h2.hobby());
     QCOMPARE(hobbies[2].type(), QContactHobby::Type);
     QCOMPARE(hobbies[2].value(QContactHobby::FieldHobby).toString(), h1.hobby());
+
+    delete dfr;
 }
 
 QTEST_MAIN(tst_DetailFetchRequest)
