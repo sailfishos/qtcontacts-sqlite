@@ -1606,7 +1606,10 @@ QContactCollectionId ContactsEngine::defaultCollectionId() const
 
 QContactCollection ContactsEngine::collection(
         const QContactCollectionId &collectionId,
-        QContactManager::Error *error) const
+        QContactManager::Error *error)
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+        const
+#endif
 {
     const QList<QContactCollection> collections = ContactsEngine::collections(error);
 
@@ -1623,7 +1626,10 @@ QContactCollection ContactsEngine::collection(
 }
 
 QList<QContactCollection> ContactsEngine::collections(
-        QContactManager::Error *error) const
+        QContactManager::Error *error)
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+        const
+#endif
 {
     QList<QContactCollection> collections;
 
