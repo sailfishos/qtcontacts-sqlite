@@ -101,6 +101,67 @@ void registerIdType()
     qRegisterMetaType<QList<QContactId> >("QList<QContactId>");
 }
 
+void removeTestContacts(QContactManager &cm,
+                        const QSet<QContactId> &contactIds,
+                        const QSet<QContactCollectionId> &collectionIds)
+{
+    QtContactsSqliteExtensions::ContactManagerEngine *cme
+            = QtContactsSqliteExtensions::contactManagerEngine(cm);
+    QContactManager::Error err = QContactManager::NoError;
+    const QByteArray aggregateId
+            = QtContactsSqliteExtensions::aggregateCollectionId(cm.managerUri()).localId();
+
+    // purge them one at a time, to avoid "contacts from different collections in single batch" errors.
+    for (const QContactId &cid : contactIds) {
+        const QContact doomed = cm.contact(cid);
+        if (!doomed.id().isNull() && doomed.collectionId().localId() != aggregateId) {
+            if (!cm.removeContact(cid)) {
+                qWarning() << "Failed to cleanup:" << QString::fromLatin1(cid.localId());
+            }
+            cme->clearChangeFlags(QList<QContactId>() << cid, &err);
+        }
+    }
+    for (const QContactCollectionId &colId : collectionIds) {
+        cm.removeCollection(colId);
+        cme->clearChangeFlags(colId, &err);
+    }
+    cme->clearChangeFlags(QtContactsSqliteExtensions::localCollectionId(cm.managerUri()), &err);
+}
+
+void cleanupAllTestContacts(QContactManager &cm)
+{
+    // These are auto-created and cannot be deleted
+    const QContactCollectionId aggregateCollection
+            = QtContactsSqliteExtensions::aggregateCollectionId(cm.managerUri());
+    const QContactCollectionId localCollection
+            = QtContactsSqliteExtensions::localCollectionId(cm.managerUri());
+    const QContactId selfContactId = cm.selfContactId();
+
+    // Find any other contact/collection ids that were created by the test
+    QSet<QContactId> contactIds;
+    QSet<QContactCollectionId> collectionIds;
+    const QList<QContactCollection> collections = cm.collections();
+    for (const QContactCollection &col : collections) {
+        if (col.id() != aggregateCollection) {
+            QContactCollectionFilter filter;
+            filter.setCollectionId(col.id());
+            for (const QContactId &id : cm.contactIds(filter)) {
+                if (id != selfContactId) {
+                    contactIds.insert(id);
+                }
+            }
+        }
+        if (col.id() != aggregateCollection && col.id() != localCollection) {
+            collectionIds.insert(col.id());
+        }
+    }
+
+    removeTestContacts(cm, contactIds, collectionIds);
+
+    // Make sure all signals are propagated
+    QTest::qWait(100);
+}
+
 const char *collectionsAddedSignal = SIGNAL(collectionsAdded(QList<QContactCollectionId>));
 const char *collectionsChangedSignal = SIGNAL(collectionsChanged(QList<QContactCollectionId>));
 const char *collectionsRemovedSignal = SIGNAL(collectionsRemoved(QList<QContactCollectionId>));
