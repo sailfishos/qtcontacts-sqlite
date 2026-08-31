@@ -110,6 +110,7 @@ tst_synctransactions::tst_synctransactions()
 
 tst_synctransactions::~tst_synctransactions()
 {
+    delete m_cm;
 }
 
 void tst_synctransactions::initTestCase()
@@ -1221,7 +1222,7 @@ void tst_synctransactions::syncRequests()
         QHash<QContactCollection, QList<QContact> > additions;
         additions.insert(remoteAddressbook, addedCollectionContacts);
 
-        QContactChangesSaveRequest *csr = new QContactChangesSaveRequest;
+        QContactChangesSaveRequest *csr = new QContactChangesSaveRequest(m_cm);
         csr->setManager(m_cm);
         csr->setAddedCollections(additions);
         csr->setClearChangeFlags(true);
@@ -1283,7 +1284,7 @@ void tst_synctransactions::syncRequests()
     {
         // now perform a second sync cycle.
         // first, retrieve local collection metadata changes we need to push to remote server.
-        QContactCollectionChangesFetchRequest *ccfr = new QContactCollectionChangesFetchRequest;
+        QContactCollectionChangesFetchRequest *ccfr = new QContactCollectionChangesFetchRequest(m_cm);
         ccfr->setManager(m_cm);
         ccfr->setApplicationName(QStringLiteral("tst_synctransactions"));
         ccfr->start();
@@ -1296,7 +1297,7 @@ void tst_synctransactions::syncRequests()
         QCOMPARE(ccfr->unmodifiedCollections().first().id(), remoteAddressbookId);
 
         // second, retrieve local contact changes we need to push to the remote server.
-        QContactChangesFetchRequest *cfr = new QContactChangesFetchRequest;
+        QContactChangesFetchRequest *cfr = new QContactChangesFetchRequest(m_cm);
         cfr->setManager(m_cm);
         cfr->setCollectionId(remoteAddressbookId);
         cfr->start();
@@ -1344,7 +1345,7 @@ void tst_synctransactions::syncRequests()
         QHash<QContactCollection, QList<QContact> > modifications;
         modifications.insert(remoteAddressbook, QList<QContact>() << syncAlice << syncCharlie);
 
-        QContactChangesSaveRequest *csr = new QContactChangesSaveRequest;
+        QContactChangesSaveRequest *csr = new QContactChangesSaveRequest(m_cm);
         csr->setManager(m_cm);
         csr->setClearChangeFlags(true);
         csr->setModifiedCollections(modifications);
@@ -1370,7 +1371,7 @@ void tst_synctransactions::syncRequests()
         // there should be no local changes reported since the last clearChangeFlags()
         // (in this case, since the last storeChanges() call).
         // first, retrieve local collection metadata changes we need to push to remote server.
-        QContactCollectionChangesFetchRequest *ccfr = new QContactCollectionChangesFetchRequest;
+        QContactCollectionChangesFetchRequest *ccfr = new QContactCollectionChangesFetchRequest(m_cm);
         ccfr->setManager(m_cm);
         ccfr->setApplicationName(QStringLiteral("tst_synctransactions"));
         ccfr->start();
@@ -1383,7 +1384,7 @@ void tst_synctransactions::syncRequests()
         QCOMPARE(ccfr->unmodifiedCollections().first().id(), remoteAddressbookId);
 
         // second, retrieve local contact changes we need to push to the remote server.
-        QContactChangesFetchRequest *cfr = new QContactChangesFetchRequest;
+        QContactChangesFetchRequest *cfr = new QContactChangesFetchRequest(m_cm);
         cfr->setManager(m_cm);
         cfr->setCollectionId(remoteAddressbookId);
         cfr->start();
@@ -1397,7 +1398,7 @@ void tst_synctransactions::syncRequests()
 
         // third, report remote changes and store locally
         // in this case, we simulate remote deletion of the entire collection.
-        QContactChangesSaveRequest *csr = new QContactChangesSaveRequest;
+        QContactChangesSaveRequest *csr = new QContactChangesSaveRequest(m_cm);
         csr->setManager(m_cm);
         csr->setClearChangeFlags(true);
         csr->setRemovedCollections(QList<QContactCollectionId>() << remoteAddressbookId);

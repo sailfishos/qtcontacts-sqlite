@@ -55,6 +55,8 @@
 #include <QUuid>
 #include <QDataStream>
 
+#include <memory>
+
 #include <QContactCollection>
 #include <QContact>
 #include <QContactAbstractRequest>
@@ -92,19 +94,19 @@ public:
         ContactsDatabase &database;
         ContactNotifier &notifier;
         ContactReader &reader;
-        mutable ContactWriter *writer;
+        mutable std::unique_ptr<ContactWriter> writer;
 
         WriterProxy(ContactsEngine &e, ContactsDatabase &db, ContactNotifier &n, ContactReader &r)
-            : engine(e), database(db), notifier(n), reader(r), writer(0)
+            : engine(e), database(db), notifier(n), reader(r)
         {
         }
 
         ContactWriter *operator->() const
         {
             if (!writer) {
-                writer = new ContactWriter(engine, database, &notifier, &reader);
+                writer.reset(new ContactWriter(engine, database, &notifier, &reader));
             }
-            return writer;
+            return writer.get();
         }
     };
 
