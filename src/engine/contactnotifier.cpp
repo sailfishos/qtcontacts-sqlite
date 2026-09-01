@@ -46,17 +46,19 @@
 #define NOTIFIER_PATH "/org/nemomobile/contacts/sqlite"
 #define NOTIFIER_INTERFACE "org.nemomobile.contacts.sqlite"
 
-Q_DECLARE_METATYPE(QVector<quint32>)
-
 namespace {
 
-bool initialized = false;
 void initialize()
 {
-    if (!initialized) {
-        initialized = true;
-        qDBusRegisterMetaType<QVector<quint32> >();
-    }
+    // Static local initialization is guaranteed to be thread-safe
+    static const bool initialized = []() {
+        // Qt needs to know "QVector<quint32>" is an alias for "QVector<uint>"
+        // as that type string ends up in the generated moc_ files.
+        qRegisterMetaType<QVector<quint32>>("QVector<quint32>");
+        qDBusRegisterMetaType<QVector<quint32>>();
+        return true;
+    }();
+    Q_UNUSED(initialized)
 }
 
 QString pathName()
@@ -232,7 +234,7 @@ bool ContactNotifier::connect(const char *name, const char *signature, QObject *
                             QLatin1String(signature),
                             receiver,
                             slot)) {
-        QTCONTACTS_SQLITE_DEBUG(QString::fromLatin1("Unable to connect DBUS signal: %1").arg(name));
+        QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Unable to connect DBUS signal: %1").arg(name));
         return false;
     }
 
