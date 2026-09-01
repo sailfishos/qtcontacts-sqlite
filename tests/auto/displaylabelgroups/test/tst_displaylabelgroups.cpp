@@ -93,7 +93,7 @@ tst_DisplayLabelGroups::~tst_DisplayLabelGroups()
 {
     QTest::qWait(250); // wait for signals.
     if (!m_createdIds.isEmpty()) {
-        m_cm->removeContacts(m_createdIds.toList());
+        m_cm->removeContacts(m_createdIds.values());
         m_createdIds.clear();
     }
     delete m_cm;
@@ -111,7 +111,7 @@ void tst_DisplayLabelGroups::cleanupTestCase()
 {
     QTest::qWait(250); // wait for signals.
     if (!m_createdIds.isEmpty()) {
-        m_cm->removeContacts(m_createdIds.toList());
+        m_cm->removeContacts(m_createdIds.values());
         m_createdIds.clear();
     }
 }
@@ -120,7 +120,7 @@ void tst_DisplayLabelGroups::cleanup()
 {
     QTest::qWait(250); // wait for signals.
     if (!m_createdIds.isEmpty()) {
-        m_cm->removeContacts(m_createdIds.toList());
+        m_cm->removeContacts(m_createdIds.values());
         m_createdIds.clear();
     }
 }

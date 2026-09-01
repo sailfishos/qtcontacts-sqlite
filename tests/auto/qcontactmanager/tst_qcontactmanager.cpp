@@ -54,6 +54,8 @@
 #include "../../qcontactmanagerdataholder.h"
 #include "qtcontacts-extensions.h"
 
+#include <cstdlib>
+
 #define SQLITE_MANAGER "org.nemomobile.contacts.sqlite"
 
 //TESTED_COMPONENT=src/contacts
@@ -3194,25 +3196,25 @@ void tst_QContactManager::changeSet()
     QSet<QContactId> changedIds;
     QSet<QContactDetail::DetailType> changedTypes;
     foreach (const QContactChangeSet::ContactChangeList &changes, changeSet.changedContacts()) {
-        changedIds |= changes.second.toSet();
+        changedIds |= toSet(changes.second);
         if (changes.second.contains(id)) {
-            changedTypes |= changes.first.toSet();
+            changedTypes |= toSet(changes.first);
         }
     }
-    QCOMPARE(changedIds, (QList<QContactId>() << id).toSet());
-    QCOMPARE(changedTypes, (QList<QContactDetail::DetailType>() << QContactName::Type << QContactBirthday::Type).toSet());
+    QCOMPARE(changedIds, toSet(QList<QContactId>() << id));
+    QCOMPARE(changedTypes, toSet(QList<QContactDetail::DetailType>() << QContactName::Type << QContactBirthday::Type));
     changeSet.clearChangedContacts();
     QVERIFY(changeSet.changedContacts().isEmpty());
 
     QList<QContactId> l1, l2;
     foreach (int n, QList<int>() << 1 << 1 << 1 << 2 << 2 << 3 << 3 << 4 << 4 << 4 << 5 << 10 << 9 << 8 << 8 << 8 << 7 << 7 << 6) {
-        ((qrand() % 2) ? l1 : l2).append(ContactId::apiId(n, QStringLiteral("tst_QContactManager::changeSet")));
+        ((std::rand() % 2) ? l1 : l2).append(ContactId::apiId(n, QStringLiteral("tst_QContactManager::changeSet")));
     }
     changeSet.clearChangedContacts();
     changeSet.insertChangedContacts(l1, QList<QContactDetail::DetailType>() << QContactName::Type << QContactBirthday::Type);
     changeSet.insertChangedContacts(l2, QList<QContactDetail::DetailType>() << QContactBirthday::Type << QContactName::Type << QContactBirthday::Type);
     QCOMPARE(changeSet.changedContacts().size(), 1);
-    QList<QContactId> expected((l1.toSet() | l2.toSet()).toList());
+    QList<QContactId> expected((toSet(l1) | toSet(l2)).values());
     std::sort(expected.begin(), expected.end());
     QCOMPARE(changeSet.changedContacts().first().second, expected);
 
@@ -3229,7 +3231,7 @@ void tst_QContactManager::changeSet()
 
     changeSet2.clearAddedContacts();
     QVERIFY(changeSet2.addedContacts().isEmpty());
-    changeSet2.insertAddedContacts(changeSet.addedContacts().toList());
+    changeSet2.insertAddedContacts(changeSet.addedContacts().values());
     QVERIFY(changeSet.addedContacts() == changeSet2.addedContacts());
 
     changeSet2.clearAll();
@@ -3974,7 +3976,7 @@ void tst_QContactManager::familyDetail()
     QCOMPARE(a.details<QContactFamily>().count(), 1);
     f = a.details<QContactFamily>().at(0);
     QCOMPARE(f.spouse(), QLatin1String("Eve"));
-    QCOMPARE(f.children().toSet(), QSet<QString>() << "Cain" << "Abel");
+    QCOMPARE(toSet(f.children()), QSet<QString>() << "Cain" << "Abel");
 
     QCOMPARE(a.relatedContacts(QContactRelationship::Aggregates(), QContactRelationship::First).count(), 1);
 
@@ -4274,8 +4276,8 @@ void tst_QContactManager::extendedDetail()
     {
         QDataStream ds(&d2, QIODevice::WriteOnly);
         for (int i = 0; i < 10; ++i) {
-            int x = qrand();
-            int y = qrand();
+            int x = std::rand();
+            int y = std::rand();
             const double q = x / (y ? y : 1);
             ds << q;
         }
@@ -4620,8 +4622,13 @@ void tst_QContactManager::compareVariant_data()
     QTest::newRow("datetimes dt4 = dt4") << QVariant(dt4) << QVariant(dt4) << Qt::CaseInsensitive << 0;
     QTest::newRow("datetimes dt5 = dt5") << QVariant(dt5) << QVariant(dt5) << Qt::CaseInsensitive << 0;
 
-    // Uninitialized datetime now compares as the epoch date
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
+    // Uninitialized datetime sorts before any valid datetime
+    QTest::newRow("datetimes dt0 < dt1") << QVariant(dt0) << QVariant(dt1) << Qt::CaseInsensitive << -1;
+#else
+    // Uninitialized datetime compares as the epoch date
     QTest::newRow("datetimes dt0 > dt1") << QVariant(dt0) << QVariant(dt1) << Qt::CaseInsensitive << 1;
+#endif
 }
 
 void tst_QContactManager::createCollection()

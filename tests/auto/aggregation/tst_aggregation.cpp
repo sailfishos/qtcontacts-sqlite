@@ -37,16 +37,11 @@
 
 #include <QLocale>
 
+#include <cstdlib>
+
 static const QString aggregatesRelationship(relationshipString(QContactRelationship::Aggregates));
 
 namespace {
-
-static const char *addedColAccumulationSlot = SLOT(addColAccumulationSlot(QList<QContactCollectionId>));
-static const char *changedColAccumulationSlot = SLOT(chgColAccumulationSlot(QList<QContactCollectionId>));
-static const char *removedColAccumulationSlot = SLOT(remColAccumulationSlot(QList<QContactCollectionId>));
-static const char *addedAccumulationSlot = SLOT(addAccumulationSlot(QList<QContactId>));
-static const char *changedAccumulationSlot = SLOT(chgAccumulationSlot(QList<QContactId>));
-static const char *removedAccumulationSlot = SLOT(remAccumulationSlot(QList<QContactId>));
 
 QString detailProvenance(const QContactDetail &detail)
 {
@@ -160,12 +155,12 @@ tst_Aggregation::tst_Aggregation()
     m_cm = new QContactManager(QString::fromLatin1("org.nemomobile.contacts.sqlite"), parameters);
 
     QTest::qWait(250); // creating self contact etc will cause some signals to be emitted.  ignore them.
-    connect(m_cm, collectionsAddedSignal, this, addedColAccumulationSlot);
-    connect(m_cm, collectionsChangedSignal, this, changedColAccumulationSlot);
-    connect(m_cm, collectionsRemovedSignal, this, removedColAccumulationSlot);
-    connect(m_cm, contactsAddedSignal, this, addedAccumulationSlot);
-    connect(m_cm, contactsChangedSignal, this, changedAccumulationSlot);
-    connect(m_cm, contactsRemovedSignal, this, removedAccumulationSlot);
+    connect(m_cm, &QContactManager::collectionsAdded, this, &tst_Aggregation::addColAccumulationSlot);
+    connect(m_cm, &QContactManager::collectionsChanged, this, &tst_Aggregation::chgColAccumulationSlot);
+    connect(m_cm, &QContactManager::collectionsRemoved, this, &tst_Aggregation::remColAccumulationSlot);
+    connect(m_cm, &QContactManager::contactsAdded, this, &tst_Aggregation::addAccumulationSlot);
+    connect(m_cm, &QContactManager::contactsChanged, this, &tst_Aggregation::chgAccumulationSlot);
+    connect(m_cm, &QContactManager::contactsRemoved, this, &tst_Aggregation::remAccumulationSlot);
 }
 
 tst_Aggregation::~tst_Aggregation()
@@ -4618,12 +4613,12 @@ void tst_Aggregation::testOOB()
     QList<int> repeatingSequence;
     QList<int> randomSequence;
 
-    qsrand(0);
+    std::srand(0);
     for (int i = 0; i < 100; ++i) {
         for (int j = 0; j < 10; ++j) {
             uniqueSequence.append(i * 100 + j);
             repeatingSequence.append(j);
-            randomSequence.append(qrand());
+            randomSequence.append(std::rand());
         }
     }
 

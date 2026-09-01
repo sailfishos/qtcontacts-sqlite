@@ -34,13 +34,15 @@
 #include <QDateTime>
 #include <QElapsedTimer>
 
+#include <cstdlib>
+
 #include "deltasyncadapter.h"
 #include "../../util.h"
 
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
-    qsrand(42); // we want consistent runs, with comparable phone numbers.
+    std::srand(42); // we want consistent runs, with comparable phone numbers.
 
     QString accountId(QStringLiteral("1"));
     DeltaSyncAdapter dsa(accountId);
