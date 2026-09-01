@@ -1,0 +1,8 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(Qt@QT_VERSION_MAJOR@ COMPONENTS Contacts)
+
+include("${CMAKE_CURRENT_LIST_DIR}/@EXTENSIONS_CMAKE_NAME@Targets.cmake")
+
+check_required_components(@EXTENSIONS_CMAKE_NAME@)

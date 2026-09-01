@@ -1,0 +1,7 @@
+includedir=@CMAKE_INSTALL_FULL_INCLUDEDIR@/@EXTENSIONS_NAME@
+
+Name: @EXTENSIONS_NAME@
+Description: QtContacts extensions implemented by qtcontacts-sqlite-qt@QT_VERSION_MAJOR@
+Version: @PROJECT_VERSION@
+Requires: Qt@QT_VERSION_MAJOR@Contacts
+Cflags:  -I${includedir}
