@@ -56,13 +56,7 @@ public:
 
 public slots:
     void initTestCase();
-    void cleanupTestCase();
-    void init();
     void cleanup();
-
-public slots:
-    void addColAccumulationSlot(const QList<QContactCollectionId> &ids);
-    void addAccumulationSlot(const QList<QContactId> &ids);
 
 private slots:
     void singleCollection_noContacts();
@@ -81,8 +75,6 @@ private:
     void waitForSignalPropagation();
 
     QContactManager *m_cm;
-    QSet<QContactCollectionId> m_createdColIds;
-    QSet<QContactId> m_createdIds;
 
     QByteArray aggregateAddressbookId()
     {
@@ -104,8 +96,6 @@ tst_synctransactions::tst_synctransactions()
     m_cm = new QContactManager(QString::fromLatin1("org.nemomobile.contacts.sqlite"), parameters);
 
     QTest::qWait(250); // creating self contact etc will cause some signals to be emitted.  ignore them.
-    QObject::connect(m_cm, &QContactManager::collectionsAdded, this, &tst_synctransactions::addColAccumulationSlot);
-    QObject::connect(m_cm, &QContactManager::contactsAdded, this, &tst_synctransactions::addAccumulationSlot);
 }
 
 tst_synctransactions::~tst_synctransactions()
@@ -123,64 +113,15 @@ void tst_synctransactions::initTestCase()
     waitForSignalPropagation();
 }
 
-void tst_synctransactions::init()
-{
-    m_createdColIds.clear();
-    m_createdIds.clear();
-}
-
-void tst_synctransactions::cleanupTestCase()
-{
-}
-
 void tst_synctransactions::cleanup()
 {
-    QContactManager::Error err = QContactManager::NoError;
-    QtContactsSqliteExtensions::ContactManagerEngine *cme = QtContactsSqliteExtensions::contactManagerEngine(*m_cm);
-
-    waitForSignalPropagation();
-    if (!m_createdIds.isEmpty()) {
-        // purge them one at a time, to avoid "contacts from different collections in single batch" errors.
-        for (const QContactId &cid : m_createdIds) {
-            QContact doomed = m_cm->contact(cid);
-            if (!doomed.id().isNull() && doomed.collectionId().localId() != aggregateAddressbookId()) {
-                if (!m_cm->removeContact(cid)) {
-                    qWarning() << "Failed to cleanup:" << QString::fromLatin1(cid.localId());
-                }
-                cme->clearChangeFlags(QList<QContactId>() << cid, &err);
-            }
-        }
-        m_createdIds.clear();
-    }
-    if (!m_createdColIds.isEmpty()) {
-        for (const QContactCollectionId &colId : m_createdColIds.toList()) {
-            m_cm->removeCollection(colId);
-            cme->clearChangeFlags(colId, &err);
-        }
-        m_createdColIds.clear();
-    }
-    cme->clearChangeFlags(QContactCollectionId(m_cm->managerUri(), localAddressbookId()), &err);
-    waitForSignalPropagation();
+    cleanupAllTestContacts(*m_cm);
 }
 
 void tst_synctransactions::waitForSignalPropagation()
 {
     // Signals are routed via DBUS, so we need to wait for them to arrive
     QTest::qWait(50);
-}
-
-void tst_synctransactions::addColAccumulationSlot(const QList<QContactCollectionId> &ids)
-{
-    foreach (const QContactCollectionId &id, ids) {
-        m_createdColIds.insert(id);
-    }
-}
-
-void tst_synctransactions::addAccumulationSlot(const QList<QContactId> &ids)
-{
-    foreach (const QContactId &id, ids) {
-        m_createdIds.insert(id);
-    }
 }
 
 void tst_synctransactions::singleCollection_noContacts()

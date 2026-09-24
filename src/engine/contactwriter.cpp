@@ -812,6 +812,18 @@ QContactManager::Error ContactWriter::removeCollection(const QContactCollectionI
         return QContactManager::UnspecifiedError;
     }
 
+    // Make sure no contacts for this collection are left in the database
+    const QString removeCollectionContactsStatement(QStringLiteral(
+        "DELETE FROM Contacts WHERE collectionId = :collectionId %1"
+    ).arg(onlyIfFlagged ? QStringLiteral("AND collectionId IN (SELECT collectionId FROM Collections WHERE changeFlags >= 4)")
+                        : QString())); // ChangeFlags::IsDeleted
+    ContactsDatabase::Query removeContactRows(m_database.prepare(removeCollectionContactsStatement));
+    removeContactRows.bindValue(QStringLiteral(":collectionId"), ContactCollectionId::databaseId(collectionId));
+    if (!ContactsDatabase::execute(removeContactRows)) {
+        removeContactRows.reportError("Failed to remove collection contacts");
+        return QContactManager::UnspecifiedError;
+    }
+
     const QString removeCollectionStatement(QStringLiteral(
         " DELETE FROM Collections WHERE collectionId = :collectionId %1"
     ).arg(onlyIfFlagged ? QStringLiteral("AND changeFlags >= 4")

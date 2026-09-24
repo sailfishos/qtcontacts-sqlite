@@ -370,20 +370,7 @@ void tst_QContactManager::cleanup()
 
     QScopedPointer<QContactManager> cm(QContactManager::fromUri(mgrUri));
     if (cm) {
-        QList<QContact> contacts = cm->contacts();
-        for (const QContact &c : contacts) {
-            if (c.id().localId() != QByteArrayLiteral("sql-1")
-                    && c.id().localId() != QByteArrayLiteral("sql-2")) {
-                cm->removeContact(c.id());
-            }
-        }
-        QList<QContactCollection> collections = cm->collections();
-        for (const QContactCollection &c : collections) {
-            if (c.id().localId() != QByteArrayLiteral("col-1")
-                    && c.id().localId() != QByteArrayLiteral("col-2")) {
-                cm->removeCollection(c.id());
-            }
-        }
+        cleanupAllTestContacts(*cm);
     }
 }
 
