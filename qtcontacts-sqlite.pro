@@ -4,10 +4,10 @@ SUBDIRS = \
         tests
 OTHER_FILES += rpm/qtcontacts-sqlite-qt5.spec
 
-packagesExist(gsettings-qt) {
+!packagesExist(mlite5):packagesExist(gsettings-qt) {
     schemas.path = $${PREFIX}/share/glib-2.0/schemas
     schemas.files = schemas/org.nemomobile.contacts.gschema.xml
-    
+
     INSTALLS += schemas
 }
 

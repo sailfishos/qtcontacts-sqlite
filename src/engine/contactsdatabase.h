@@ -37,10 +37,10 @@
 #include "contactstransientstore.h"
 #include "../extensions/displaylabelgroupgenerator.h"
 
-#ifdef HAS_MLITE
+#ifdef USE_MLITE
 #include <mdconfitem.h>
 #endif
-#ifdef HAS_GSETTINGS
+#ifdef USE_GSETTINGS_QT
 #include <QGSettings>
 #endif
 
@@ -211,12 +211,12 @@ private:
     QVector<QtContactsSqliteExtensions::DisplayLabelGroupGenerator*> m_dlgGenerators;
     QScopedPointer<QtContactsSqliteExtensions::DisplayLabelGroupGenerator> m_defaultGenerator;
     QMap<QString, int> m_knownDisplayLabelGroupsSortValues;
-#ifdef HAS_MLITE
+#ifdef USE_MLITE
     MDConfItem m_groupPropertyConf;
-#endif // HAS_MLITE
-#ifdef HAS_GSETTINGS
+#endif // USE_MLITE
+#ifdef USE_GSETTINGS_QT
     QGSettings *m_groupPropertyConf;
-#endif // HAS_GSETTINGS
+#endif // USE_GSETTINGS_QT
 };
 
 #endif
