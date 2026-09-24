@@ -100,7 +100,9 @@ QSet<int> getDefaultIgnorableCommonFields()
         QContactDetail__FieldModifiable,
         QContactDetail__FieldNonexportable,
         QContactDetail__FieldChangeFlags,
-        QContactDetail__FieldDatabaseId
+        QContactDetail__FieldDatabaseId,
+        QContactDetail__FieldCreated,
+        QContactDetail__FieldModified
     };
 }
 
@@ -367,10 +369,10 @@ void constructModification(const QContactDetail &old, QContactDetail *update)
     for (int field : oldValues.keys()) {
         if (field == QContactDetail__FieldDatabaseId
                 || (!values.contains(field)
-                    && field == QContactDetail__FieldModifiable
-                    && field == QContactDetail::FieldProvenance
-                    && field == QContactDetail::FieldDetailUri
-                    && field == QContactDetail::FieldLinkedDetailUris)) {
+                    && (field == QContactDetail__FieldModifiable
+                        || field == QContactDetail::FieldProvenance
+                        || field == QContactDetail::FieldDetailUri
+                        || field == QContactDetail::FieldLinkedDetailUris))) {
             update->setValue(field, oldValues.value(field));
         }
     }
