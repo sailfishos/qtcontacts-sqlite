@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.nemomobile.contacts" path="/org/nemomobile/contacts/">
+    <key name="group-property" type="s">
+      <summary>Contact group property</summary>
+      <description>Allow to group contact by property.</description>
+      <default>"firstName"</default>
+    </key>
+    <key name="display-label-order" type="i">
+      <summary>Contact displayLabel policy</summary>
+      <description>Allow to change display label structure, 0=FirstName First, 1=LastName First.</description>
+      <default>0</default>
+    </key>
+    <key name="sort-property" type="s">
+      <summary>Contact property sort</summary>
+      <description>Allow sorting contact by a property.</description>
+      <default>"firstName"</default>
+    </key>
+  </schema>
+</schemalist>

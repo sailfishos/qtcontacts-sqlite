@@ -40,6 +40,9 @@
 #ifdef HAS_MLITE
 #include <mdconfitem.h>
 #endif
+#ifdef HAS_GSETTINGS
+#include <QGSettings>
+#endif
 
 #include <QHash>
 #include <QMutex>
@@ -211,6 +214,9 @@ private:
 #ifdef HAS_MLITE
     MDConfItem m_groupPropertyConf;
 #endif // HAS_MLITE
+#ifdef HAS_GSETTINGS
+    QGSettings *m_groupPropertyConf;
+#endif // HAS_GSETTINGS
 };
 
 #endif

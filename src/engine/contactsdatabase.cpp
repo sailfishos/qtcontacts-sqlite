@@ -2313,7 +2313,7 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
         }
     }
 
-#ifndef HAS_MLITE
+#if !defined(HAS_MLITE) && !defined(HAS_GSETTINGS)
     bool sameGroupProperty = true;
 #else
     // also determine if the current system setting for deriving the group from the first vs last
@@ -3276,6 +3276,9 @@ ContactsDatabase::ContactsDatabase(ContactsEngine *engine)
 #ifdef HAS_MLITE
     , m_groupPropertyConf(QStringLiteral("/org/nemomobile/contacts/group_property"))
 #endif // HAS_MLITE
+#ifdef HAS_GSETTINGS
+    , m_groupPropertyConf(new QGSettings("org.nemomobile.contacts", "/org/nemomobile/contacts/"))
+#endif // HAS_GSETTINGS
 {
 #ifdef HAS_MLITE
     QObject::connect(&m_groupPropertyConf, &MDConfItem::valueChanged, [this, engine] {
@@ -3287,6 +3290,19 @@ ContactsDatabase::ContactsDatabase(ContactsEngine *engine)
         QMetaObject::invokeMethod(engine, "dataChanged", Qt::QueuedConnection);
     });
 #endif // HAS_MLITE
+#ifdef HAS_GSETTINGS
+    QObject::connect(m_groupPropertyConf, &QGSettings::changed, [this, engine](const QString &key) {
+        if (key == QLatin1String("groupProperty")) {
+            qDebug() << "group-property changed, regenerate display Label group";
+            this->regenerateDisplayLabelGroups();
+            // expensive, but if we don't do it, in multi-process case some clients may not get updated...
+            // if contacts backend were daemonised, this problem would go away...
+            // Emit some engine signals asynchronously.
+            QMetaObject::invokeMethod(engine, "_q_displayLabelGroupsChanged", Qt::QueuedConnection);
+            QMetaObject::invokeMethod(engine, "dataChanged", Qt::QueuedConnection);
+        }
+    });
+#endif
 }
 
 ContactsDatabase::~ContactsDatabase()
@@ -3489,6 +3505,8 @@ bool ContactsDatabase::open(const QString &connectionName, bool nonprivileged, b
             return false;
         }
     }
+
+
 
     // Attach to the transient store - any process can create it, but only the primary connection of each
     if (!m_transientStore.open(nonprivileged, !secondaryConnection, !databasePreexisting)) {
@@ -3914,8 +3932,16 @@ void ContactsDatabase::regenerateDisplayLabelGroups()
 QString ContactsDatabase::displayLabelGroupPreferredProperty() const
 {
     QString retn(QStringLiteral("QContactName::FieldFirstName"));
+
+
 #ifdef HAS_MLITE
     const QVariant groupPropertyConf = m_groupPropertyConf.value();
+#endif
+#ifdef HAS_GSETTINGS
+    const QVariant groupPropertyConf = m_groupPropertyConf->get(QStringLiteral("group-property"));
+#endif
+
+#if defined(HAS_MLITE) || defined(HAS_GSETTINGS)
     if (groupPropertyConf.isValid()) {
         const QString gpcString = groupPropertyConf.toString();
         if (gpcString.compare(QStringLiteral("FirstName"), Qt::CaseInsensitive) == 0) {
