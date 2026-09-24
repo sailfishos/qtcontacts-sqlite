@@ -12,11 +12,8 @@ CONFIG += plugin hide_symbols
 PLUGIN_TYPE=contacts
 DESTDIR=$${PLUGIN_TYPE}
 
-packagesExist(mlite5) {
-    PKGCONFIG += mlite5
-    # The `DEFINES` directive is already set in `config.pri`
-} else {
-    warning("mlite not available. Display label groups will be generated from last name.")
+!contains(DEFINES, USE_MLITE):!contains(DEFINES, USE_GSETTINGS_QT) {
+    warning("Neither mlite nor gsettings-qt is available. Display label groups will be generated from last name.")
 }
 
 # This should be passed on qmake command line

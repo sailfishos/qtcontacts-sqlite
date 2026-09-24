@@ -7,8 +7,11 @@ CONFIG += \
 PKGCONFIG += Qt5Contacts
 
 packagesExist(mlite5) {
-    DEFINES += HAS_MLITE
+    DEFINES += USE_MLITE
     PKGCONFIG += mlite5
+} else:packagesExist(gsettings-qt) {
+    PKGCONFIG += gsettings-qt
+    DEFINES += USE_GSETTINGS_QT
 }
 
 DEFINES += CONTACTS_DATABASE_PATH=\"\\\"$$[QT_INSTALL_LIBS]/qtcontacts-sqlite-qt5/\\\"\"

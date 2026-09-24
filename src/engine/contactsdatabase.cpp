@@ -2313,7 +2313,7 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
         }
     }
 
-#ifndef HAS_MLITE
+#if !defined(USE_MLITE) && !defined(USE_GSETTINGS_QT)
     bool sameGroupProperty = true;
 #else
     // also determine if the current system setting for deriving the group from the first vs last
@@ -2365,7 +2365,7 @@ static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &databas
             return false;
         }
     }
-#endif // HAS_MLITE
+#endif // USE_MLITE
 
     if (sameLocale && sameGroupProperty) {
         // no need to update the previously generated display label groups.
@@ -3273,11 +3273,14 @@ ContactsDatabase::ContactsDatabase(ContactsEngine *engine)
     , m_autoTest(false)
     , m_localeName(QLocale().name())
     , m_defaultGenerator(new DefaultDlgGenerator)
-#ifdef HAS_MLITE
+#ifdef USE_MLITE
     , m_groupPropertyConf(QStringLiteral("/org/nemomobile/contacts/group_property"))
-#endif // HAS_MLITE
+#endif // USE_MLITE
+#ifdef USE_GSETTINGS_QT
+    , m_groupPropertyConf(new QGSettings("org.nemomobile.contacts", "/org/nemomobile/contacts/"))
+#endif // USE_GSETTINGS_QT
 {
-#ifdef HAS_MLITE
+#ifdef USE_MLITE
     QObject::connect(&m_groupPropertyConf, &MDConfItem::valueChanged, [this, engine] {
         this->regenerateDisplayLabelGroups();
         // expensive, but if we don't do it, in multi-process case some clients may not get updated...
@@ -3286,7 +3289,20 @@ ContactsDatabase::ContactsDatabase(ContactsEngine *engine)
         QMetaObject::invokeMethod(engine, "_q_displayLabelGroupsChanged", Qt::QueuedConnection);
         QMetaObject::invokeMethod(engine, "dataChanged", Qt::QueuedConnection);
     });
-#endif // HAS_MLITE
+#endif // USE_MLITE
+#ifdef USE_GSETTINGS_QT
+    QObject::connect(m_groupPropertyConf, &QGSettings::changed, [this, engine](const QString &key) {
+        if (key == QLatin1String("groupProperty")) {
+            qDebug() << "group-property changed, regenerate display Label group";
+            this->regenerateDisplayLabelGroups();
+            // expensive, but if we don't do it, in multi-process case some clients may not get updated...
+            // if contacts backend were daemonised, this problem would go away...
+            // Emit some engine signals asynchronously.
+            QMetaObject::invokeMethod(engine, "_q_displayLabelGroupsChanged", Qt::QueuedConnection);
+            QMetaObject::invokeMethod(engine, "dataChanged", Qt::QueuedConnection);
+        }
+    });
+#endif
 }
 
 ContactsDatabase::~ContactsDatabase()
@@ -3914,8 +3930,15 @@ void ContactsDatabase::regenerateDisplayLabelGroups()
 QString ContactsDatabase::displayLabelGroupPreferredProperty() const
 {
     QString retn(QStringLiteral("QContactName::FieldFirstName"));
-#ifdef HAS_MLITE
+
+#ifdef USE_MLITE
     const QVariant groupPropertyConf = m_groupPropertyConf.value();
+#endif
+#ifdef USE_GSETTINGS_QT
+    const QVariant groupPropertyConf = m_groupPropertyConf->get(QStringLiteral("group-property"));
+#endif
+
+#if defined(USE_MLITE) || defined(USE_GSETTINGS_QT)
     if (groupPropertyConf.isValid()) {
         const QString gpcString = groupPropertyConf.toString();
         if (gpcString.compare(QStringLiteral("FirstName"), Qt::CaseInsensitive) == 0) {

@@ -140,7 +140,7 @@ void tst_DisplayLabelGroups::cleanup()
 
 void tst_DisplayLabelGroups::testDisplayLabelGroups()
 {
-#ifndef HAS_MLITE
+#ifndef USE_MLITE
     QSKIP("Test has wrong expectations if MLITE is not available");
 #endif
     // this test relies on the display label grouping
