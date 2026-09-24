@@ -225,7 +225,8 @@ bool detailPairExactlyMatches(
             } else {
                 // a has a real value which b does not have.
                 if (Q_UNLIKELY(printDifferences)) {
-                    QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("detail A of type" << a.type() << "has value which B does not have:" << akey << "=" << avalue);
+                    QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("detail A of type" << a.type()
+                                                        << "has value which B does not have:" << akey << "=" << avalue);
                 }
                 return false;
             }
@@ -233,7 +234,8 @@ bool detailPairExactlyMatches(
             // b contains the same key, but do the values match?
             if (scoreForValuePair(avalue, bvalues.value(akey)) != 0) {
                 if (Q_UNLIKELY(printDifferences)) {
-                    QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("detail A of type" << a.type() << "has value which differs from B:" << akey << "=" << avalue << "!=" << bvalues.value(akey));
+                    QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("detail A of type" << a.type() << "has value which differs from B:"
+                                                      << akey << "=" << avalue << "!=" << bvalues.value(akey));
                 }
                 return false;
             }
@@ -259,7 +261,8 @@ bool detailPairExactlyMatches(
         } else {
             // b has a real value which a does not have.
             if (Q_UNLIKELY(printDifferences)) {
-                QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("detail B of type" << b.type() << "has value which A does not have:" << bkey << "=" << bvalue);
+                QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("detail B of type" << b.type()
+                                                  << "has value which A does not have:" << bkey << "=" << bvalue);
             }
             return false;
         }
@@ -436,7 +439,8 @@ QList<QContactDetail> determineModifications(
         if (lowScorePermutationIdx != -1) {
             // we have a valid permutation which should be treated as a modification.
             QPair<int, int> bestPermutation = permutationsOfIndexes.at(lowScorePermutationIdx);
-            QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("have determined that permutation" << bestPermutation.first << "," << bestPermutation.second << "is a modification");
+            QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("have determined that permutation" << bestPermutation.first << ","
+                                              << bestPermutation.second << "is a modification");
             remainingRemovals.removeAll(bestPermutation.first);
             remainingAdditions.removeAll(bestPermutation.second);
             const QContactDetail old = removalsOfThisType->at(bestPermutation.first);
@@ -467,7 +471,8 @@ QList<QContactDetail> improveDelta(
         const QHash<QContactDetail::DetailType, QSet<int> > &ignorableDetailFields,
         const QSet<int> &ignorableCommonFields)
 {
-    QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("improving delta, have:" << removals->size() << "removals," << additions->size() << "additions");
+    QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("improving delta, have:" << removals->size() << "removals,"
+                                      << additions->size() << "additions");
     QList<QContactDetail> finalRemovals;
     QList<QContactDetail> finalAdditions;
     QList<QContactDetail> finalModifications;
@@ -487,8 +492,12 @@ QList<QContactDetail> improveDelta(
         QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("have" << removalsOfThisType.size() << "removals of this type");
         QList<QContactDetail> additionsOfThisType = bucketedAdditions.values(type);
         QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("have" << additionsOfThisType.size() << "additions of this type");
-        QList<QContactDetail> modificationsOfThisType = determineModifications(&removalsOfThisType, &additionsOfThisType, ignorableDetailFields, ignorableCommonFields);
-        QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("have" << modificationsOfThisType.size() << "modifications of this type - and now rCount =" << removalsOfThisType.size() << ", aCount =" << additionsOfThisType.size());
+        QList<QContactDetail> modificationsOfThisType
+            = determineModifications(&removalsOfThisType, &additionsOfThisType,
+                                     ignorableDetailFields, ignorableCommonFields);
+        QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("have" << modificationsOfThisType.size()
+                                          << "modifications of this type - and now rCount =" << removalsOfThisType.size()
+                                          << ", aCount =" << additionsOfThisType.size());
         finalRemovals.append(removalsOfThisType);
         finalAdditions.append(additionsOfThisType);
         finalModifications.append(modificationsOfThisType);
@@ -500,7 +509,8 @@ QList<QContactDetail> improveDelta(
         }
     }
 
-    QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("ended up with detail a/m/r:" << finalAdditions.size() << "/" << finalModifications.size() << "/" << finalRemovals.size());
+    QTCONTACTS_SQLITE_DELTA_DEBUG_LOG("ended up with detail a/m/r:" << finalAdditions.size() << "/"
+                                      << finalModifications.size() << "/" << finalRemovals.size());
 
     *removals = finalRemovals;
     *additions = finalAdditions;
@@ -619,4 +629,3 @@ int QtContactsSqliteExtensions::exactContactMatchExistsInList(
 }
 
 #endif // CONTACTDELTA_IMPL_H
-
