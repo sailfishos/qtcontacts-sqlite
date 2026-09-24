@@ -732,14 +732,14 @@ QContactManager::Error ContactWriter::save(
     return ret;
 }
 
-QContactManager::Error ContactWriter::removeCollection(const QContactCollectionId &collectionId, bool onlyIfFlagged)
+QContactManager::Error ContactWriter::removeFlaggedCollection(const QContactCollectionId &collectionId)
 {
     const QString removeCollectionMetadataStatement(QStringLiteral(
-        " DELETE FROM CollectionsMetadata WHERE collectionId = :collectionId %1"
-    ).arg(onlyIfFlagged ? QStringLiteral("AND collectionId IN (SELECT collectionId FROM Collections WHERE changeFlags >= 4)")
-                        : QString())); // ChangeFlags::IsDeleted
+        " DELETE FROM CollectionsMetadata WHERE collectionId = :collectionId"
+        " AND collectionId IN (SELECT collectionId FROM Collections WHERE changeFlags >= 4)")); // ChangeFlags::IsDeleted
     ContactsDatabase::Query removeMetadata(m_database.prepare(removeCollectionMetadataStatement));
     removeMetadata.bindValue(QStringLiteral(":collectionId"), ContactCollectionId::databaseId(collectionId));
+
     if (!ContactsDatabase::execute(removeMetadata)) {
         removeMetadata.reportError("Failed to remove collection");
         return QContactManager::UnspecifiedError;
@@ -747,22 +747,22 @@ QContactManager::Error ContactWriter::removeCollection(const QContactCollectionI
 
     // Make sure no contacts for this collection are left in the database
     const QString removeCollectionContactsStatement(QStringLiteral(
-        "DELETE FROM Contacts WHERE collectionId = :collectionId %1"
-    ).arg(onlyIfFlagged ? QStringLiteral("AND collectionId IN (SELECT collectionId FROM Collections WHERE changeFlags >= 4)")
-                        : QString())); // ChangeFlags::IsDeleted
+        "DELETE FROM Contacts WHERE collectionId = :collectionId"
+        " AND collectionId IN (SELECT collectionId FROM Collections WHERE changeFlags >= 4)"));
     ContactsDatabase::Query removeContactRows(m_database.prepare(removeCollectionContactsStatement));
     removeContactRows.bindValue(QStringLiteral(":collectionId"), ContactCollectionId::databaseId(collectionId));
+
     if (!ContactsDatabase::execute(removeContactRows)) {
         removeContactRows.reportError("Failed to remove collection contacts");
         return QContactManager::UnspecifiedError;
     }
 
     const QString removeCollectionStatement(QStringLiteral(
-        " DELETE FROM Collections WHERE collectionId = :collectionId %1"
-    ).arg(onlyIfFlagged ? QStringLiteral("AND changeFlags >= 4")
-                        : QString())); // ChangeFlags::IsDeleted
+        " DELETE FROM Collections WHERE collectionId = :collectionId"
+        " AND changeFlags >= 4"));
     ContactsDatabase::Query remove(m_database.prepare(removeCollectionStatement));
     remove.bindValue(QStringLiteral(":collectionId"), ContactCollectionId::databaseId(collectionId));
+
     if (!ContactsDatabase::execute(remove)) {
         remove.reportError("Failed to remove collection");
         return QContactManager::UnspecifiedError;
@@ -908,12 +908,11 @@ QContactManager::Error ContactWriter::removeContacts(const QVariantList &ids, bo
     return QContactManager::NoError;
 }
 
-QContactManager::Error ContactWriter::removeDetails(const QVariantList &contactIds, bool onlyIfFlagged)
+QContactManager::Error ContactWriter::removeFlaggedDetails(const QVariantList &contactIds)
 {
     const QString removeDetail(QStringLiteral(
-        " DELETE FROM Details WHERE contactId = :contactId %1"
-    ).arg(onlyIfFlagged ? QStringLiteral("AND changeFlags >= 4 AND unhandledChangeFlags < 4") // ChangeFlags::IsDeleted
-                        : QString()));
+        " DELETE FROM Details WHERE contactId = :contactId"
+        " AND changeFlags >= 4 AND unhandledChangeFlags < 4")); // ChangeFlags::IsDeleted
 
     // do it in batches, otherwise the query can fail due to too many bound values.
     for (int i = 0; i < contactIds.size(); i += 167) {
@@ -1415,7 +1414,7 @@ QContactManager::Error ContactWriter::clearChangeFlags(const QList<QContactId> &
     }
 
     // second, purge any deleted details of contacts specified in the list.
-    error = removeDetails(boundIds, true);
+    error = removeFlaggedDetails(boundIds);
     if (error != QContactManager::NoError) {
         if (!withinTransaction) {
             rollbackTransaction();
@@ -1501,7 +1500,7 @@ QContactManager::Error ContactWriter::clearChangeFlags(const QContactCollectionI
     }
 
     if (err == QContactManager::NoError) {
-        err = removeCollection(collectionId, true /* only purge if delete flag is set */);
+        err = removeFlaggedCollection(collectionId);
     }
 
     if (err == QContactManager::NoError) {

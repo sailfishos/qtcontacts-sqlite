@@ -160,13 +160,13 @@ private:
     QContactManager::Error removeRelationships(const QList<QContactRelationship> &relationships,
                                                QMap<int, QContactManager::Error> *errorMap);
 
-    QContactManager::Error removeDetails(const QVariantList &contactIds, bool onlyIfFlagged = false);
+    QContactManager::Error removeFlaggedDetails(const QVariantList &contactIds);
     QContactManager::Error removeContacts(const QVariantList &ids, bool onlyIfFlagged = false);
     QContactManager::Error deleteContacts(const QVariantList &ids, bool recordUnhandledChangeFlags);
     QContactManager::Error undeleteContacts(const QVariantList &ids, bool recordUnhandledChangeFlags);
 
     QContactManager::Error saveCollection(QContactCollection *collection);
-    QContactManager::Error removeCollection(const QContactCollectionId &collectionId, bool onlyIfFlagged);
+    QContactManager::Error removeFlaggedCollection(const QContactCollectionId &collectionId);
     QContactManager::Error deleteCollection(const QContactCollectionId &collectionId);
 
     QContactManager::Error collectionIsAggregable(const QContactCollectionId &collectionId, bool *aggregable);
