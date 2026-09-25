@@ -2261,7 +2261,8 @@ static bool finalizeTransaction(QSqlDatabase &database, bool success)
 template <typename T> static int lengthOf(T) { return 0; }
 template <typename T, int N> static int lengthOf(const T(&)[N]) { return N; }
 
-static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &database, ContactsDatabase *cdb, bool *changed = Q_NULLPTR)
+static bool executeDisplayLabelGroupLocalizationStatements(QSqlDatabase &database, ContactsDatabase *cdb,
+                                                           bool *changed = nullptr)
 {
     // determine if the current system locale is equal to that used for the display label groups.
     // if not, update them all.

@@ -184,7 +184,7 @@ public:
 
     void regenerateDisplayLabelGroups();
     QString displayLabelGroupPreferredProperty() const;
-    QString determineDisplayLabelGroup(const QContact &c, bool *emitDisplayLabelGroupChange = Q_NULLPTR);
+    QString determineDisplayLabelGroup(const QContact &c, bool *emitDisplayLabelGroupChange = nullptr);
     QStringList displayLabelGroups() const;
     int displayLabelGroupSortValue(const QString &group) const;
 

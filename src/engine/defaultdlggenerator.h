@@ -41,13 +41,14 @@ class DefaultDlgGenerator : public QObject, public QtContactsSqliteExtensions::D
     Q_INTERFACES(QtContactsSqliteExtensions::DisplayLabelGroupGenerator)
 
 public:
-    DefaultDlgGenerator(QObject *parent = Q_NULLPTR);
-    QString name() const Q_DECL_OVERRIDE;
-    int priority() const Q_DECL_OVERRIDE;
-    bool validForLocale(const QLocale &locale) const Q_DECL_OVERRIDE;
-    bool preferredForLocale(const QLocale &locale) const Q_DECL_OVERRIDE;
-    QString displayLabelGroup(const QString &data) const Q_DECL_OVERRIDE;
-    QStringList displayLabelGroups() const Q_DECL_OVERRIDE;
+    DefaultDlgGenerator(QObject *parent = nullptr);
+
+    QString name() const override;
+    int priority() const override;
+    bool validForLocale(const QLocale &locale) const override;
+    bool preferredForLocale(const QLocale &locale) const override;
+    QString displayLabelGroup(const QString &data) const override;
+    QStringList displayLabelGroups() const override;
 };
 
 #endif // DEFAULTDLGGENERATOR_H
