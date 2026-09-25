@@ -192,7 +192,9 @@ void registerTypes()
     if (!registered) {
         registered = true;
         qRegisterMetaType<QList<int> >();
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
         qRegisterMetaTypeStreamOperators<QList<int> >();
+#endif
         qRegisterMetaType<QList<QContactCollection> >();
         qRegisterMetaType<QList<QContactCollectionId> >();
     }

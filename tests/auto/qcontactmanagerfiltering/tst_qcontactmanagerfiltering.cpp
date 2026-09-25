@@ -305,7 +305,7 @@ QString tst_QContactManagerFiltering::convertIds(QList<QContactId> allIds, QList
     /* Expected is of the form "abcd".. it's possible that there are some extra contacts */
     for (int i = 0; i < ids.size(); i++) {
         if (allIds.indexOf(ids.at(i)) >= 0) {
-            QChar curr = ('a' + allIds.indexOf(ids.at(i)));
+            QChar curr = QChar('a' + static_cast<int>(allIds.indexOf(ids.at(i))));
             if (curr >= minimumContact && curr <= maximumContact) {
                 ret += curr;
             }
@@ -622,15 +622,15 @@ void tst_QContactManagerFiltering::statusFlagsFiltering()
     QFETCH(QContactManager*, cm);
 
     // Test for correct matching of all contact properties
-    QSet<QContactId> phoneNumberIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasPhoneNumber, QContactFilter::MatchContains)).toSet();
-    QSet<QContactId> emailAddressIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasEmailAddress, QContactFilter::MatchContains)).toSet();
-    QSet<QContactId> onlineAccountIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasOnlineAccount, QContactFilter::MatchContains)).toSet();
-    QSet<QContactId> onlineIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::IsOnline, QContactFilter::MatchContains)).toSet();
-    QSet<QContactId> deactivatedIds = cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeactivated, QContactFilter::MatchContains)).toSet();
+    QSet<QContactId> phoneNumberIds = toSet(cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasPhoneNumber, QContactFilter::MatchContains)));
+    QSet<QContactId> emailAddressIds = toSet(cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasEmailAddress, QContactFilter::MatchContains)));
+    QSet<QContactId> onlineAccountIds = toSet(cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::HasOnlineAccount, QContactFilter::MatchContains)));
+    QSet<QContactId> onlineIds = toSet(cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::IsOnline, QContactFilter::MatchContains)));
+    QSet<QContactId> deactivatedIds = toSet(cm->contactIds(QContactStatusFlags::matchFlag(QContactStatusFlags::IsDeactivated, QContactFilter::MatchContains)));
 
     // Also test for combination tests
     QContactFilter filter(QContactStatusFlags::matchFlags(QContactStatusFlags::HasPhoneNumber | QContactStatusFlags::HasEmailAddress, QContactFilter::MatchContains));
-    QSet<QContactId> phoneAndEmailIds = cm->contactIds(filter).toSet();
+    QSet<QContactId> phoneAndEmailIds = toSet(cm->contactIds(filter));
 
     // Doing MatchExactly on any status flag is likely to return no results, as the IsAdded or IsModified flag will generally
     // be set whenever the contact is saved, in addition to any HasPhoneNumber/HasEmailAddress etc flag.
@@ -1858,7 +1858,7 @@ void tst_QContactManagerFiltering::relationshipFiltering()
         // check that the relationship type is supported for both contacts.
         QCOMPARE_UNSORTED(output, expected);
     } else {
-        QString msg = "Manager does not support relationship type " + relationshipType + " between " + contactA.type() + " and " + contactB.type() + " type contacts.";
+        QString msg = "Manager does not support relationship type " + relationshipType + " between " + QString::number(static_cast<int>(contactA.type())) + " and " + QString::number(static_cast<int>(contactB.type())) + " type contacts.";
         QSKIP(msg.toLatin1());
     }
 }

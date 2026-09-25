@@ -34,6 +34,8 @@
 #include "../../../src/extensions/twowaycontactsyncadapter_impl.h"
 #include "../../../src/extensions/qtcontacts-extensions.h"
 
+#include <cstdlib>
+
 #include <QTimer>
 
 #include <QContact>
@@ -48,8 +50,8 @@ namespace {
 QContactPhoneNumber generatePhoneNumber(QStringList *seen)
 {
     QContactPhoneNumber ret;
-    int random = qrand();
-    int random2 = qrand();
+    int random = std::rand();
+    int random2 = std::rand();
 
     if (random % 2 == 0) {
         ret.setSubTypes(QList<int>() << QContactPhoneNumber::SubTypeMobile);

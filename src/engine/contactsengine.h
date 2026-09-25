@@ -130,8 +130,13 @@ public:
             QContactManager::Error *error) override;
 
     QContactCollectionId defaultCollectionId() const override;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    QContactCollection collection(const QContactCollectionId &collectionId, QContactManager::Error *error) override;
+    QList<QContactCollection> collections(QContactManager::Error *error) override;
+#else
     QContactCollection collection(const QContactCollectionId &collectionId, QContactManager::Error *error) const override;
     QList<QContactCollection> collections(QContactManager::Error *error) const override;
+#endif
     bool saveCollection(QContactCollection *collection, QContactManager::Error *error) override;
     bool removeCollection(const QContactCollectionId &collectionId, QContactManager::Error *error) override;
 

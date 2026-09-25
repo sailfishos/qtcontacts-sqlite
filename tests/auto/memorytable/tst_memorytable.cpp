@@ -35,6 +35,7 @@
 
 #include <QDateTime>
 
+#include <cstdlib>
 #include <cstring>
 
 class tst_MemoryTable : public QObject
@@ -98,9 +99,9 @@ char *tst_MemoryTable::testBuffer(size_t length)
     char* buf(new char[length]);
 
     // Fill the buffer with garbage
-    qsrand(static_cast<quint32>(QDateTime::currentDateTime().toMSecsSinceEpoch()));
+    std::srand(static_cast<unsigned int>(QDateTime::currentDateTime().toMSecsSinceEpoch()));
     for (char *p = buf, *end = p + length; p != end; p += sizeof(uint)) {
-        *(reinterpret_cast<uint *>(p)) = qrand();
+        *(reinterpret_cast<uint *>(p)) = std::rand();
     }
 
     return buf;
@@ -566,7 +567,7 @@ void tst_MemoryTable::migration()
 
     quint32 seed = static_cast<quint32>(QDateTime::currentDateTime().toMSecsSinceEpoch());
     qDebug() << "Randomized test - seed:" << seed;
-    qsrand(seed);
+    std::srand(seed);
 
     for (int i = 0; i < 10; ++i) {
         MemoryTable mt(buf.data(), 1024, true);
@@ -574,8 +575,8 @@ void tst_MemoryTable::migration()
         // Populate the table
         quint32 key = 0u;
         MemoryTable::Error e;
-        while ((e = mt.insert(key, QByteArray(qrand() % 64, 'x'))) == MemoryTable::NoError) {
-            if ((qrand() % 2) == 0) {
+        while ((e = mt.insert(key, QByteArray(std::rand() % 64, 'x'))) == MemoryTable::NoError) {
+            if ((std::rand() % 2) == 0) {
                 // Update this key, possibly causing re-allocation of the block
                 ++key;
             }
