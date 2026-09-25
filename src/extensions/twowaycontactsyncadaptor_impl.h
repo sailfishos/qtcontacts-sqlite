@@ -395,7 +395,8 @@ bool TwoWayContactSyncAdaptor::determineRemoteCollections()
 }
 
 // match by id and then by remote path
-static QContactCollectionId findMatchingCollection(const QContactCollection &remoteCollection, const QList<QContactCollection> &localCollections)
+static QContactCollectionId findMatchingCollection(const QContactCollection &remoteCollection,
+                                                   const QList<QContactCollection> &localCollections)
 {
     for (const QContactCollection &localCollection : localCollections) {
         if (!remoteCollection.id().isNull() && remoteCollection.id() == localCollection.id()) {
@@ -681,7 +682,8 @@ void TwoWayContactSyncAdaptor::startCollectionSync(const QContactCollection &col
     // otherwise, there are both local and remote contact changes to determine and apply.
     QList<QContact> addedContacts, modifiedContacts, removedContacts, unmodifiedContacts;
     QContactManager::Error err = QContactManager::NoError;
-    if (!d->m_engine->fetchContactChanges(collection.id(), &addedContacts, &modifiedContacts, &removedContacts, &unmodifiedContacts, &err)) {
+    if (!d->m_engine->fetchContactChanges(collection.id(), &addedContacts, &modifiedContacts,
+                                          &removedContacts, &unmodifiedContacts, &err)) {
         qWarning() << "Failed to fetch contacts for locally represented collection "
                    << QString::fromLatin1(collection.id().localId())
                    << " for application " << d->m_applicationName
@@ -692,7 +694,8 @@ void TwoWayContactSyncAdaptor::startCollectionSync(const QContactCollection &col
 
     d->m_localContactChanges.insert(collection.id(),
             { addedContacts, modifiedContacts, removedContacts, unmodifiedContacts });
-    if (!determineRemoteContactChanges(collection, addedContacts, modifiedContacts, removedContacts, unmodifiedContacts, &err)) {
+    if (!determineRemoteContactChanges(collection, addedContacts, modifiedContacts,
+                                       removedContacts, unmodifiedContacts, &err)) {
         if (err != QContactManager::NotSupportedError) {
             qWarning() << "Unable to determine remote changes for collection "
                        << QString::fromLatin1(collection.id().localId())
@@ -1407,4 +1410,3 @@ void TwoWayContactSyncAdaptor::syncOperationError()
 }
 
 #endif // TWOWAYCONTACTSYNCADAPTOR_IMPL_H
-
