@@ -53,7 +53,7 @@ target_compile_definitions(engine_database PRIVATE
 )
 
 if(MLITE_FOUND)
-    target_compile_definitions(engine_database PUBLIC HAS_MLITE)
+    target_compile_definitions(engine_database PUBLIC USE_MLITE)
     target_include_directories(engine_database PUBLIC ${MLITE_INCLUDE_DIRS})
     target_link_libraries(engine_database PUBLIC ${MLITE_LIBRARIES})
 elseif(GSETTINGS_QT_FOUND)
