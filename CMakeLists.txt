@@ -4,6 +4,7 @@ project(qtcontacts-sqlite VERSION 0.3.24 LANGUAGES CXX)
 option(ENABLE_QT6 "Enable building with Qt6" OFF)
 option(ENABLE_LOAD_ICU "Enable loading the ICU extension for SQLite" OFF)
 option(BUILD_TESTING "Build the test suite" ON)
+set(SQLITE_ICU_EXTENSION "libSqliteIcu" CACHE STRING "Name or path of the SQLite ICU extension")
 
 include(GNUInstallDirs)
 

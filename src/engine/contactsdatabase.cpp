@@ -2548,6 +2548,9 @@ static bool upgradeDatabase(QSqlDatabase &database, ContactsDatabase *cdb)
 static bool configureDatabase(QSqlDatabase &database, QString &localeName)
 {
 #ifdef QTCONTACTS_SQLITE_LOAD_ICU
+#ifndef SQLITE_ICU_EXTENSION
+#define SQLITE_ICU_EXTENSION "libSqliteIcu"
+#endif
     // Load the ICU extension
     QVariant v = database.driver()->handle();
     if (v.isValid()) {
@@ -2557,7 +2560,7 @@ static bool configureDatabase(QSqlDatabase &database, QString &localeName)
             sqlite3_enable_load_extension(handle, 1);
             char *err = nullptr;
             int rc = sqlite3_load_extension(handle,
-                                            "libSqliteIcu",
+                                            SQLITE_ICU_EXTENSION,
                                             "sqlite3_icu_init", &err);
             if (rc != SQLITE_OK) {
                 QTCONTACTS_SQLITE_WARNING(QString::fromLatin1("Failed to load ICU extension: %1")
