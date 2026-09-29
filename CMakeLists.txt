@@ -27,10 +27,21 @@ foreach(component IN LISTS QT_COMPONENTS)
     endif()
 endforeach()
 
-# Optional dependency: mlite
+# Optional support for an mlite or gsettings configuration system
 find_package(PkgConfig)
 if(PkgConfig_FOUND)
     pkg_check_modules(MLITE mlite${QT_VERSION_MAJOR})
+    if(NOT MLITE_FOUND)
+        if(ENABLE_QT6)
+            pkg_check_modules(GSETTINGS_QT IMPORTED_TARGET gsettings-qt6)
+        else()
+            pkg_check_modules(GSETTINGS_QT IMPORTED_TARGET gsettings-qt)
+        endif()
+        if(GSETTINGS_QT_FOUND)
+            install(FILES schemas/org.nemomobile.contacts.gschema.xml
+                DESTINATION "${CMAKE_INSTALL_DATADIR}/glib-2.0/schemas")
+        endif()
+    endif()
 endif()
 
 # Optional, for locale aware sorting of contacts
