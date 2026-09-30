@@ -53,13 +53,19 @@ target_compile_definitions(engine_database PRIVATE
 )
 
 if(MLITE_FOUND)
-    target_compile_definitions(engine_database PUBLIC HAS_MLITE)
+    target_compile_definitions(engine_database PUBLIC USE_MLITE)
     target_include_directories(engine_database PUBLIC ${MLITE_INCLUDE_DIRS})
     target_link_libraries(engine_database PUBLIC ${MLITE_LIBRARIES})
+elseif(GSETTINGS_QT_FOUND)
+    target_compile_definitions(engine_database PUBLIC USE_GSETTINGS_QT)
+    target_link_libraries(engine_database PUBLIC PkgConfig::GSETTINGS_QT)
 endif()
 
 if(ENABLE_LOAD_ICU)
-    target_compile_definitions(engine_database PRIVATE QTCONTACTS_SQLITE_LOAD_ICU)
+    target_compile_definitions(engine_database PRIVATE
+        QTCONTACTS_SQLITE_LOAD_ICU
+        SQLITE_ICU_EXTENSION="${SQLITE_ICU_EXTENSION}"
+    )
     target_link_libraries(engine_database PUBLIC PkgConfig::SQLITE3)
 endif()
 
